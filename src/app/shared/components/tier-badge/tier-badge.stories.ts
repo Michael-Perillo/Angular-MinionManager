@@ -21,3 +21,7 @@ export const Sinister: Story = {
 export const Diabolical: Story = {
   args: { tier: 'diabolical' },
 };
+
+export const Legendary: Story = {
+  args: { tier: 'legendary' },
+};

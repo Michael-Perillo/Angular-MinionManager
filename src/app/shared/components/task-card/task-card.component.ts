@@ -29,35 +29,22 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
         </div>
       </div>
 
-      <!-- Status area -->
-      @if (task().status === 'queued' && !task().assignedMinionId) {
-        <!-- Manual work button -->
+      <!-- Status area: manual work (queued or in-progress without minion) -->
+      @if (!task().assignedMinionId && (task().status === 'queued' || task().status === 'in-progress')) {
         <button
           (click)="workClicked.emit(task().id)"
           class="w-full py-2 px-3 rounded-lg font-semibold text-sm
                  bg-gold/20 text-gold border border-gold/30
                  hover:bg-gold/30 active:scale-95
                  transition-all duration-150 cursor-pointer">
-          WORK ({{ task().clicksRemaining }} clicks left)
+          {{ task().status === 'queued' ? 'WORK (' + task().clicksRemaining + ' clicks left)' : 'CLICK! (' + task().clicksRemaining + ' left)' }}
         </button>
-      }
-
-      @if (task().status === 'in-progress' && !task().assignedMinionId) {
-        <!-- Player is working it -->
-        <div class="flex flex-col gap-2">
+        @if (task().status === 'in-progress') {
           <app-progress-bar
             [progress]="task().clicksRemaining"
             [total]="task().clicksRequired"
             [tier]="task().tier" />
-          <button
-            (click)="workClicked.emit(task().id)"
-            class="w-full py-2 px-3 rounded-lg font-semibold text-sm
-                   bg-gold/20 text-gold border border-gold/30
-                   hover:bg-gold/30 active:scale-95
-                   transition-all duration-150 cursor-pointer">
-            CLICK! ({{ task().clicksRemaining }} left)
-          </button>
-        </div>
+        }
       }
 
       @if (task().status === 'in-progress' && task().assignedMinionId) {

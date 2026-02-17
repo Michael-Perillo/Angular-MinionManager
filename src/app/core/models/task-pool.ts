@@ -72,4 +72,21 @@ export const TASK_POOL: TaskTemplate[] = [
   { name: 'Volcano Activation', description: 'Trigger a dormant volcano near the city.', category: 'mayhem', tier: 'diabolical' },
   { name: 'Summon a Meteor', description: 'Call down space rocks for maximum drama.', category: 'mayhem', tier: 'diabolical' },
   { name: 'Unleash the Kaiju', description: 'Wake the ancient beast beneath the city.', category: 'mayhem', tier: 'diabolical' },
+
+  // ===== LEGENDARY =====
+  // Schemes
+  { name: 'Shadow Government', description: 'Install puppet leaders across every nation. Total control achieved.', category: 'schemes', tier: 'legendary' },
+  { name: 'Rewrite Reality', description: 'Gaslight the entire world into believing your version of history.', category: 'schemes', tier: 'legendary' },
+
+  // Heists
+  { name: 'Steal the Moon', description: 'The ultimate heist — shrink and pocket Earth\'s moon.', category: 'heists', tier: 'legendary' },
+  { name: 'Loot the Multiverse', description: 'Rob parallel dimensions of their most valuable artifacts.', category: 'heists', tier: 'legendary' },
+
+  // Research
+  { name: 'Achieve Singularity', description: 'Create an AI so powerful it bends reality to your will.', category: 'research', tier: 'legendary' },
+  { name: 'Entropy Reversal Engine', description: 'Conquer thermodynamics itself. Nothing decays unless you allow it.', category: 'research', tier: 'legendary' },
+
+  // Mayhem
+  { name: 'Crack the Planet', description: 'Split the Earth\'s crust open. Continental-scale destruction.', category: 'mayhem', tier: 'legendary' },
+  { name: 'Summon Cthulhu', description: 'Awaken the elder god from the deep. Reality itself trembles.', category: 'mayhem', tier: 'legendary' },
 ];

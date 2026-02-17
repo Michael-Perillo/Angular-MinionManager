@@ -15,6 +15,8 @@ export const EarlyGame: Story = {
     gold: 15,
     completedCount: 3,
     minionCount: 0,
+    villainLevel: 1,
+    villainTitle: 'Petty Troublemaker',
   },
 };
 
@@ -23,6 +25,8 @@ export const MidGame: Story = {
     gold: 120,
     completedCount: 25,
     minionCount: 2,
+    villainLevel: 4,
+    villainTitle: 'Aspiring Villain',
   },
 };
 
@@ -31,5 +35,7 @@ export const LateGame: Story = {
     gold: 1250,
     completedCount: 150,
     minionCount: 5,
+    villainLevel: 8,
+    villainTitle: 'Criminal Mastermind',
   },
 };

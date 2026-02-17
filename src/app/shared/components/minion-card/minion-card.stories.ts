@@ -8,6 +8,10 @@ const makeMinion = (overrides: Partial<Minion> = {}): Minion => ({
   appearance: { color: '#6c3483', accessory: 'goggles' },
   status: 'idle',
   assignedTaskId: null,
+  stats: { speed: 1.0, efficiency: 1.1 },
+  specialty: 'schemes',
+  xp: 0,
+  level: 1,
   ...overrides,
 });
 

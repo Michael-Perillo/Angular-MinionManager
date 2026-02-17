@@ -36,6 +36,7 @@ export class ProgressBarComponent {
       case 'petty': return 'bg-tier-petty';
       case 'sinister': return 'bg-tier-sinister';
       case 'diabolical': return 'bg-tier-diabolical';
+      case 'legendary': return 'bg-amber-400';
     }
   });
 }

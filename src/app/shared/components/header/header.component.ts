@@ -11,7 +11,9 @@ import { Component, ChangeDetectionStrategy, input, output } from '@angular/core
         <h1 class="text-2xl sm:text-3xl font-display font-black text-text-primary uppercase tracking-widest">
           Minion Manager
         </h1>
-        <p class="text-xs text-text-muted mt-0.5">Evil Overlord Idle Game</p>
+        <p class="text-xs text-text-muted mt-0.5">
+          Lvl {{ villainLevel() }} — {{ villainTitle() }}
+        </p>
       </div>
 
       <div class="flex items-center gap-6">
@@ -62,5 +64,7 @@ export class HeaderComponent {
   gold = input.required<number>();
   completedCount = input.required<number>();
   minionCount = input.required<number>();
+  villainLevel = input.required<number>();
+  villainTitle = input.required<string>();
   reset = output<void>();
 }

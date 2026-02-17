@@ -1,15 +1,45 @@
+import { TaskCategory } from './task.model';
+
+export interface MinionStats {
+  speed: number;       // 0.7–1.3, affects task completion time
+  efficiency: number;  // 0.7–1.3, affects gold reward bonus
+}
+
 export interface Minion {
   id: string;
   name: string;
   appearance: MinionAppearance;
   status: 'idle' | 'working';
   assignedTaskId: string | null;
+  stats: MinionStats;
+  specialty: TaskCategory;
+  xp: number;
+  level: number;
 }
 
 export interface MinionAppearance {
   color: string;
   accessory: 'goggles' | 'helmet' | 'cape' | 'horns' | 'none';
 }
+
+/** XP required to reach a given level. Level 1 = 0 XP, Level 2 = 10, etc. */
+export function xpForLevel(level: number): number {
+  if (level <= 1) return 0;
+  // Each level requires increasingly more XP: 10, 25, 50, 85, 130, ...
+  return Math.floor(10 * Math.pow(level - 1, 1.6));
+}
+
+/** Calculate minion level from total XP */
+export function levelFromXp(xp: number): number {
+  let level = 1;
+  while (xpForLevel(level + 1) <= xp) {
+    level++;
+  }
+  return level;
+}
+
+/** Specialty bonus multiplier when minion works matching category */
+export const SPECIALTY_BONUS = 0.25; // +25% speed and efficiency
 
 export const MINION_NAMES: string[] = [
   'Grim', 'Skulk', 'Mortis', 'Dread', 'Vex',
@@ -27,4 +57,8 @@ export const MINION_COLORS: string[] = [
 
 export const MINION_ACCESSORIES: MinionAppearance['accessory'][] = [
   'goggles', 'helmet', 'cape', 'horns', 'none',
+];
+
+export const SPECIALTY_CATEGORIES: TaskCategory[] = [
+  'schemes', 'heists', 'research', 'mayhem',
 ];

@@ -25,3 +25,7 @@ export const NearlyComplete: Story = {
 export const Complete: Story = {
   args: { progress: 0, total: 10, tier: 'petty' },
 };
+
+export const Legendary: Story = {
+  args: { progress: 30, total: 50, tier: 'legendary' },
+};

@@ -24,6 +24,8 @@ export class TierBadgeComponent {
         return 'bg-tier-sinister/20 text-tier-sinister border border-tier-sinister/30';
       case 'diabolical':
         return 'bg-tier-diabolical/20 text-tier-diabolical border border-tier-diabolical/30';
+      case 'legendary':
+        return 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
     }
   });
 }

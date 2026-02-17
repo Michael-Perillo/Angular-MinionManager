@@ -27,7 +27,7 @@ const makeTasks = (): Task[] => [
 ];
 
 const meta: Meta<TaskQueueComponent> = {
-  title: 'Minion Manager/Organisms/TaskQueue',
+  title: 'Minion Manager/Organisms/ActiveMissions',
   component: TaskQueueComponent,
   tags: ['autodocs'],
 };
@@ -35,10 +35,14 @@ const meta: Meta<TaskQueueComponent> = {
 export default meta;
 type Story = StoryObj<TaskQueueComponent>;
 
-export const WithTasks: Story = {
-  args: { tasks: makeTasks() },
+export const WithActiveMissions: Story = {
+  args: { tasks: makeTasks(), capacity: 5 },
 };
 
 export const Empty: Story = {
-  args: { tasks: [] },
+  args: { tasks: [], capacity: 3 },
+};
+
+export const AtCapacity: Story = {
+  args: { tasks: makeTasks(), capacity: 3 },
 };
