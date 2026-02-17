@@ -2,6 +2,8 @@
 
 An idle/management game built with Angular 20. Recruit, assign, and upgrade minions to gather resources and expand your empire.
 
+**Live demo:** [angular-minion-manager.pages.dev](https://angular-minion-manager.pages.dev/)
+
 ## Tech Stack
 
 - **Angular 20** — application framework
