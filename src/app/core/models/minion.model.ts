@@ -13,6 +13,7 @@ export interface Minion {
   assignedTaskId: string | null;
   stats: MinionStats;
   specialty: TaskCategory;
+  assignedDepartment: TaskCategory;
   xp: number;
   level: number;
 }

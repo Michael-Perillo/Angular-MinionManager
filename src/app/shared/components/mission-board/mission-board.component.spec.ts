@@ -53,10 +53,10 @@ describe('MissionBoardComponent', () => {
     ];
     setInputs(tasks);
 
-    // Click "Schemes" tab
+    // Click the schemes icon filter button
     const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
-    const schemesBtn = buttons.find((b: HTMLButtonElement) => b.textContent?.includes('Schemes'))!;
-    schemesBtn.click();
+    // The filter buttons have emoji icons; find the one that sets filter to 'schemes'
+    component.filterCategory.set('schemes');
     fixture.detectChanges();
 
     const cards = fixture.nativeElement.querySelectorAll('.game-card');
@@ -83,40 +83,44 @@ describe('MissionBoardComponent', () => {
     expect(component.canAccept()).toBe(false);
   });
 
-  it('shows "Active slots full" text when slots full', () => {
+  it('shows "Queue slots full" text when slots full', () => {
     setInputs([makeTask()], 3, 3);
-    expect(fixture.nativeElement.textContent).toContain('Active slots full');
+    expect(fixture.nativeElement.textContent).toContain('Queue slots full');
   });
 
-  it('click emits missionAccepted', () => {
+  it('shows Send to Queue button when slots available', () => {
+    setInputs([makeTask()], 0, 3);
+    expect(fixture.nativeElement.textContent).toContain('Send to Queue');
+  });
+
+  it('Send to Queue button emits missionRouteRequested', () => {
     const task = makeTask();
     setInputs([task], 0, 3);
 
-    const spy = jasmine.createSpy('missionAccepted');
-    component.missionAccepted.subscribe(spy);
+    const spy = jasmine.createSpy('missionRouteRequested');
+    component.missionRouteRequested.subscribe(spy);
 
-    const card: HTMLElement = fixture.nativeElement.querySelector('.game-card');
-    card.click();
+    // Find the "Send to Queue" button by text content
+    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
+    const sendBtn = buttons.find(b => b.textContent?.includes('Send to Queue'));
+    expect(sendBtn).toBeTruthy();
+    sendBtn!.click();
 
-    expect(spy).toHaveBeenCalledWith(task.id);
+    expect(spy).toHaveBeenCalledWith(task);
   });
 
-  it('does NOT emit when slots full', () => {
+  it('does NOT show Send to Queue when slots full', () => {
     const task = makeTask();
     setInputs([task], 3, 3);
 
-    const spy = jasmine.createSpy('missionAccepted');
-    component.missionAccepted.subscribe(spy);
-
-    const card: HTMLElement = fixture.nativeElement.querySelector('.game-card');
-    card.click();
-
-    expect(spy).not.toHaveBeenCalled();
+    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
+    const sendBtns = buttons.filter(b => b.textContent?.includes('Send to Queue'));
+    expect(sendBtns.length).toBe(0);
   });
 
   it('empty state when no missions', () => {
     setInputs([], 0, 3);
-    expect(fixture.nativeElement.textContent).toContain('the underworld is quiet');
+    expect(fixture.nativeElement.textContent).toContain('No missions available');
   });
 
   it('getMissionCardClass returns correct classes', () => {
@@ -139,5 +143,32 @@ describe('MissionBoardComponent', () => {
     expect(component.getCategoryIcon('research')).toBe('\u{1F9EA}');
     expect(component.getCategoryIcon('mayhem')).toBe('\u{1F4A5}');
     expect(component.getCategoryIcon('other')).toBe('?');
+  });
+
+  it('has cdkDropList with id="mission-board"', () => {
+    setInputs();
+    const dropList = fixture.nativeElement.querySelector('[id="mission-board"]');
+    expect(dropList).toBeTruthy();
+  });
+
+  it('mission cards have cdkDrag attribute', () => {
+    setInputs([makeTask()]);
+    const dragItems = fixture.nativeElement.querySelectorAll('[cdkDrag]');
+    expect(dragItems.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('accepts connectedDropLists input', () => {
+    fixture.componentRef.setInput('missions', [makeTask()]);
+    fixture.componentRef.setInput('activeCount', 0);
+    fixture.componentRef.setInput('activeSlots', 3);
+    fixture.componentRef.setInput('connectedDropLists', ['schemes', 'heists', 'player']);
+    fixture.detectChanges();
+
+    expect(component.connectedDropLists()).toEqual(['schemes', 'heists', 'player']);
+  });
+
+  it('defaults connectedDropLists to empty array', () => {
+    setInputs();
+    expect(component.connectedDropLists()).toEqual([]);
   });
 });

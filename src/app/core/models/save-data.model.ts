@@ -1,6 +1,7 @@
 import { Minion } from './minion.model';
 import { Task, TaskCategory } from './task.model';
 import { Department } from './department.model';
+import { Resources } from './resource.model';
 
 export interface SaveData {
   version: number;
@@ -19,6 +20,9 @@ export interface SaveData {
   usedNameIndices: number[];
   lastBoardRefresh: number;
   capturedMinions: CapturedMinion[];
+  departmentQueues: Record<TaskCategory, Task[]>;
+  playerQueue: Task[];
+  resources: Resources;
 }
 
 // Re-export for convenience — CapturedMinion is defined in minion.model

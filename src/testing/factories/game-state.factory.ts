@@ -11,7 +11,7 @@ export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
   };
 
   return {
-    version: 2,
+    version: 3,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,
@@ -27,6 +27,14 @@ export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
     usedNameIndices: [],
     lastBoardRefresh: 0,
     capturedMinions: [],
+    departmentQueues: {
+      schemes: [],
+      heists: [],
+      research: [],
+      mayhem: [],
+    },
+    playerQueue: [],
+    resources: { supplies: 0, intel: 0 },
     ...overrides,
   };
 }

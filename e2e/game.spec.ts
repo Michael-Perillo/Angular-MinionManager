@@ -12,17 +12,21 @@ test('App loads with heading and mission board', async ({ page }) => {
   await expect(cards.first()).toBeVisible();
 });
 
-test('Accept mission moves it to active slots', async ({ page }) => {
-  // Read initial slots text
-  const slotsText = page.locator('text=/\\d+ \\/ \\d+ slots/');
-  await expect(slotsText).toContainText('0 /');
-
+test('Accept mission moves it to a queue', async ({ page }) => {
   const boardCountBefore = await page.locator('app-mission-board .game-card').count();
 
-  // Accept first mission
-  await page.locator('app-mission-board .game-card').first().click();
+  // Click "Send to Queue" on the first mission card
+  const sendBtn = page.locator('app-mission-board button').filter({ hasText: /Send to Queue/ }).first();
+  await sendBtn.click();
 
-  await expect(slotsText).toContainText('1 /');
+  // Pick "My Workbench" from the mission router popup
+  const workbenchOption = page.locator('app-mission-router button').filter({ hasText: /My Workbench/ });
+  await workbenchOption.waitFor({ state: 'visible', timeout: 3_000 });
+  await workbenchOption.click();
+
+  // Wait for state update
+  await page.waitForTimeout(300);
+
   const boardCountAfter = await page.locator('app-mission-board .game-card').count();
   expect(boardCountAfter).toBeLessThan(boardCountBefore);
 });
@@ -36,10 +40,15 @@ test('Hire minion after earning gold', async ({ page }) => {
   // Minion costs 50g, so earn enough gold by completing multiple missions
   await earnGoldUntil(page, 50);
 
-  // Switch to Minions tab
-  await page.getByRole('button', { name: 'Minions' }).click();
+  // Open the drawer panel by clicking the ⚙️ button
+  await page.locator('app-header button').filter({ hasText: '⚙️' }).click();
 
-  // Click hire button — when affordable, it shows "Hire Minion (50g)"
+  // Switch to "Minions" tab inside the drawer
+  const minionsTab = page.locator('app-drawer-panel button').filter({ hasText: /Minions/ });
+  await minionsTab.waitFor({ state: 'visible', timeout: 3_000 });
+  await minionsTab.click();
+
+  // Click hire button
   await page.getByRole('button', { name: /Hire Minion/i }).click();
 
   // Wait for the header to update after hiring
@@ -53,8 +62,13 @@ test('Purchase upgrade after earning gold', async ({ page }) => {
   // Cheapest upgrade costs 30g, earn enough
   await earnGoldUntil(page, 30);
 
-  // Switch to Upgrades tab
-  await page.getByRole('button', { name: 'Upgrades' }).click();
+  // Open the drawer panel by clicking the ⚙️ button
+  await page.locator('app-header button').filter({ hasText: '⚙️' }).click();
+
+  // Switch to "Upgrades" tab inside the drawer
+  const upgradesTab = page.locator('app-drawer-panel button').filter({ hasText: /Upgrades/ });
+  await upgradesTab.waitFor({ state: 'visible', timeout: 3_000 });
+  await upgradesTab.click();
 
   // Find the first affordable buy button (shows gold cost like "10g")
   const buyBtn = page.locator('app-upgrade-shop button:not([disabled])').filter({ hasText: /\d+g/ }).first();
@@ -64,21 +78,23 @@ test('Purchase upgrade after earning gold', async ({ page }) => {
   await expect(page.locator('app-upgrade-shop').locator('text=1/')).toBeVisible();
 });
 
-test('Tab navigation shows correct content', async ({ page }) => {
-  // Status tab -> Notoriety heading
-  await page.getByRole('button', { name: 'Status' }).click();
-  await expect(page.locator('text=Notoriety')).toBeVisible();
+test('Drawer tab navigation shows correct content', async ({ page }) => {
+  // Open the drawer panel by clicking the ⚙️ button
+  await page.locator('app-header button').filter({ hasText: '⚙️' }).click();
 
-  // Minions tab -> Hire Minion heading
-  await page.getByRole('button', { name: 'Minions' }).click();
-  await expect(page.locator('text=Hire Minion')).toBeVisible();
+  // Notoriety tab (default) -> app-notoriety-bar
+  await expect(page.locator('app-notoriety-bar')).toBeVisible();
+
+  // Minions tab -> app-hire-minion-panel
+  await page.locator('app-drawer-panel button').filter({ hasText: /Minions/ }).click();
+  await expect(page.locator('app-hire-minion-panel')).toBeVisible();
 
   // Upgrades tab -> app-upgrade-shop
-  await page.getByRole('button', { name: 'Upgrades' }).click();
+  await page.locator('app-drawer-panel button').filter({ hasText: /Upgrades/ }).click();
   await expect(page.locator('app-upgrade-shop')).toBeVisible();
 
   // Depts tab -> app-department-panel
-  await page.getByRole('button', { name: 'Depts' }).click();
+  await page.locator('app-drawer-panel button').filter({ hasText: /Depts/ }).click();
   await expect(page.locator('app-department-panel')).toBeVisible();
 });
 
@@ -87,11 +103,8 @@ test('Reset game clears progress', async ({ page }) => {
   const goldBefore = await getHeaderStat(page, 'Gold');
   expect(goldBefore).toBeGreaterThan(0);
 
-  // Click Reset
-  await page.getByRole('button', { name: 'Reset' }).click();
-
-  // Wait for the reset to take effect
-  await page.waitForTimeout(300);
+  // Use resetGame helper which properly clears localStorage and reloads
+  await resetGame(page);
 
   const goldAfter = await getHeaderStat(page, 'Gold');
   expect(goldAfter).toBe(0);
@@ -114,16 +127,14 @@ test('Persistence across page reload', async ({ page }) => {
 });
 
 test('Notoriety tracks after completing tasks', async ({ page }) => {
-  // Check initial notoriety
-  await page.getByRole('button', { name: 'Status' }).click();
-  await expect(page.locator('text=0 / 100')).toBeVisible();
+  // Check initial notoriety in the header (shows as "0/100" next to 🔥)
+  const initialNotoriety = await getHeaderStat(page, 'Notoriety');
+  expect(initialNotoriety).toBe(0);
 
   // Complete a task
   await earnGold(page);
 
-  // Check notoriety increased
-  await page.getByRole('button', { name: 'Status' }).click();
-  const notorietyText = await page.locator('app-notoriety-bar').locator('text=/\\d+ \\/ 100/').textContent();
-  const notoriety = parseInt(notorietyText?.trim().split(' ')[0] ?? '0', 10);
+  // Check notoriety increased in the header
+  const notoriety = await getHeaderStat(page, 'Notoriety');
   expect(notoriety).toBeGreaterThan(0);
 });

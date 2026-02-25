@@ -14,6 +14,7 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
   clicksRemaining: 10,
   assignedMinionId: null,
   queuedAt: Date.now(),
+  assignedQueue: null,
   ...overrides,
 });
 

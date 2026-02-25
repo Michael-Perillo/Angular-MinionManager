@@ -25,6 +25,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     clicksRemaining: config.clicks,
     assignedMinionId: null,
     queuedAt: Date.now(),
+    assignedQueue: null,
     ...overrides,
   };
 }

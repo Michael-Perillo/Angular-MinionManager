@@ -6,3 +6,4 @@ export * from './department.model';
 export * from './upgrade.model';
 export * from './notoriety.model';
 export * from './save-data.model';
+export * from './resource.model';

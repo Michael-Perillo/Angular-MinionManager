@@ -13,6 +13,7 @@ export function makeMinion(overrides: Partial<Minion> = {}): Minion {
     assignedTaskId: null,
     stats: { speed: 1.0, efficiency: 1.0 },
     specialty: 'schemes' as TaskCategory,
+    assignedDepartment: 'schemes' as TaskCategory,
     xp: 0,
     level: 1,
     ...overrides,
