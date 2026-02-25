@@ -29,31 +29,27 @@ type Story = StoryObj<MissionRouterComponent>;
 
 export const AllQueuesAvailable: Story = {
   args: {
+    initiallyOpen: true,
     mission: makeTask(),
     deptQueueCounts: { schemes: 1, heists: 0, research: 2, mayhem: 0 },
     playerQueueCount: 1,
     isMobile: false,
   },
-  play: async ({ canvasElement, component }) => {
-    // Open the router modal by default for story display
-    (component as any).visible.set(true);
-  },
 };
 
 export const SomeQueuesFull: Story = {
   args: {
+    initiallyOpen: true,
     mission: makeTask(),
     deptQueueCounts: { schemes: 5, heists: 4, research: 0, mayhem: 3 },
     playerQueueCount: 2,
     isMobile: false,
   },
-  play: async ({ canvasElement, component }) => {
-    (component as any).visible.set(true);
-  },
 };
 
 export const MobileView: Story = {
   args: {
+    initiallyOpen: true,
     mission: makeTask(),
     deptQueueCounts: { schemes: 2, heists: 1, research: 0, mayhem: 0 },
     playerQueueCount: 0,
@@ -62,19 +58,14 @@ export const MobileView: Story = {
   parameters: {
     viewport: { defaultViewport: 'mobile1' },
   },
-  play: async ({ canvasElement, component }) => {
-    (component as any).visible.set(true);
-  },
 };
 
 export const EmptyQueues: Story = {
   args: {
+    initiallyOpen: true,
     mission: makeTask(),
     deptQueueCounts: { schemes: 0, heists: 0, research: 0, mayhem: 0 },
     playerQueueCount: 0,
     isMobile: false,
-  },
-  play: async ({ canvasElement, component }) => {
-    (component as any).visible.set(true);
   },
 };

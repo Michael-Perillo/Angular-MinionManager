@@ -3,7 +3,7 @@ import { DrawerPanelComponent } from './drawer-panel.component';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
 import { Minion, CapturedMinion } from '../../../core/models/minion.model';
-import { createDefaultUpgrades, Upgrade } from '../../../core/models/upgrade.model';
+import { createDefaultUpgrades } from '../../../core/models/upgrade.model';
 import { ThreatLevel } from '../../../core/models/notoriety.model';
 
 const makeDept = (cat: TaskCategory, level = 1, xp = 0): Department => ({
@@ -42,12 +42,6 @@ const meta: Meta<DrawerPanelComponent> = {
   title: 'Minion Manager/Organisms/DrawerPanel',
   component: DrawerPanelComponent,
   tags: ['autodocs'],
-  decorators: [
-    (story) => ({
-      ...story,
-      styles: ['::ng-deep app-drawer-panel { display: block; height: 600px; }'],
-    }),
-  ],
 };
 
 export default meta;
@@ -55,6 +49,7 @@ type Story = StoryObj<DrawerPanelComponent>;
 
 export const Open: Story = {
   args: {
+    initiallyOpen: true,
     notoriety: 25,
     threatLevel: 'suspicious' as ThreatLevel,
     goldPenalty: 5,
@@ -69,13 +64,11 @@ export const Open: Story = {
     nextMinionCost: 50,
     canHireMinion: true,
   },
-  play: async ({ canvasElement, component }) => {
-    (component as any).isOpen.set(true);
-  },
 };
 
 export const Closed: Story = {
   args: {
+    initiallyOpen: false,
     notoriety: 25,
     threatLevel: 'suspicious' as ThreatLevel,
     goldPenalty: 5,
@@ -94,6 +87,7 @@ export const Closed: Story = {
 
 export const WithRaidAlert: Story = {
   args: {
+    initiallyOpen: true,
     notoriety: 85,
     threatLevel: 'infamous' as ThreatLevel,
     goldPenalty: 40,
@@ -113,13 +107,12 @@ export const WithRaidAlert: Story = {
     nextMinionCost: 120,
     canHireMinion: true,
   },
-  play: async ({ canvasElement, component }) => {
-    (component as any).isOpen.set(true);
-  },
 };
 
 export const WithPrisonTimer: Story = {
   args: {
+    initiallyOpen: true,
+    initialTab: 'prison',
     notoriety: 60,
     threatLevel: 'hunted' as ThreatLevel,
     goldPenalty: 20,
@@ -148,9 +141,5 @@ export const WithPrisonTimer: Story = {
     currentTime: Date.now(),
     nextMinionCost: 80,
     canHireMinion: true,
-  },
-  play: async ({ canvasElement, component }) => {
-    (component as any).isOpen.set(true);
-    (component as any).activeTab.set('prison');
   },
 };

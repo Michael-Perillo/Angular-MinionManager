@@ -55,7 +55,8 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
               class="game-card p-3 flex flex-col gap-2 cursor-grab active:cursor-grabbing"
               [class]="getMissionCardClass(mission)"
               cdkDrag
-              [cdkDragData]="mission">
+              [cdkDragData]="mission"
+              [cdkDragDisabled]="dragDisabled()">
               <!-- Header -->
               <div class="flex items-start justify-between gap-1">
                 <div class="flex-1 min-w-0">
@@ -147,6 +148,7 @@ export class MissionBoardComponent {
   activeCount = input.required<number>();
   activeSlots = input.required<number>();
   connectedDropLists = input<string[]>([]);
+  dragDisabled = input<boolean>(false);
   missionAccepted = output<string>();
   missionRouteRequested = output<Task>();
 
