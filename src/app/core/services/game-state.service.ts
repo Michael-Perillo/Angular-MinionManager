@@ -1,6 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import {
   Task, TaskStatus, TaskTier, TaskCategory, TIER_CONFIG, TaskTemplate, GOLD_SCALE_PER_LEVEL,
+  QueueTarget,
 } from '../models/task.model';
 import {
   Minion, MinionAppearance, MinionStats, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES,
@@ -17,7 +18,10 @@ import {
   NOTORIETY_PER_TIER, MAX_NOTORIETY, getThreatLevel, notorietyGoldPenalty,
   bribeCost, COVER_TRACKS_REDUCTION, ThreatLevel,
 } from '../models/notoriety.model';
+import { Resources, SUPPLIES_PER_TIER, INTEL_PER_TIER } from '../models/resource.model';
 import { SaveData } from '../models/save-data.model';
+
+const ALL_CATEGORIES: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
 
 @Injectable({ providedIn: 'root' })
 export class GameStateService {
@@ -25,7 +29,7 @@ export class GameStateService {
   private readonly _gold = signal(0);
   private readonly _minions = signal<Minion[]>([]);
   private readonly _missionBoard = signal<Task[]>([]);   // Available missions to choose from
-  private readonly _activeMissions = signal<Task[]>([]);  // Accepted & in-progress missions
+  private readonly _activeMissions = signal<Task[]>([]);  // Legacy flat list (kept for backwards compat)
   private readonly _completedCount = signal(0);
   private readonly _totalGoldEarned = signal(0);
   private readonly _notifications = signal<GameNotification[]>([]);
@@ -43,11 +47,21 @@ export class GameStateService {
   private readonly _capturedMinions = signal<CapturedMinion[]>([]);
   private readonly _lastSaved = signal(0);
 
+  // ─── Kanban queue signals ──────────────────
+  private readonly _departmentQueues = signal<Record<TaskCategory, Task[]>>({
+    schemes: [],
+    heists: [],
+    research: [],
+    mayhem: [],
+  });
+  private readonly _playerQueue = signal<Task[]>([]);
+  private readonly _supplies = signal(0);
+  private readonly _intel = signal(0);
+
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
   readonly minions = this._minions.asReadonly();
   readonly missionBoard = this._missionBoard.asReadonly();
-  readonly activeMissions = this._activeMissions.asReadonly();
   readonly completedCount = this._completedCount.asReadonly();
   readonly totalGoldEarned = this._totalGoldEarned.asReadonly();
   readonly notifications = this._notifications.asReadonly();
@@ -58,6 +72,10 @@ export class GameStateService {
   readonly raidTimer = this._raidTimer.asReadonly();
   readonly capturedMinions = this._capturedMinions.asReadonly();
   readonly lastSaved = this._lastSaved.asReadonly();
+  readonly departmentQueues = this._departmentQueues.asReadonly();
+  readonly playerQueue = this._playerQueue.asReadonly();
+  readonly supplies = this._supplies.asReadonly();
+  readonly intel = this._intel.asReadonly();
 
   readonly threatLevel = computed(() => getThreatLevel(this._notoriety()));
 
@@ -65,10 +83,22 @@ export class GameStateService {
     Math.round(notorietyGoldPenalty(this._notoriety()) * 100)
   );
 
-  // Backwards-compat: taskQueue = activeMissions (for components that still use it)
-  readonly taskQueue = this._activeMissions.asReadonly();
+  // Backwards-compat: activeMissions merges all queues into a single flat list
+  readonly activeMissions = computed(() => {
+    const deptQueues = this._departmentQueues();
+    const player = this._playerQueue();
+    const all: Task[] = [];
+    for (const cat of ALL_CATEGORIES) {
+      all.push(...deptQueues[cat]);
+    }
+    all.push(...player);
+    return all;
+  });
 
-  // ─── Villain level (Phase 1) ─────────────
+  // Backwards-compat: taskQueue = activeMissions
+  readonly taskQueue = this.activeMissions;
+
+  // ─── Villain level ─────────────────────────
   readonly villainLevel = computed(() => {
     const completed = this._completedCount();
     return Math.min(20, Math.floor(Math.sqrt(completed / 2.5)) + 1);
@@ -105,11 +135,11 @@ export class GameStateService {
   );
 
   readonly queuedTasks = computed(() =>
-    this._activeMissions().filter(t => t.status === 'queued')
+    this.activeMissions().filter(t => t.status === 'queued')
   );
 
   readonly inProgressTasks = computed(() =>
-    this._activeMissions().filter(t => t.status === 'in-progress')
+    this.activeMissions().filter(t => t.status === 'in-progress')
   );
 
   /** Mission board capacity: base 12, scales with minions + upgrades */
@@ -129,6 +159,17 @@ export class GameStateService {
   readonly clickPower = computed(() =>
     1 + this.getUpgradeLevel('click-power')
   );
+
+  /** Minions grouped by assigned department */
+  readonly minionsByDepartment = computed(() => {
+    const result: Record<TaskCategory, Minion[]> = {
+      schemes: [], heists: [], research: [], mayhem: [],
+    };
+    for (const m of this._minions()) {
+      result[m.assignedDepartment].push(m);
+    }
+    return result;
+  });
 
   // ─── Constants ─────────────────────────────
   private readonly BOARD_REFRESH_INTERVAL = 3_000;
@@ -174,6 +215,12 @@ export class GameStateService {
     this._raidActive.set(false);
     this._raidTimer.set(0);
     this._capturedMinions.set([]);
+    this._departmentQueues.set({
+      schemes: [], heists: [], research: [], mayhem: [],
+    });
+    this._playerQueue.set([]);
+    this._supplies.set(0);
+    this._intel.set(0);
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
     this.tickCount = 0;
@@ -189,7 +236,7 @@ export class GameStateService {
   // ─── Snapshot (persistence) ─────────────────
   getSnapshot(): SaveData {
     return {
-      version: 2,
+      version: 3,
       savedAt: Date.now(),
       gold: this._gold(),
       completedCount: this._completedCount(),
@@ -198,13 +245,16 @@ export class GameStateService {
       minions: this._minions(),
       departments: this._departments(),
       upgradeLevels: this._upgrades().map(u => ({ id: u.id, currentLevel: u.currentLevel })),
-      activeMissions: this._activeMissions(),
+      activeMissions: [], // kept empty for v3; all tasks live in department/player queues
       missionBoard: this._missionBoard(),
       raidActive: this._raidActive(),
       raidTimer: this._raidTimer(),
       usedNameIndices: [...this.usedNameIndices],
       lastBoardRefresh: this.lastBoardRefresh,
       capturedMinions: this._capturedMinions(),
+      departmentQueues: this._departmentQueues(),
+      playerQueue: this._playerQueue(),
+      resources: { supplies: this._supplies(), intel: this._intel() },
     };
   }
 
@@ -213,14 +263,58 @@ export class GameStateService {
     this._completedCount.set(data.completedCount);
     this._totalGoldEarned.set(data.totalGoldEarned);
     this._notoriety.set(data.notoriety);
-    this._minions.set(data.minions);
+    this._minions.set(data.minions.map(m => ({
+      ...m,
+      assignedDepartment: m.assignedDepartment ?? m.specialty,
+    })));
     this._departments.set(data.departments);
-    this._activeMissions.set(data.activeMissions);
     this._missionBoard.set(data.missionBoard);
     this._raidActive.set(data.raidActive);
     this._raidTimer.set(data.raidTimer);
     this._capturedMinions.set(data.capturedMinions ?? []);
     this._notifications.set([]);
+
+    // Load kanban queues (v3+)
+    if (data.departmentQueues) {
+      this._departmentQueues.set(data.departmentQueues);
+    } else {
+      this._departmentQueues.set({ schemes: [], heists: [], research: [], mayhem: [] });
+    }
+    if (data.playerQueue) {
+      this._playerQueue.set(data.playerQueue);
+    } else {
+      this._playerQueue.set([]);
+    }
+
+    // Load resources (v3+)
+    if (data.resources) {
+      this._supplies.set(data.resources.supplies);
+      this._intel.set(data.resources.intel);
+    } else {
+      this._supplies.set(0);
+      this._intel.set(0);
+    }
+
+    // Legacy: migrate activeMissions into department queues
+    if (data.activeMissions && data.activeMissions.length > 0) {
+      const deptQueues = { ...this._departmentQueues() };
+      for (const cat of ALL_CATEGORIES) {
+        deptQueues[cat] = [...deptQueues[cat]];
+      }
+      for (const task of data.activeMissions) {
+        const target = task.assignedQueue ?? task.template.category;
+        if (target === 'player') {
+          this._playerQueue.update(q => [...q, { ...task, assignedQueue: 'player' }]);
+        } else {
+          const cat = target as TaskCategory;
+          deptQueues[cat] = [...deptQueues[cat], { ...task, assignedQueue: cat }];
+        }
+      }
+      this._departmentQueues.set(deptQueues);
+    }
+
+    // Legacy flat list cleared
+    this._activeMissions.set([]);
 
     // Upgrades: start from defaults, merge saved levels
     const upgrades = createDefaultUpgrades();
@@ -288,17 +382,120 @@ export class GameStateService {
   }
 
   // ─── Mission Board actions ─────────────────
-  /** Player accepts a mission from the board */
+  /** Legacy: Player accepts a mission from the board into the old flat list (still used by old UI) */
   acceptMission(missionId: string): void {
-    const active = this._activeMissions();
-    if (active.length >= this.activeSlots()) return; // no room
-
+    // Route to the mission's category queue by default
     const mission = this._missionBoard().find(m => m.id === missionId);
     if (!mission) return;
 
-    // Remove from board, add to active
+    const totalActive = this.activeMissions().length;
+    if (totalActive >= this.activeSlots()) return;
+
     this._missionBoard.update(board => board.filter(m => m.id !== missionId));
-    this._activeMissions.update(list => [...list, { ...mission, status: 'queued' as TaskStatus }]);
+    const target = mission.template.category;
+    this._departmentQueues.update(queues => ({
+      ...queues,
+      [target]: [...queues[target], { ...mission, status: 'queued' as TaskStatus, assignedQueue: target }],
+    }));
+  }
+
+  /** Route a mission from the board to a specific queue */
+  routeMission(missionId: string, target: QueueTarget): void {
+    const mission = this._missionBoard().find(m => m.id === missionId);
+    if (!mission) return;
+
+    const totalActive = this.activeMissions().length;
+    if (totalActive >= this.activeSlots()) return;
+
+    this._missionBoard.update(board => board.filter(m => m.id !== missionId));
+
+    const routed: Task = { ...mission, status: 'queued' as TaskStatus, assignedQueue: target };
+
+    if (target === 'player') {
+      this._playerQueue.update(q => [...q, routed]);
+    } else {
+      this._departmentQueues.update(queues => ({
+        ...queues,
+        [target]: [...queues[target], routed],
+      }));
+    }
+  }
+
+  /** Move a task between queues (e.g., from one department to another, or to player workbench) */
+  moveTaskToQueue(taskId: string, fromQueue: QueueTarget, toQueue: QueueTarget): void {
+    if (fromQueue === toQueue) return;
+
+    let task: Task | undefined;
+
+    // Remove from source queue
+    if (fromQueue === 'player') {
+      const q = this._playerQueue();
+      task = q.find(t => t.id === taskId);
+      if (!task) return;
+      // Don't move tasks that are in-progress with a minion
+      if (task.assignedMinionId) return;
+      this._playerQueue.update(queue => queue.filter(t => t.id !== taskId));
+    } else {
+      const cat = fromQueue as TaskCategory;
+      const q = this._departmentQueues()[cat];
+      task = q.find(t => t.id === taskId);
+      if (!task) return;
+      if (task.assignedMinionId) return;
+      this._departmentQueues.update(queues => ({
+        ...queues,
+        [cat]: queues[cat].filter(t => t.id !== taskId),
+      }));
+    }
+
+    const moved: Task = { ...task, assignedQueue: toQueue };
+
+    // Add to target queue
+    if (toQueue === 'player') {
+      this._playerQueue.update(q => [...q, moved]);
+    } else {
+      this._departmentQueues.update(queues => ({
+        ...queues,
+        [toQueue]: [...queues[toQueue as TaskCategory], moved],
+      }));
+    }
+  }
+
+  /** Reorder tasks within a queue (drag to reorder priority) */
+  reorderQueue(queue: QueueTarget, taskIds: string[]): void {
+    if (queue === 'player') {
+      this._playerQueue.update(current => {
+        const byId = new Map(current.map(t => [t.id, t]));
+        return taskIds.map(id => byId.get(id)!).filter(Boolean);
+      });
+    } else {
+      const cat = queue as TaskCategory;
+      this._departmentQueues.update(queues => {
+        const current = queues[cat];
+        const byId = new Map(current.map(t => [t.id, t]));
+        return {
+          ...queues,
+          [cat]: taskIds.map(id => byId.get(id)!).filter(Boolean),
+        };
+      });
+    }
+  }
+
+  /** Reassign a minion to a different department */
+  reassignMinion(minionId: string, newDept: TaskCategory): void {
+    const minion = this._minions().find(m => m.id === minionId);
+    if (!minion) return;
+    if (minion.assignedDepartment === newDept) return;
+
+    // If working, can't reassign
+    if (minion.status === 'working') return;
+
+    this._minions.update(list =>
+      list.map(m =>
+        m.id === minionId
+          ? { ...m, assignedDepartment: newDept }
+          : m
+      )
+    );
   }
 
   // ─── Manual work (clicking) ────────────────
@@ -306,32 +503,72 @@ export class GameStateService {
     const power = this.clickPower();
     const clickGoldBonus = 1 + this.getUpgradeLevel('click-gold') * 0.15;
 
-    this._activeMissions.update(queue =>
-      queue.map(task => {
-        if (task.id !== taskId) return task;
-        if (task.status === 'complete') return task;
-        if (task.assignedMinionId) return task;
+    // Check player queue first
+    const playerTask = this._playerQueue().find(t => t.id === taskId);
+    if (playerTask) {
+      this._playerQueue.update(queue =>
+        queue.map(task => {
+          if (task.id !== taskId) return task;
+          if (task.status === 'complete') return task;
 
-        const newClicks = task.clicksRemaining - power;
-        if (newClicks <= 0) {
-          if (task.isBreakoutOp) {
-            this.completeBreakout(task);
-          } else if (task.isCoverOp) {
-            this.completeCoverOp(task.template.name);
-          } else {
-            const bonusGold = Math.round(task.goldReward * clickGoldBonus);
-            this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
+          const newClicks = task.clicksRemaining - power;
+          if (newClicks <= 0) {
+            if (task.isBreakoutOp) {
+              this.completeBreakout(task);
+            } else if (task.isCoverOp) {
+              this.completeCoverOp(task.template.name);
+            } else {
+              const bonusGold = Math.round(task.goldReward * clickGoldBonus);
+              this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
+            }
+            return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
           }
-          return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
-        }
-        return {
-          ...task,
-          status: 'in-progress' as TaskStatus,
-          clicksRemaining: newClicks,
-        };
-      })
-    );
-    this.cleanCompletedTasks();
+          return {
+            ...task,
+            status: 'in-progress' as TaskStatus,
+            clicksRemaining: newClicks,
+          };
+        })
+      );
+      this.cleanPlayerQueue();
+      return;
+    }
+
+    // Check department queues
+    for (const cat of ALL_CATEGORIES) {
+      const queue = this._departmentQueues()[cat];
+      const deptTask = queue.find(t => t.id === taskId);
+      if (deptTask) {
+        this._departmentQueues.update(queues => ({
+          ...queues,
+          [cat]: queues[cat].map(task => {
+            if (task.id !== taskId) return task;
+            if (task.status === 'complete') return task;
+            if (task.assignedMinionId) return task; // can't click minion-assigned tasks
+
+            const newClicks = task.clicksRemaining - power;
+            if (newClicks <= 0) {
+              if (task.isBreakoutOp) {
+                this.completeBreakout(task);
+              } else if (task.isCoverOp) {
+                this.completeCoverOp(task.template.name);
+              } else {
+                const bonusGold = Math.round(task.goldReward * clickGoldBonus);
+                this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
+              }
+              return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
+            }
+            return {
+              ...task,
+              status: 'in-progress' as TaskStatus,
+              clicksRemaining: newClicks,
+            };
+          }),
+        }));
+        this.cleanDeptQueue(cat);
+        return;
+      }
+    }
   }
 
   // ─── Hire minion ───────────────────────────
@@ -354,34 +591,37 @@ export class GameStateService {
   tickTime(): void {
     const now = Date.now();
 
-    // 1. Decrement timers for minion-worked active missions
-    this._activeMissions.update(queue =>
-      queue.map(task => {
-        if (task.status !== 'in-progress' || !task.assignedMinionId) return task;
+    // 1. Decrement timers for minion-worked tasks in ALL department queues
+    for (const cat of ALL_CATEGORIES) {
+      this._departmentQueues.update(queues => ({
+        ...queues,
+        [cat]: queues[cat].map(task => {
+          if (task.status !== 'in-progress' || !task.assignedMinionId) return task;
 
-        const minion = this._minions().find(m => m.id === task.assignedMinionId);
-        const speedMult = minion ? this.getMinionSpeedMultiplier(minion, task.template.category) : 1;
-        const newTime = task.timeRemaining - speedMult;
+          const minion = this._minions().find(m => m.id === task.assignedMinionId);
+          const speedMult = minion ? this.getMinionSpeedMultiplier(minion, task.template.category) : 1;
+          const newTime = task.timeRemaining - speedMult;
 
-        if (newTime <= 0) {
-          if (task.isBreakoutOp) {
-            this.completeBreakout(task);
-          } else if (task.isCoverOp) {
-            this.completeCoverOp(task.template.name);
-          } else {
-            const effMult = minion ? this.getMinionEfficiencyMultiplier(minion, task.template.category) : 1;
-            const bonusGold = Math.round(task.goldReward * effMult);
-            this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
+          if (newTime <= 0) {
+            if (task.isBreakoutOp) {
+              this.completeBreakout(task);
+            } else if (task.isCoverOp) {
+              this.completeCoverOp(task.template.name);
+            } else {
+              const effMult = minion ? this.getMinionEfficiencyMultiplier(minion, task.template.category) : 1;
+              const bonusGold = Math.round(task.goldReward * effMult);
+              this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
+            }
+            this.freeMinionFromTask(task.assignedMinionId, task.tier, task.template.category);
+            return { ...task, status: 'complete' as TaskStatus, timeRemaining: 0 };
           }
-          this.freeMinionFromTask(task.assignedMinionId, task.tier, task.template.category);
-          return { ...task, status: 'complete' as TaskStatus, timeRemaining: 0 };
-        }
-        return { ...task, timeRemaining: newTime };
-      })
-    );
+          return { ...task, timeRemaining: newTime };
+        }),
+      }));
+    }
 
-    // 2. Remove completed active missions
-    this.cleanCompletedTasks();
+    // 2. Remove completed tasks from all queues
+    this.cleanAllQueues();
 
     // 3. Expire Special Ops from the board that have timed out
     this._missionBoard.update(board =>
@@ -399,7 +639,7 @@ export class GameStateService {
       this.lastBoardRefresh = now;
     }
 
-    // 5. Auto-assign idle minions to queued active missions
+    // 5. Auto-assign idle minions to queued tasks within their department
     this.autoAssignMinions();
 
     // 6. Hero raid events: chance per tick when notoriety >= 60
@@ -423,15 +663,9 @@ export class GameStateService {
             ? idle[Math.floor(Math.random() * idle.length)]
             : minions[Math.floor(Math.random() * minions.length)];
 
-          // If the target was working, free the task
+          // If the target was working, free the task back to queued
           if (target.assignedTaskId) {
-            this._activeMissions.update(queue =>
-              queue.map(t =>
-                t.assignedMinionId === target.id
-                  ? { ...t, status: 'queued' as TaskStatus, assignedMinionId: null }
-                  : t
-              )
-            );
+            this.unassignMinionFromTask(target.id, target.assignedTaskId);
           }
 
           // Move to prison instead of deleting
@@ -466,8 +700,15 @@ export class GameStateService {
       this._missionBoard.update(board =>
         board.filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId))
       );
-      this._activeMissions.update(active =>
-        active.filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId))
+      // Clean from all queues
+      for (const cat of ALL_CATEGORIES) {
+        this._departmentQueues.update(queues => ({
+          ...queues,
+          [cat]: queues[cat].filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId)),
+        }));
+      }
+      this._playerQueue.update(q =>
+        q.filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId))
       );
     }
 
@@ -564,6 +805,7 @@ export class GameStateService {
       queuedAt: Date.now(),
       isSpecialOp,
       specialOpExpiry: isSpecialOp ? Date.now() + this.SPECIAL_OP_DURATION : undefined,
+      assignedQueue: null,
     };
   }
 
@@ -590,6 +832,7 @@ export class GameStateService {
       assignedMinionId: null,
       queuedAt: Date.now(),
       isCoverOp: true,
+      assignedQueue: null,
     };
   }
 
@@ -624,8 +867,7 @@ export class GameStateService {
 
     // Get candidates from the pool matching category + tier
     let candidates = TASK_POOL.filter(t => t.category === category && t.tier === tier);
-    // Fallback: if no candidates (e.g., legendary with no legendary templates for this category),
-    // try any template of this tier, then fall to any in category
+    // Fallback: if no candidates, try any template of this tier, then fall to any in category
     if (candidates.length === 0) {
       candidates = TASK_POOL.filter(t => t.tier === tier);
     }
@@ -636,13 +878,10 @@ export class GameStateService {
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  /** Smart auto-assign: considers specialty matching */
+  /** Per-department auto-assign: each department's idle minions pick from their department's queue */
   private autoAssignMinions(): void {
-    const idle = [...this.idleMinions()];
-    if (idle.length === 0) return;
-
-    const queued = this._activeMissions().filter(t => t.status === 'queued');
-    if (queued.length === 0) return;
+    const minionsByDept = this.minionsByDepartment();
+    const deptQueues = this._departmentQueues();
 
     const tierPriority: Record<TaskTier, number> = {
       legendary: 4,
@@ -650,32 +889,43 @@ export class GameStateService {
       sinister: 2,
       petty: 1,
     };
-    const sorted = [...queued].sort((a, b) => tierPriority[b.tier] - tierPriority[a.tier]);
 
-    const assignedMinionIds = new Set<string>();
+    for (const cat of ALL_CATEGORIES) {
+      const deptMinions = minionsByDept[cat];
+      const idle = deptMinions.filter(m => m.status === 'idle');
+      if (idle.length === 0) continue;
 
-    for (const task of sorted) {
-      if (assignedMinionIds.size >= idle.length) break;
+      const queued = deptQueues[cat].filter(t => t.status === 'queued');
+      if (queued.length === 0) continue;
 
-      const available = idle.filter(m => !assignedMinionIds.has(m.id));
-      if (available.length === 0) break;
+      // Queued tasks are already in priority order (player reorders them)
+      // But we still prefer specialty matches among idle minions
+      const assignedMinionIds = new Set<string>();
 
-      const specialtyMatch = available.find(m => m.specialty === task.template.category);
-      const chosen = specialtyMatch || available[0];
+      for (const task of queued) {
+        if (assignedMinionIds.size >= idle.length) break;
 
-      assignedMinionIds.add(chosen.id);
-      this.assignMinionToTask(chosen.id, task.id);
+        const available = idle.filter(m => !assignedMinionIds.has(m.id));
+        if (available.length === 0) break;
+
+        const specialtyMatch = available.find(m => m.specialty === task.template.category);
+        const chosen = specialtyMatch || available[0];
+
+        assignedMinionIds.add(chosen.id);
+        this.assignMinionToTask(chosen.id, task.id, cat);
+      }
     }
   }
 
-  private assignMinionToTask(minionId: string, taskId: string): void {
-    this._activeMissions.update(queue =>
-      queue.map(t =>
+  private assignMinionToTask(minionId: string, taskId: string, dept: TaskCategory): void {
+    this._departmentQueues.update(queues => ({
+      ...queues,
+      [dept]: queues[dept].map(t =>
         t.id === taskId
           ? { ...t, status: 'in-progress' as TaskStatus, assignedMinionId: minionId }
           : t
-      )
-    );
+      ),
+    }));
     this._minions.update(list =>
       list.map(m =>
         m.id === minionId
@@ -683,6 +933,20 @@ export class GameStateService {
           : m
       )
     );
+  }
+
+  /** Unassign a minion from a task (e.g., when captured during a raid) */
+  private unassignMinionFromTask(minionId: string, taskId: string): void {
+    for (const cat of ALL_CATEGORIES) {
+      this._departmentQueues.update(queues => ({
+        ...queues,
+        [cat]: queues[cat].map(t =>
+          t.id === taskId
+            ? { ...t, status: 'queued' as TaskStatus, assignedMinionId: null }
+            : t
+        ),
+      }));
+    }
   }
 
   private freeMinionFromTask(minionId: string, taskTier: TaskTier, taskCategory: TaskCategory): void {
@@ -721,10 +985,11 @@ export class GameStateService {
 
   // ─── Breakout missions ──────────────────────
   private tryCreateBreakoutMission(): Task | null {
-    // Find a captured minion that doesn't already have a breakout mission on board or active
+    // Find a captured minion that doesn't already have a breakout mission
+    const allTasks = this.activeMissions();
     const existingTargetIds = new Set([
       ...this._missionBoard().filter(m => m.isBreakoutOp).map(m => m.breakoutTargetId),
-      ...this._activeMissions().filter(m => m.isBreakoutOp).map(m => m.breakoutTargetId),
+      ...allTasks.filter(m => m.isBreakoutOp).map(m => m.breakoutTargetId),
     ]);
 
     const eligible = this._capturedMinions().filter(c => !existingTargetIds.has(c.minion.id));
@@ -753,6 +1018,7 @@ export class GameStateService {
       queuedAt: Date.now(),
       isBreakoutOp: true,
       breakoutTargetId: target.minion.id,
+      assignedQueue: null,
     };
   }
 
@@ -770,8 +1036,13 @@ export class GameStateService {
     const captured = this._capturedMinions().find(c => c.minion.id === targetId);
     if (!captured) return;
 
-    // Restore minion
-    this._minions.update(list => [...list, { ...captured.minion, status: 'idle' as const, assignedTaskId: null }]);
+    // Restore minion with their original department assignment
+    this._minions.update(list => [...list, {
+      ...captured.minion,
+      status: 'idle' as const,
+      assignedTaskId: null,
+      assignedDepartment: captured.minion.assignedDepartment ?? captured.minion.specialty,
+    }]);
     this._capturedMinions.update(list => list.filter(c => c.minion.id !== targetId));
     this._completedCount.update(c => c + 1);
 
@@ -808,6 +1079,18 @@ export class GameStateService {
       const reducedGain = Math.max(1, Math.round(notGain * (1 - researchReduction)));
       this._notoriety.update(n => Math.min(MAX_NOTORIETY, n + reducedGain));
     }
+
+    // Award resources based on category
+    if (taskTier && taskCategory) {
+      if (taskCategory === 'research') {
+        const suppliesGain = SUPPLIES_PER_TIER[taskTier] ?? 0;
+        this._supplies.update(s => s + suppliesGain);
+      }
+      if (taskCategory === 'schemes') {
+        const intelGain = INTEL_PER_TIER[taskTier] ?? 0;
+        this._intel.update(i => i + intelGain);
+      }
+    }
   }
 
   private awardDeptXp(category: TaskCategory, tier: TaskTier): void {
@@ -836,8 +1119,23 @@ export class GameStateService {
     });
   }
 
-  private cleanCompletedTasks(): void {
-    this._activeMissions.update(queue =>
+  // ─── Queue cleanup ─────────────────────────
+  private cleanAllQueues(): void {
+    for (const cat of ALL_CATEGORIES) {
+      this.cleanDeptQueue(cat);
+    }
+    this.cleanPlayerQueue();
+  }
+
+  private cleanDeptQueue(cat: TaskCategory): void {
+    this._departmentQueues.update(queues => ({
+      ...queues,
+      [cat]: queues[cat].filter(t => t.status !== 'complete'),
+    }));
+  }
+
+  private cleanPlayerQueue(): void {
+    this._playerQueue.update(queue =>
       queue.filter(t => t.status !== 'complete')
     );
   }
@@ -861,6 +1159,7 @@ export class GameStateService {
       assignedTaskId: null,
       stats: { speed: randStat(), efficiency: randStat() },
       specialty,
+      assignedDepartment: specialty, // default to their specialty
       xp: 0,
       level: 1,
     };

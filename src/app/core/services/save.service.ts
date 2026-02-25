@@ -3,7 +3,7 @@ import { GameStateService } from './game-state.service';
 import { SaveData } from '../models/save-data.model';
 
 const STORAGE_KEY = 'minion-manager-save';
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 @Injectable({ providedIn: 'root' })
 export class SaveService {
@@ -49,7 +49,33 @@ export class SaveService {
       data.capturedMinions = data.capturedMinions ?? [];
       data.version = 2;
     }
-    // Future migrations: if (data.version < 3) { ... data.version = 3; }
+    if (data.version < 3) {
+      // v2 → v3: Add kanban queues, resources, minion department assignments
+      // activeMissions will be migrated into department queues by loadSnapshot
+      data.departmentQueues = data.departmentQueues ?? {
+        schemes: [], heists: [], research: [], mayhem: [],
+      };
+      data.playerQueue = data.playerQueue ?? [];
+      data.resources = data.resources ?? { supplies: 0, intel: 0 };
+
+      // Ensure all minions have assignedDepartment (default to specialty)
+      if (data.minions) {
+        data.minions = data.minions.map(m => ({
+          ...m,
+          assignedDepartment: (m as any).assignedDepartment ?? m.specialty,
+        }));
+      }
+
+      // Ensure all tasks have assignedQueue
+      if (data.activeMissions) {
+        data.activeMissions = data.activeMissions.map(t => ({
+          ...t,
+          assignedQueue: (t as any).assignedQueue ?? t.template.category,
+        }));
+      }
+
+      data.version = 3;
+    }
     return data;
   }
 }

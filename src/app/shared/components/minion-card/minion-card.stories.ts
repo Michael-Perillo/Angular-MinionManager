@@ -10,6 +10,7 @@ const makeMinion = (overrides: Partial<Minion> = {}): Minion => ({
   assignedTaskId: null,
   stats: { speed: 1.0, efficiency: 1.1 },
   specialty: 'schemes',
+  assignedDepartment: 'schemes',
   xp: 0,
   level: 1,
   ...overrides,

@@ -1,6 +1,7 @@
 export type TaskTier = 'petty' | 'sinister' | 'diabolical' | 'legendary';
 export type TaskCategory = 'schemes' | 'heists' | 'research' | 'mayhem';
 export type TaskStatus = 'queued' | 'in-progress' | 'complete';
+export type QueueTarget = TaskCategory | 'player';
 
 export interface TaskTemplate {
   name: string;
@@ -26,6 +27,7 @@ export interface Task {
   isCoverOp?: boolean;
   isBreakoutOp?: boolean;
   breakoutTargetId?: string;
+  assignedQueue: QueueTarget | null;
 }
 
 export const TIER_CONFIG: Record<TaskTier, { gold: number; time: number; clicks: number }> = {

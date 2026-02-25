@@ -37,6 +37,7 @@ describe('PrisonPanelComponent', () => {
         assignedTaskId: null,
         stats: { speed: 1.0, efficiency: 1.0 },
         specialty: 'heists',
+        assignedDepartment: 'heists',
         xp: 0,
         level: 5,
       },
@@ -54,7 +55,7 @@ describe('PrisonPanelComponent', () => {
       minion: {
         id: 'm1', name: 'X', appearance: { color: '#000', accessory: 'none' },
         status: 'idle', assignedTaskId: null, stats: { speed: 1, efficiency: 1 },
-        specialty: 'schemes', xp: 0, level: 1,
+        specialty: 'schemes', assignedDepartment: 'schemes', xp: 0, level: 1,
       },
       capturedAt: 0,
       expiresAt: 300_000,
@@ -80,7 +81,7 @@ describe('PrisonPanelComponent', () => {
       minion: {
         id: 'm1', name: 'X', appearance: { color: '#000', accessory: 'none' },
         status: 'idle', assignedTaskId: null, stats: { speed: 1, efficiency: 1 },
-        specialty: 'schemes', xp: 0, level: 1,
+        specialty: 'schemes', assignedDepartment: 'schemes', xp: 0, level: 1,
       },
       capturedAt: 0,
       expiresAt: 300_000,
@@ -109,7 +110,7 @@ describe('PrisonPanelComponent', () => {
       minion: {
         id: 'm1', name: 'X', appearance: { color: '#000', accessory: 'none' },
         status: 'idle', assignedTaskId: null, stats: { speed: 1, efficiency: 1 },
-        specialty: 'schemes', xp: 0, level: 1,
+        specialty: 'schemes', assignedDepartment: 'schemes', xp: 0, level: 1,
       },
       capturedAt: 0,
       expiresAt: 100_000,

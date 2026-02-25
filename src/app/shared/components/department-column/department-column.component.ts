@@ -1,0 +1,199 @@
+import { Component, ChangeDetectionStrategy, input, output, computed } from '@angular/core';
+import { CdkDropList, CdkDrag, CdkDragDrop, CdkDragPreview } from '@angular/cdk/drag-drop';
+import { Task, TaskCategory } from '../../../core/models/task.model';
+import { Minion } from '../../../core/models/minion.model';
+import { Department, DEPARTMENT_LABELS } from '../../../core/models/department.model';
+import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
+import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
+
+@Component({
+  selector: 'app-department-column',
+  standalone: true,
+  imports: [CdkDropList, CdkDrag, CdkDragPreview, TierBadgeComponent, ProgressBarComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="flex flex-col h-full min-w-[280px] max-w-[320px]">
+      <!-- Column header -->
+      <div class="flex items-center justify-between px-3 py-2 rounded-t-lg border border-border bg-bg-secondary/80">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">{{ deptLabel().icon }}</span>
+          <div>
+            <h3 class="text-sm font-bold text-text-primary uppercase tracking-wider">
+              {{ deptLabel().label }}
+            </h3>
+            <span class="text-[10px] text-text-muted">Dept Lv.{{ department().level }}</span>
+          </div>
+        </div>
+        <span class="text-xs text-text-muted">
+          {{ assignedMinions().length }} minion{{ assignedMinions().length !== 1 ? 's' : '' }}
+        </span>
+      </div>
+
+      <!-- Drop zone -->
+      <div
+        class="flex-1 flex flex-col gap-1 p-2 border border-t-0 border-border rounded-b-lg bg-bg-card/30 min-h-[200px] overflow-y-auto"
+        cdkDropList
+        [id]="category()"
+        [cdkDropListData]="category()"
+        [cdkDropListConnectedTo]="connectedDropLists()"
+        (cdkDropListDropped)="onDrop($event)">
+
+        <!-- Minion sub-lanes: in-progress tasks -->
+        @for (minion of assignedMinions(); track minion.id) {
+          @if (minionTask(minion); as task) {
+            <div class="mb-1">
+              <div class="flex items-center gap-1.5 px-2 py-1 text-[10px] text-text-muted uppercase tracking-wider">
+                <div
+                  class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0"
+                  [style.background-color]="minion.appearance.color">
+                  {{ getAccessoryEmoji(minion) }}
+                </div>
+                <span class="font-semibold text-text-secondary">{{ minion.name }}</span>
+                <span>{{ getCategoryIcon(minion.specialty) }}</span>
+              </div>
+              <div class="game-card p-2 animate-card-glow">
+                <div class="flex items-center justify-between gap-1 mb-1">
+                  <span class="text-xs font-semibold text-text-primary truncate">{{ task.template.name }}</span>
+                  @if (task.goldReward) {
+                    <span class="text-xs text-gold font-bold shrink-0">{{ task.goldReward }}g</span>
+                  }
+                </div>
+                <app-progress-bar
+                  [progress]="task.timeRemaining"
+                  [total]="task.timeToComplete"
+                  [tier]="task.tier" />
+                <div class="flex items-center justify-between text-[10px] text-text-muted mt-1">
+                  <span>{{ Math.round((1 - task.timeRemaining / task.timeToComplete) * 100) }}%</span>
+                  <span>{{ task.timeRemaining }}s</span>
+                </div>
+              </div>
+            </div>
+          } @else {
+            <div class="flex items-center gap-1.5 px-2 py-1 text-[10px] text-text-muted">
+              <div
+                class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0 animate-minion-idle"
+                [style.background-color]="minion.appearance.color">
+                {{ getAccessoryEmoji(minion) }}
+              </div>
+              <span class="text-text-secondary">{{ minion.name }}</span>
+              <span class="italic">idle</span>
+            </div>
+          }
+        }
+
+        <!-- Queued section -->
+        @if (queuedTasks().length > 0) {
+          <div class="flex items-center gap-1 px-2 py-1 mt-1 text-[10px] text-text-muted uppercase tracking-wider border-t border-border/50">
+            <span>Queued</span>
+            <span>({{ queuedTasks().length }})</span>
+          </div>
+        }
+
+        @for (task of queuedTasks(); track task.id) {
+          <div
+            class="game-card p-2 cursor-grab active:cursor-grabbing"
+            cdkDrag
+            [cdkDragData]="task">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1 min-w-0">
+                <app-tier-badge [tier]="task.tier" />
+                <span class="text-xs font-semibold text-text-primary truncate">{{ task.template.name }}</span>
+              </div>
+              @if (task.goldReward) {
+                <span class="text-xs text-gold font-bold shrink-0">{{ task.goldReward }}g</span>
+              } @else if (task.isCoverOp) {
+                <span class="text-[10px] text-green-400 shrink-0">-Heat</span>
+              } @else if (task.isBreakoutOp) {
+                <span class="text-[10px] text-orange-400 shrink-0">Rescue</span>
+              }
+            </div>
+            <div class="text-[10px] text-text-muted mt-0.5">
+              {{ task.timeToComplete }}s / {{ task.clicksRequired }} clicks
+            </div>
+
+            <!-- Drag preview -->
+            <div *cdkDragPreview class="game-card p-2 w-[200px] opacity-90 shadow-lg shadow-gold/20">
+              <div class="flex items-center gap-1">
+                <app-tier-badge [tier]="task.tier" />
+                <span class="text-xs font-semibold text-text-primary truncate">{{ task.template.name }}</span>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Empty state -->
+        @if (tasks().length === 0) {
+          <div class="flex-1 flex items-center justify-center text-text-muted text-xs p-4 text-center">
+            <p>Drop missions here</p>
+          </div>
+        }
+      </div>
+    </div>
+  `,
+  styles: `
+    :host {
+      display: block;
+    }
+    .cdk-drag-preview {
+      z-index: 1000;
+    }
+    .cdk-drag-placeholder {
+      opacity: 0.3;
+    }
+    .cdk-drop-list-dragging .game-card:not(.cdk-drag-placeholder) {
+      transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+    }
+  `,
+})
+export class DepartmentColumnComponent {
+  category = input.required<TaskCategory>();
+  tasks = input.required<Task[]>();
+  department = input.required<Department>();
+  assignedMinions = input.required<Minion[]>();
+  connectedDropLists = input<string[]>([]);
+  allMinions = input<Minion[]>([]);
+
+  taskDropped = output<CdkDragDrop<any>>();
+  taskReordered = output<string[]>();
+
+  protected readonly Math = Math;
+
+  deptLabel = computed(() => DEPARTMENT_LABELS[this.category()]);
+
+  inProgressTasks = computed(() =>
+    this.tasks().filter(t => t.status === 'in-progress' && t.assignedMinionId)
+  );
+
+  queuedTasks = computed(() =>
+    this.tasks().filter(t => t.status === 'queued' || (t.status === 'in-progress' && !t.assignedMinionId))
+  );
+
+  minionTask(minion: Minion): Task | undefined {
+    if (minion.status !== 'working' || !minion.assignedTaskId) return undefined;
+    return this.tasks().find(t => t.id === minion.assignedTaskId);
+  }
+
+  getAccessoryEmoji(minion: Minion): string {
+    switch (minion.appearance.accessory) {
+      case 'goggles': return '🥽';
+      case 'helmet': return '⛑️';
+      case 'cape': return '🦹';
+      case 'horns': return '😈';
+      case 'none': return '👾';
+    }
+  }
+
+  getCategoryIcon(category: string): string {
+    switch (category) {
+      case 'schemes': return '🗝️';
+      case 'heists': return '💎';
+      case 'research': return '🧪';
+      case 'mayhem': return '💥';
+      default: return '';
+    }
+  }
+
+  onDrop(event: CdkDragDrop<any>): void {
+    this.taskDropped.emit(event);
+  }
+}

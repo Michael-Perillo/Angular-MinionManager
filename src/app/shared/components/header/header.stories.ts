@@ -17,6 +17,11 @@ export const EarlyGame: Story = {
     minionCount: 0,
     villainLevel: 1,
     villainTitle: 'Petty Troublemaker',
+    notoriety: 5,
+    supplies: 0,
+    intel: 0,
+    raidActive: false,
+    capturedCount: 0,
   },
 };
 
@@ -27,6 +32,11 @@ export const MidGame: Story = {
     minionCount: 2,
     villainLevel: 4,
     villainTitle: 'Aspiring Villain',
+    notoriety: 35,
+    supplies: 8,
+    intel: 5,
+    raidActive: false,
+    capturedCount: 0,
   },
 };
 
@@ -37,6 +47,26 @@ export const LateGame: Story = {
     minionCount: 5,
     villainLevel: 8,
     villainTitle: 'Criminal Mastermind',
+    notoriety: 72,
+    supplies: 42,
+    intel: 28,
+    raidActive: false,
+    capturedCount: 1,
+  },
+};
+
+export const RaidActive: Story = {
+  args: {
+    gold: 800,
+    completedCount: 80,
+    minionCount: 4,
+    villainLevel: 6,
+    villainTitle: 'Notorious Scoundrel',
+    notoriety: 85,
+    supplies: 20,
+    intel: 12,
+    raidActive: true,
+    capturedCount: 0,
   },
 };
 
@@ -47,6 +77,11 @@ export const JustSaved: Story = {
     minionCount: 3,
     villainLevel: 5,
     villainTitle: 'Notorious Scoundrel',
+    notoriety: 47,
+    supplies: 15,
+    intel: 8,
     lastSaved: Date.now(),
+    raidActive: false,
+    capturedCount: 0,
   },
 };

@@ -260,11 +260,15 @@ describe('GameStateService', () => {
 
   describe('tickTime', () => {
     it('should auto-assign idle minions to queued active missions', () => {
-      // Accept a mission, then hire a minion
+      // Accept a mission, then hire a minion and assign to matching department
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       service.addGold(50);
       service.hireMinion();
+
+      // Reassign minion to the task's department so auto-assign can work
+      const minion = service.minions()[0];
+      service.reassignMinion(minion.id, mission.template.category);
 
       service.tickTime();
       expect(service.workingMinions().length).toBe(1);
@@ -276,6 +280,11 @@ describe('GameStateService', () => {
       service.acceptMission(mission.id);
       service.addGold(50);
       service.hireMinion();
+
+      // Reassign minion to matching department
+      const minion = service.minions()[0];
+      service.reassignMinion(minion.id, mission.template.category);
+
       service.tickTime(); // assigns minion
 
       const task = service.inProgressTasks()[0];
@@ -442,6 +451,10 @@ describe('GameStateService', () => {
       setupGameWithMinions(service, 1);
       const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
       service.acceptMission(mission.id);
+
+      // Reassign minion to matching department
+      service.reassignMinion(service.minions()[0].id, mission.template.category);
+
       service.tickTime(); // auto-assign
 
       const task = service.activeMissions().find(t => t.id === mission.id)!;
@@ -497,79 +510,69 @@ describe('GameStateService', () => {
   });
 
   describe('autoAssignMinions', () => {
-    it('should prefer specialty-matching minions', () => {
+    it('should assign minion to task in its department', () => {
       service.addGold(10_000);
-      // Hire multiple minions (randomized specialties)
-      for (let i = 0; i < 5; i++) {
-        service.hireMinion();
-      }
-      expect(service.minions().length).toBe(5);
+      service.hireMinion();
 
-      // Accept a mission
+      // Accept a mission and reassign the minion to match
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
+      const minion = service.minions()[0];
+      service.reassignMinion(minion.id, mission.template.category);
+
       service.tickTime();
 
-      // Verify at least one minion was assigned
       const task = service.activeMissions().find(t => t.id === mission.id);
       expect(task).toBeDefined();
       expect(task!.assignedMinionId).not.toBeNull();
-
-      // If a specialty match existed among idle minions, it should have been chosen
-      const assignedMinion = service.minions().find(m => m.id === task!.assignedMinionId);
-      const allMinions = service.minions();
-      const hasMatchingSpecialty = allMinions.some(m => m.specialty === mission.template.category);
-      if (hasMatchingSpecialty && assignedMinion) {
-        expect(assignedMinion.specialty).toBe(mission.template.category);
-      }
     });
 
     it('should not double-assign a minion', () => {
       setupGameWithMinions(service, 1);
-      // Accept 2 missions
-      service.acceptMission(service.missionBoard()[0].id);
-      service.acceptMission(service.missionBoard()[0].id);
-      service.tickTime();
-
-      // Only 1 minion → only 1 task should be assigned
-      const assigned = service.activeMissions().filter(t => t.assignedMinionId !== null);
-      expect(assigned.length).toBe(1);
-    });
-
-    it('should prioritize higher tier tasks (legendary first)', () => {
-      setupGameWithMinions(service, 1);
-
-      // Accept multiple missions of different tiers
+      // Accept 2 missions of same category so they go to same dept queue
       const missions = service.missionBoard();
-      const petty = missions.find(m => m.tier === 'petty' && !m.isCoverOp && !m.isBreakoutOp);
-      const higherTier = missions.find(m =>
-        (m.tier === 'sinister' || m.tier === 'diabolical' || m.tier === 'legendary') &&
-        !m.isCoverOp && !m.isBreakoutOp
-      );
+      const cat = missions[0].template.category;
+      const sameCat = missions.filter(m => m.template.category === cat);
 
-      // At level 1 departments, only petty missions are available, so a higher tier may not exist.
-      // Accept 2 petty tasks and verify the minion is assigned to exactly one.
-      if (!higherTier) {
-        const petty2 = missions.filter(m => m.tier === 'petty' && !m.isCoverOp && !m.isBreakoutOp);
-        if (petty2.length >= 2) {
-          service.acceptMission(petty2[0].id);
-          service.acceptMission(petty2[1].id);
-          service.tickTime();
-          const assigned = service.activeMissions().filter(t => t.assignedMinionId !== null);
-          expect(assigned.length).toBe(1); // only 1 minion, so only 1 assignment
-        } else {
-          expect(petty2.length).toBeGreaterThanOrEqual(0); // ensure at least one expectation
-        }
-      } else {
-        service.acceptMission(petty!.id);
-        service.acceptMission(higherTier.id);
+      if (sameCat.length >= 2) {
+        service.acceptMission(sameCat[0].id);
+        service.acceptMission(sameCat[1].id);
+        // Reassign minion to this department
+        service.reassignMinion(service.minions()[0].id, cat);
         service.tickTime();
 
-        const assignedTask = service.activeMissions().find(t => t.assignedMinionId !== null);
-        expect(assignedTask).toBeDefined();
-        const tierPriority: Record<string, number> = { legendary: 4, diabolical: 3, sinister: 2, petty: 1 };
-        expect(tierPriority[assignedTask!.tier]).toBeGreaterThanOrEqual(tierPriority[higherTier.tier]);
+        // Only 1 minion → only 1 task should be assigned
+        const assigned = service.activeMissions().filter(t => t.assignedMinionId !== null);
+        expect(assigned.length).toBe(1);
+      } else {
+        // Fallback: just accept one and verify
+        service.acceptMission(missions[0].id);
+        service.reassignMinion(service.minions()[0].id, missions[0].template.category);
+        service.tickTime();
+        const assigned = service.activeMissions().filter(t => t.assignedMinionId !== null);
+        expect(assigned.length).toBe(1);
       }
+    });
+
+    it('should not assign minion to task in different department', () => {
+      service.addGold(10_000);
+      service.hireMinion();
+
+      const mission = service.missionBoard()[0];
+      service.acceptMission(mission.id);
+
+      // Assign minion to a DIFFERENT department than the task
+      const minion = service.minions()[0];
+      const otherDepts = (['schemes', 'heists', 'research', 'mayhem'] as const)
+        .filter(c => c !== mission.template.category);
+      service.reassignMinion(minion.id, otherDepts[0]);
+
+      service.tickTime();
+
+      // Minion should NOT be assigned (different department)
+      const task = service.activeMissions().find(t => t.id === mission.id);
+      expect(task).toBeDefined();
+      expect(task!.assignedMinionId).toBeNull();
     });
   });
 
@@ -745,6 +748,11 @@ describe('GameStateService', () => {
       setupGameWithMinions(service, 1);
       const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
       service.acceptMission(mission.id);
+
+      // Reassign minion to matching department
+      const minion = service.minions()[0];
+      service.reassignMinion(minion.id, mission.template.category);
+
       service.tickTime(); // assigns minion
 
       const minionBefore = service.minions()[0];
@@ -766,15 +774,16 @@ describe('GameStateService', () => {
 
       const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
       service.acceptMission(mission.id);
+
+      // Reassign minion to matching department
+      service.reassignMinion(service.minions()[0].id, mission.template.category);
+
       service.tickTime();
 
       tickUntilComplete(service, 100);
 
       const minion = service.minions()[0];
       if (minion) {
-        // With upgrade level 1, XP gain = round(baseXp * 1.20)
-        // Base XP for petty tier = 3, so expected = round(3 * 1.2) = 4
-        // Can't be exactly 3 with upgrade
         expect(minion.xp).toBeGreaterThan(0);
       }
     });
@@ -838,9 +847,9 @@ describe('GameStateService', () => {
       expect(service.capturedMinions().length).toBe(0);
     });
 
-    it('should include version 2 in snapshot', () => {
+    it('should include version 3 in snapshot', () => {
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(2);
+      expect(snapshot.version).toBe(3);
     });
   });
 
