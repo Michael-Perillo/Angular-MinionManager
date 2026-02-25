@@ -1,10 +1,12 @@
 import { Component, ChangeDetectionStrategy, input, computed } from '@angular/core';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department, deptXpForLevel, DEPARTMENT_LABELS, availableTiersForDeptLevel } from '../../../core/models/department.model';
+import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
   selector: 'app-department-panel',
   standalone: true,
+  imports: [TooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="flex flex-col gap-3">
@@ -14,7 +16,10 @@ import { Department, deptXpForLevel, DEPARTMENT_LABELS, availableTiersForDeptLev
 
       <div class="flex flex-col gap-2">
         @for (dept of deptList(); track dept.category) {
-          <div class="game-card p-3">
+          <div
+            class="game-card p-3"
+            [appTooltip]="getDeptTooltip(dept.category)"
+            [appTooltipPosition]="'left'">
             <div class="flex items-center justify-between mb-1">
               <div class="flex items-center gap-2">
                 <span class="text-sm">{{ getDeptIcon(dept.category) }}</span>
@@ -45,6 +50,33 @@ import { Department, deptXpForLevel, DEPARTMENT_LABELS, availableTiersForDeptLev
                 {{ dept.xp }}/{{ getNextLevelXp(dept.level) }}
               </span>
             </div>
+
+            <!-- Research passive -->
+            @if (dept.category === 'research' && dept.level > 1) {
+              <div class="mt-1 text-[10px] text-green-400">
+                Passive: Notoriety gain reduced by {{ (dept.level - 1) * 5 }}%
+              </div>
+            }
+
+            <!-- Tier roadmap -->
+            <div class="mt-1.5 flex items-center gap-1 flex-wrap">
+              @for (milestone of tierMilestones; track milestone.tier) {
+                <span
+                  class="text-[9px] px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                  [class]="dept.level >= milestone.level
+                    ? getTierClass(milestone.tier)
+                    : 'bg-white/5 text-text-muted/50'"
+                  [appTooltip]="'Unlocks at dept level ' + milestone.level"
+                  [appTooltipPosition]="'bottom'">
+                  @if (dept.level >= milestone.level) {
+                    <span class="text-[8px]">✓</span>
+                  } @else {
+                    <span class="text-[8px]">Lv.{{ milestone.level }}</span>
+                  }
+                  {{ milestone.tier }}
+                </span>
+              }
+            </div>
           </div>
         }
       </div>
@@ -59,6 +91,13 @@ import { Department, deptXpForLevel, DEPARTMENT_LABELS, availableTiersForDeptLev
 export class DepartmentPanelComponent {
   departments = input.required<Record<TaskCategory, Department>>();
 
+  tierMilestones = [
+    { tier: 'petty', level: 1 },
+    { tier: 'sinister', level: 3 },
+    { tier: 'diabolical', level: 5 },
+    { tier: 'legendary', level: 8 },
+  ];
+
   deptList = computed(() => {
     const depts = this.departments();
     return (['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[]).map(cat => depts[cat]);
@@ -70,6 +109,16 @@ export class DepartmentPanelComponent {
 
   getDeptLabel(category: TaskCategory): string {
     return DEPARTMENT_LABELS[category].label;
+  }
+
+  getDeptTooltip(category: TaskCategory): string {
+    let tip = `Complete ${category} missions to level up. Higher levels unlock better tiers.`;
+    if (category === 'research') {
+      const level = this.departments().research.level;
+      const reduction = Math.max(0, (level - 1) * 5);
+      tip += ` Passive: Reduces notoriety gain by ${reduction}%.`;
+    }
+    return tip;
   }
 
   getTierBadges(level: number): string[] {

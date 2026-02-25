@@ -5,6 +5,7 @@ import {
 import {
   Minion, MinionAppearance, MinionStats, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES,
   SPECIALTY_CATEGORIES, SPECIALTY_BONUS, levelFromXp, xpForLevel,
+  CapturedMinion, PRISON_DURATION_MS,
 } from '../models/minion.model';
 import { GameNotification } from '../models/game-state.model';
 import { TASK_POOL } from '../models/task-pool';
@@ -16,6 +17,7 @@ import {
   NOTORIETY_PER_TIER, MAX_NOTORIETY, getThreatLevel, notorietyGoldPenalty,
   bribeCost, COVER_TRACKS_REDUCTION, ThreatLevel,
 } from '../models/notoriety.model';
+import { SaveData } from '../models/save-data.model';
 
 @Injectable({ providedIn: 'root' })
 export class GameStateService {
@@ -38,6 +40,8 @@ export class GameStateService {
   private readonly _notoriety = signal(0);
   private readonly _raidActive = signal(false);
   private readonly _raidTimer = signal(0); // seconds to defend
+  private readonly _capturedMinions = signal<CapturedMinion[]>([]);
+  private readonly _lastSaved = signal(0);
 
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
@@ -52,6 +56,8 @@ export class GameStateService {
   readonly notoriety = this._notoriety.asReadonly();
   readonly raidActive = this._raidActive.asReadonly();
   readonly raidTimer = this._raidTimer.asReadonly();
+  readonly capturedMinions = this._capturedMinions.asReadonly();
+  readonly lastSaved = this._lastSaved.asReadonly();
 
   readonly threatLevel = computed(() => getThreatLevel(this._notoriety()));
 
@@ -142,6 +148,11 @@ export class GameStateService {
 
   private lastBoardRefresh = 0;
   private usedNameIndices = new Set<number>();
+  private tickCount = 0;
+  private readonly AUTO_SAVE_INTERVAL = 30; // ticks between auto-saves
+
+  /** External callback invoked on auto-save tick. Set by SaveService integration. */
+  onAutoSave: (() => void) | null = null;
 
   // ─── Game lifecycle ────────────────────────
   initializeGame(): void {
@@ -162,8 +173,10 @@ export class GameStateService {
     this._notoriety.set(0);
     this._raidActive.set(false);
     this._raidTimer.set(0);
+    this._capturedMinions.set([]);
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
+    this.tickCount = 0;
 
     // Fill the board immediately
     this.fillBoard();
@@ -171,6 +184,55 @@ export class GameStateService {
 
   resetGame(): void {
     this.initializeGame();
+  }
+
+  // ─── Snapshot (persistence) ─────────────────
+  getSnapshot(): SaveData {
+    return {
+      version: 2,
+      savedAt: Date.now(),
+      gold: this._gold(),
+      completedCount: this._completedCount(),
+      totalGoldEarned: this._totalGoldEarned(),
+      notoriety: this._notoriety(),
+      minions: this._minions(),
+      departments: this._departments(),
+      upgradeLevels: this._upgrades().map(u => ({ id: u.id, currentLevel: u.currentLevel })),
+      activeMissions: this._activeMissions(),
+      missionBoard: this._missionBoard(),
+      raidActive: this._raidActive(),
+      raidTimer: this._raidTimer(),
+      usedNameIndices: [...this.usedNameIndices],
+      lastBoardRefresh: this.lastBoardRefresh,
+      capturedMinions: this._capturedMinions(),
+    };
+  }
+
+  loadSnapshot(data: SaveData): void {
+    this._gold.set(data.gold);
+    this._completedCount.set(data.completedCount);
+    this._totalGoldEarned.set(data.totalGoldEarned);
+    this._notoriety.set(data.notoriety);
+    this._minions.set(data.minions);
+    this._departments.set(data.departments);
+    this._activeMissions.set(data.activeMissions);
+    this._missionBoard.set(data.missionBoard);
+    this._raidActive.set(data.raidActive);
+    this._raidTimer.set(data.raidTimer);
+    this._capturedMinions.set(data.capturedMinions ?? []);
+    this._notifications.set([]);
+
+    // Upgrades: start from defaults, merge saved levels
+    const upgrades = createDefaultUpgrades();
+    for (const saved of data.upgradeLevels) {
+      const match = upgrades.find(u => u.id === saved.id);
+      if (match) match.currentLevel = saved.currentLevel;
+    }
+    this._upgrades.set(upgrades);
+
+    this.usedNameIndices = new Set(data.usedNameIndices);
+    this.lastBoardRefresh = data.lastBoardRefresh;
+    this.tickCount = 0;
   }
 
   addGold(amount: number): void {
@@ -252,7 +314,9 @@ export class GameStateService {
 
         const newClicks = task.clicksRemaining - power;
         if (newClicks <= 0) {
-          if (task.isCoverOp) {
+          if (task.isBreakoutOp) {
+            this.completeBreakout(task);
+          } else if (task.isCoverOp) {
             this.completeCoverOp(task.template.name);
           } else {
             const bonusGold = Math.round(task.goldReward * clickGoldBonus);
@@ -300,7 +364,9 @@ export class GameStateService {
         const newTime = task.timeRemaining - speedMult;
 
         if (newTime <= 0) {
-          if (task.isCoverOp) {
+          if (task.isBreakoutOp) {
+            this.completeBreakout(task);
+          } else if (task.isCoverOp) {
             this.completeCoverOp(task.template.name);
           } else {
             const effMult = minion ? this.getMinionEfficiencyMultiplier(minion, task.template.category) : 1;
@@ -345,12 +411,11 @@ export class GameStateService {
       }
     }
 
-    // 7. Raid countdown: if not defended in time, lose a minion
+    // 7. Raid countdown: if not defended in time, capture a minion
     if (this._raidActive()) {
       this._raidTimer.update(t => t - 1);
       if (this._raidTimer() <= 0) {
         this._raidActive.set(false);
-        // Lose a random idle minion (or any minion if none idle)
         const minions = this._minions();
         if (minions.length > 0) {
           const idle = minions.filter(m => m.status === 'idle');
@@ -369,17 +434,54 @@ export class GameStateService {
             );
           }
 
+          // Move to prison instead of deleting
           this._minions.update(list => list.filter(m => m.id !== target.id));
-          this.addNotification(`Heroes captured ${target.name}! (-1 minion)`, 'minion');
+          this._capturedMinions.update(list => [...list, {
+            minion: { ...target, status: 'idle' as const, assignedTaskId: null },
+            capturedAt: now,
+            expiresAt: now + PRISON_DURATION_MS,
+            rescueDifficulty: target.level,
+          }]);
+          this.addNotification(
+            `Heroes captured ${target.name}! Break them out before they're gone for good!`,
+            'minion'
+          );
         }
         this._notoriety.update(n => Math.max(0, n - 15));
       }
     }
 
-    // 8. Clean old notifications
+    // 8. Prison expiry: permanently lose minions whose time ran out
+    const expired = this._capturedMinions().filter(c => now >= c.expiresAt);
+    if (expired.length > 0) {
+      for (const c of expired) {
+        this.addNotification(
+          `${c.minion.name} has been transferred to maximum security — gone for good.`,
+          'minion'
+        );
+      }
+      const expiredIds = new Set(expired.map(c => c.minion.id));
+      this._capturedMinions.update(list => list.filter(c => !expiredIds.has(c.minion.id)));
+      // Clean up breakout missions targeting expired prisoners
+      this._missionBoard.update(board =>
+        board.filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId))
+      );
+      this._activeMissions.update(active =>
+        active.filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId))
+      );
+    }
+
+    // 9. Clean old notifications
     this._notifications.update(list =>
       list.filter(n => now - n.timestamp < 4000)
     );
+
+    // 10. Auto-save
+    this.tickCount++;
+    if (this.tickCount % this.AUTO_SAVE_INTERVAL === 0 && this.onAutoSave) {
+      this.onAutoSave();
+      this._lastSaved.set(now);
+    }
   }
 
   dismissNotification(id: string): void {
@@ -426,6 +528,12 @@ export class GameStateService {
   }
 
   private createBoardMission(): Task {
+    // Chance to spawn breakout mission when minions are captured
+    if (this._capturedMinions().length > 0 && Math.random() < 0.20) {
+      const mission = this.tryCreateBreakoutMission();
+      if (mission) return mission;
+    }
+
     // Chance to spawn "Cover Your Tracks" mission when notoriety > 20
     if (this._notoriety() > 20 && Math.random() < this.COVER_TRACKS_CHANCE) {
       return this.createCoverTracksMission();
@@ -609,6 +717,69 @@ export class GameStateService {
     this._notoriety.update(n => Math.max(0, n - COVER_TRACKS_REDUCTION));
     this._completedCount.update(c => c + 1);
     this.addNotification(`"${taskName}" — notoriety reduced by ${COVER_TRACKS_REDUCTION}!`, 'task');
+  }
+
+  // ─── Breakout missions ──────────────────────
+  private tryCreateBreakoutMission(): Task | null {
+    // Find a captured minion that doesn't already have a breakout mission on board or active
+    const existingTargetIds = new Set([
+      ...this._missionBoard().filter(m => m.isBreakoutOp).map(m => m.breakoutTargetId),
+      ...this._activeMissions().filter(m => m.isBreakoutOp).map(m => m.breakoutTargetId),
+    ]);
+
+    const eligible = this._capturedMinions().filter(c => !existingTargetIds.has(c.minion.id));
+    if (eligible.length === 0) return null;
+
+    const target = eligible[Math.floor(Math.random() * eligible.length)];
+    const tier = this.breakoutTierFromLevel(target.rescueDifficulty);
+    const config = TIER_CONFIG[tier];
+
+    return {
+      id: crypto.randomUUID(),
+      template: {
+        name: `Prison Break: ${target.minion.name}`,
+        description: `Break ${target.minion.name} out of hero custody before it's too late!`,
+        category: 'mayhem',
+        tier,
+      },
+      status: 'queued',
+      tier,
+      goldReward: 0,
+      timeToComplete: config.time,
+      timeRemaining: config.time,
+      clicksRequired: config.clicks,
+      clicksRemaining: config.clicks,
+      assignedMinionId: null,
+      queuedAt: Date.now(),
+      isBreakoutOp: true,
+      breakoutTargetId: target.minion.id,
+    };
+  }
+
+  private breakoutTierFromLevel(level: number): TaskTier {
+    if (level <= 2) return 'petty';
+    if (level <= 4) return 'sinister';
+    if (level <= 7) return 'diabolical';
+    return 'legendary';
+  }
+
+  private completeBreakout(task: Task): void {
+    const targetId = task.breakoutTargetId;
+    if (!targetId) return;
+
+    const captured = this._capturedMinions().find(c => c.minion.id === targetId);
+    if (!captured) return;
+
+    // Restore minion
+    this._minions.update(list => [...list, { ...captured.minion, status: 'idle' as const, assignedTaskId: null }]);
+    this._capturedMinions.update(list => list.filter(c => c.minion.id !== targetId));
+    this._completedCount.update(c => c + 1);
+
+    // Jailbreaks are loud: +5 bonus notoriety on top of tier notoriety
+    const tierNotoriety = NOTORIETY_PER_TIER[task.tier];
+    this._notoriety.update(n => Math.min(MAX_NOTORIETY, n + tierNotoriety + 5));
+
+    this.addNotification(`${captured.minion.name} has been broken out! They're back in action!`, 'minion');
   }
 
   private awardGold(amount: number, taskName: string, taskTier?: TaskTier, taskCategory?: TaskCategory): void {

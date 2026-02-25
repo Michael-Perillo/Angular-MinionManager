@@ -1,9 +1,11 @@
 import { Component, ChangeDetectionStrategy, input, output, computed } from '@angular/core';
 import { ThreatLevel, getThreatLabel, bribeCost, MAX_NOTORIETY } from '../../../core/models/notoriety.model';
+import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
   selector: 'app-notoriety-bar',
   standalone: true,
+  imports: [TooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="game-card p-4 flex flex-col gap-2">
@@ -11,7 +13,11 @@ import { ThreatLevel, getThreatLabel, bribeCost, MAX_NOTORIETY } from '../../../
         <h3 class="text-sm font-bold uppercase tracking-wider text-text-secondary">
           Notoriety
         </h3>
-        <span class="text-xs font-bold px-2 py-0.5 rounded-full" [class]="threatClasses()">
+        <span
+          class="text-xs font-bold px-2 py-0.5 rounded-full"
+          [class]="threatClasses()"
+          [appTooltip]="'Raids begin at 60+ notoriety. Gold penalty starts at 35.'"
+          [appTooltipPosition]="'left'">
           {{ threatLabel() }}
         </span>
       </div>

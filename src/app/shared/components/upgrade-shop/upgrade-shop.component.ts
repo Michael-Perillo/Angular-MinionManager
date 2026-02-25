@@ -1,9 +1,11 @@
 import { Component, ChangeDetectionStrategy, input, output, computed, signal } from '@angular/core';
 import { Upgrade, upgradeCost, UpgradeCategory } from '../../../core/models/upgrade.model';
+import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
   selector: 'app-upgrade-shop',
   standalone: true,
+  imports: [TooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="flex flex-col gap-3">
@@ -28,7 +30,10 @@ import { Upgrade, upgradeCost, UpgradeCategory } from '../../../core/models/upgr
 
       <div class="flex flex-col gap-2">
         @for (upgrade of filteredUpgrades(); track upgrade.id) {
-          <div class="game-card p-3 flex items-center gap-3">
+          <div
+            class="game-card p-3 flex items-center gap-3"
+            [appTooltip]="getEffectTooltip(upgrade)"
+            [appTooltipPosition]="'left'">
             <span class="text-xl shrink-0">{{ upgrade.icon }}</span>
 
             <div class="flex-1 min-w-0">
@@ -39,6 +44,14 @@ import { Upgrade, upgradeCost, UpgradeCategory } from '../../../core/models/upgr
                 </span>
               </div>
               <p class="text-[10px] text-text-secondary mt-0.5">{{ upgrade.description }}</p>
+              @if (upgrade.currentLevel > 0) {
+                <p class="text-[10px] text-accent mt-0.5">
+                  Current: {{ getCurrentEffect(upgrade) }}
+                  @if (upgrade.currentLevel < upgrade.maxLevel) {
+                    | Next: {{ getNextEffect(upgrade) }}
+                  }
+                </p>
+              }
             </div>
 
             @if (upgrade.currentLevel < upgrade.maxLevel) {
@@ -88,5 +101,47 @@ export class UpgradeShopComponent {
 
   getCost(upgrade: Upgrade): number {
     return upgradeCost(upgrade);
+  }
+
+  getCurrentEffect(upgrade: Upgrade): string {
+    return this.computeEffect(upgrade, upgrade.currentLevel);
+  }
+
+  getNextEffect(upgrade: Upgrade): string {
+    return this.computeEffect(upgrade, upgrade.currentLevel + 1);
+  }
+
+  getEffectTooltip(upgrade: Upgrade): string {
+    if (upgrade.currentLevel === 0) return upgrade.description;
+    const current = this.getCurrentEffect(upgrade);
+    if (upgrade.currentLevel >= upgrade.maxLevel) return `${upgrade.name}: ${current} (MAX)`;
+    return `${upgrade.name}: ${current} (next: ${this.getNextEffect(upgrade)})`;
+  }
+
+  private computeEffect(upgrade: Upgrade, level: number): string {
+    switch (upgrade.id) {
+      case 'click-power':
+        return `+${level} click power`;
+      case 'click-gold':
+        return `+${level * 15}% gold from clicks`;
+      case 'minion-speed':
+        return `+${level * 8}% minion speed`;
+      case 'minion-efficiency':
+        return `+${level * 8}% minion efficiency`;
+      case 'minion-xp':
+        return `+${level * 20}% minion XP`;
+      case 'board-slots':
+        return `+${level * 3} board slots`;
+      case 'active-slots':
+        return `+${level} active slots`;
+      case 'board-refresh':
+        return `-${level * 20}% refresh time`;
+      case 'dept-xp-boost':
+        return `+${level * 15}% dept XP`;
+      case 'hire-discount':
+        return `-${level * 8}% hire cost`;
+      default:
+        return `Level ${level}`;
+    }
   }
 }

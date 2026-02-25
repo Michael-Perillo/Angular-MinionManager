@@ -1,11 +1,12 @@
 import { Component, ChangeDetectionStrategy, input, output, computed, signal } from '@angular/core';
 import { Task } from '../../../core/models';
 import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
+import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
   selector: 'app-mission-board',
   standalone: true,
-  imports: [TierBadgeComponent],
+  imports: [TierBadgeComponent, TooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="flex flex-col gap-3">
@@ -45,7 +46,7 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
           @for (mission of filteredMissions(); track mission.id) {
             <div
               class="game-card p-3 flex flex-col gap-2 cursor-pointer hover:border-accent/40 transition-all"
-              [class]="mission.isSpecialOp ? 'border-gold/40 animate-card-glow' : mission.isCoverOp ? 'border-green-500/40' : ''"
+              [class]="getMissionCardClass(mission)"
               (click)="canAccept() ? missionAccepted.emit(mission.id) : null">
               <!-- Header -->
               <div class="flex items-start justify-between gap-1">
@@ -54,13 +55,27 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
                     <span class="text-sm">{{ getCategoryIcon(mission.template.category) }}</span>
                     <app-tier-badge [tier]="mission.tier" />
                     @if (mission.isSpecialOp) {
-                      <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/20 text-gold font-bold uppercase tracking-wider">
+                      <span
+                        class="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/20 text-gold font-bold uppercase tracking-wider"
+                        [appTooltip]="'1.5x gold! Expires in 30s if not accepted'"
+                        [appTooltipPosition]="'top'">
                         Special Op
                       </span>
                     }
                     @if (mission.isCoverOp) {
-                      <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold uppercase tracking-wider">
+                      <span
+                        class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold uppercase tracking-wider"
+                        [appTooltip]="'Reduces notoriety by 15. No gold reward.'"
+                        [appTooltipPosition]="'top'">
                         Cover Op
+                      </span>
+                    }
+                    @if (mission.isBreakoutOp) {
+                      <span
+                        class="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 font-bold uppercase tracking-wider"
+                        [appTooltip]="'Rescue your captured minion! No gold, but loud (+5 notoriety).'"
+                        [appTooltipPosition]="'top'">
+                        Breakout
                       </span>
                     }
                   </div>
@@ -68,8 +83,10 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
                     {{ mission.template.name }}
                   </h3>
                 </div>
-                @if (mission.isCoverOp) {
-                  <span class="text-green-400 font-bold text-xs shrink-0">-Heat</span>
+                @if (mission.isCoverOp || mission.isBreakoutOp) {
+                  <span class="font-bold text-xs shrink-0" [class]="mission.isCoverOp ? 'text-green-400' : 'text-orange-400'">
+                    {{ mission.isCoverOp ? '-Heat' : 'Rescue' }}
+                  </span>
                 } @else {
                   <span class="text-gold font-bold text-sm shrink-0">{{ mission.goldReward }}g</span>
                 }
@@ -133,6 +150,13 @@ export class MissionBoardComponent {
 
   categoryCount(category: string): number {
     return this.missions().filter(m => m.template.category === category).length;
+  }
+
+  getMissionCardClass(mission: Task): string {
+    if (mission.isBreakoutOp) return 'border-orange-500/40 animate-card-glow';
+    if (mission.isSpecialOp) return 'border-gold/40 animate-card-glow';
+    if (mission.isCoverOp) return 'border-green-500/40';
+    return '';
   }
 
   getCategoryIcon(category: string): string {

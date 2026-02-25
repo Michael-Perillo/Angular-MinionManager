@@ -39,3 +39,14 @@ export const LateGame: Story = {
     villainTitle: 'Criminal Mastermind',
   },
 };
+
+export const JustSaved: Story = {
+  args: {
+    gold: 500,
+    completedCount: 50,
+    minionCount: 3,
+    villainLevel: 5,
+    villainTitle: 'Notorious Scoundrel',
+    lastSaved: Date.now(),
+  },
+};

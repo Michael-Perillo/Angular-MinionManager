@@ -1,0 +1,53 @@
+import { TIER_CONFIG, GOLD_SCALE_PER_LEVEL, TaskTier } from './task.model';
+
+describe('Task Model', () => {
+
+  describe('TIER_CONFIG', () => {
+    it('should have configs for all 4 tiers', () => {
+      expect(TIER_CONFIG.petty).toBeDefined();
+      expect(TIER_CONFIG.sinister).toBeDefined();
+      expect(TIER_CONFIG.diabolical).toBeDefined();
+      expect(TIER_CONFIG.legendary).toBeDefined();
+    });
+
+    it('should have gold increasing across tiers', () => {
+      expect(TIER_CONFIG.petty.gold).toBeLessThan(TIER_CONFIG.sinister.gold);
+      expect(TIER_CONFIG.sinister.gold).toBeLessThan(TIER_CONFIG.diabolical.gold);
+      expect(TIER_CONFIG.diabolical.gold).toBeLessThan(TIER_CONFIG.legendary.gold);
+    });
+
+    it('should have time increasing across tiers', () => {
+      expect(TIER_CONFIG.petty.time).toBeLessThan(TIER_CONFIG.sinister.time);
+      expect(TIER_CONFIG.sinister.time).toBeLessThan(TIER_CONFIG.diabolical.time);
+      expect(TIER_CONFIG.diabolical.time).toBeLessThan(TIER_CONFIG.legendary.time);
+    });
+
+    it('should have clicks increasing across tiers', () => {
+      expect(TIER_CONFIG.petty.clicks).toBeLessThan(TIER_CONFIG.sinister.clicks);
+      expect(TIER_CONFIG.sinister.clicks).toBeLessThan(TIER_CONFIG.diabolical.clicks);
+      expect(TIER_CONFIG.diabolical.clicks).toBeLessThan(TIER_CONFIG.legendary.clicks);
+    });
+
+    it('should have specific petty values', () => {
+      expect(TIER_CONFIG.petty).toEqual({ gold: 5, time: 8, clicks: 10 });
+    });
+
+    it('should have specific sinister values', () => {
+      expect(TIER_CONFIG.sinister).toEqual({ gold: 15, time: 20, clicks: 20 });
+    });
+
+    it('should have specific diabolical values', () => {
+      expect(TIER_CONFIG.diabolical).toEqual({ gold: 40, time: 45, clicks: 35 });
+    });
+
+    it('should have specific legendary values', () => {
+      expect(TIER_CONFIG.legendary).toEqual({ gold: 100, time: 75, clicks: 50 });
+    });
+  });
+
+  describe('GOLD_SCALE_PER_LEVEL', () => {
+    it('should be 0.10', () => {
+      expect(GOLD_SCALE_PER_LEVEL).toBe(0.10);
+    });
+  });
+});
