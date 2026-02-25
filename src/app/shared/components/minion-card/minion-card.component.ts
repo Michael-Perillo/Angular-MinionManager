@@ -1,9 +1,11 @@
 import { Component, ChangeDetectionStrategy, input, computed } from '@angular/core';
 import { Minion, xpForLevel } from '../../../core/models';
+import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
   selector: 'app-minion-card',
   standalone: true,
+  imports: [TooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="game-card p-3 flex items-center gap-3 min-w-0">
@@ -24,9 +26,21 @@ import { Minion, xpForLevel } from '../../../core/models';
           <span class="text-xs text-text-muted">Lv.{{ minion().level }}</span>
         </div>
         <div class="flex items-center gap-2 text-xs text-text-muted mt-0.5">
-          <span title="Speed">S:{{ minion().stats.speed.toFixed(1) }}</span>
-          <span title="Efficiency">E:{{ minion().stats.efficiency.toFixed(1) }}</span>
-          <span class="px-1 rounded text-xs" [class]="specialtyClasses()">
+          <span
+            [appTooltip]="'How fast this minion completes missions'"
+            [appTooltipPosition]="'bottom'">
+            S:{{ minion().stats.speed.toFixed(1) }}
+          </span>
+          <span
+            [appTooltip]="'Gold bonus when this minion completes a mission'"
+            [appTooltipPosition]="'bottom'">
+            E:{{ minion().stats.efficiency.toFixed(1) }}
+          </span>
+          <span
+            class="px-1 rounded text-xs"
+            [class]="specialtyClasses()"
+            [appTooltip]="specialtyTooltip()"
+            [appTooltipPosition]="'bottom'">
             {{ specialtyIcon() }} {{ specialtyLabel() }}
           </span>
         </div>
@@ -89,6 +103,10 @@ export class MinionCardComponent {
     const s = this.minion().specialty;
     return s.charAt(0).toUpperCase() + s.slice(1);
   });
+
+  specialtyTooltip = computed(() =>
+    `+25% speed & efficiency on ${this.minion().specialty} missions`
+  );
 
   specialtyClasses = computed(() => {
     switch (this.minion().specialty) {

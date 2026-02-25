@@ -62,3 +62,12 @@ export const MINION_ACCESSORIES: MinionAppearance['accessory'][] = [
 export const SPECIALTY_CATEGORIES: TaskCategory[] = [
   'schemes', 'heists', 'research', 'mayhem',
 ];
+
+export interface CapturedMinion {
+  minion: Minion;
+  capturedAt: number;
+  expiresAt: number;
+  rescueDifficulty: number;
+}
+
+export const PRISON_DURATION_MS = 300_000; // 5 minutes

@@ -24,6 +24,8 @@ export interface Task {
   isSpecialOp?: boolean;
   specialOpExpiry?: number;
   isCoverOp?: boolean;
+  isBreakoutOp?: boolean;
+  breakoutTargetId?: string;
 }
 
 export const TIER_CONFIG: Record<TaskTier, { gold: number; time: number; clicks: number }> = {

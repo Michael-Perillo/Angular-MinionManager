@@ -5,3 +5,4 @@ export * from './task-pool';
 export * from './department.model';
 export * from './upgrade.model';
 export * from './notoriety.model';
+export * from './save-data.model';

@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, input, output } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, computed } from '@angular/core';
 
 @Component({
   selector: 'app-header',
@@ -17,6 +17,13 @@ import { Component, ChangeDetectionStrategy, input, output } from '@angular/core
       </div>
 
       <div class="flex items-center gap-6">
+        <!-- Save indicator -->
+        @if (showSaveIndicator()) {
+          <span class="text-[10px] text-text-muted animate-fade-in-out">
+            Game saved
+          </span>
+        }
+
         <!-- Gold -->
         <div class="flex items-center gap-2">
           <span class="text-xl">🪙</span>
@@ -58,6 +65,15 @@ import { Component, ChangeDetectionStrategy, input, output } from '@angular/core
     :host {
       display: block;
     }
+    @keyframes fadeInOut {
+      0% { opacity: 0; }
+      15% { opacity: 1; }
+      70% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    .animate-fade-in-out {
+      animation: fadeInOut 2s ease-in-out forwards;
+    }
   `,
 })
 export class HeaderComponent {
@@ -66,5 +82,12 @@ export class HeaderComponent {
   minionCount = input.required<number>();
   villainLevel = input.required<number>();
   villainTitle = input.required<string>();
+  lastSaved = input<number>(0);
   reset = output<void>();
+
+  showSaveIndicator = computed(() => {
+    const saved = this.lastSaved();
+    if (!saved) return false;
+    return Date.now() - saved < 2000;
+  });
 }
