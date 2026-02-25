@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, input, output, signal, computed } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, signal, computed, OnInit } from '@angular/core';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
 import { Upgrade } from '../../../core/models/upgrade.model';
@@ -100,11 +100,12 @@ type DrawerTab = 'notoriety' | 'hire' | 'upgrades' | 'departments' | 'prison';
   `,
   styles: `
     :host {
-      display: contents;
+      display: block;
+      height: 100%;
     }
   `,
 })
-export class DrawerPanelComponent {
+export class DrawerPanelComponent implements OnInit {
   // Notoriety inputs
   notoriety = input.required<number>();
   threatLevel = input.required<ThreatLevel>();
@@ -129,8 +130,17 @@ export class DrawerPanelComponent {
   upgradeClicked = output<string>();
   drawerToggled = output<boolean>();
 
+  initiallyOpen = input(false);
+  initialTab = input<DrawerTab | null>(null);
+
   isOpen = signal(false);
   activeTab = signal<DrawerTab>('notoriety');
+
+  ngOnInit(): void {
+    if (this.initiallyOpen()) this.isOpen.set(true);
+    const tab = this.initialTab();
+    if (tab) this.activeTab.set(tab);
+  }
 
   private readonly allTabs: { id: DrawerTab; label: string; icon: string; alwaysShow: boolean }[] = [
     { id: 'notoriety', label: 'Notoriety', icon: '🔥', alwaysShow: true },

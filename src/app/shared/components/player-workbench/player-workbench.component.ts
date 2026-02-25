@@ -10,7 +10,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
   imports: [CdkDropList, CdkDrag, CdkDragPreview, TierBadgeComponent, ProgressBarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="flex flex-col h-full min-w-[280px] max-w-[320px]">
+    <div class="flex flex-col h-full" [class]="fullWidth() ? 'w-full' : 'min-w-[280px] max-w-[320px]'">
       <!-- Column header -->
       <div class="flex items-center justify-between px-3 py-2 rounded-t-lg border border-border bg-bg-secondary/80">
         <div class="flex items-center gap-2">
@@ -79,7 +79,8 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
           <div
             class="game-card p-2 cursor-grab active:cursor-grabbing"
             cdkDrag
-            [cdkDragData]="task">
+            [cdkDragData]="task"
+            [cdkDragDisabled]="dragDisabled()">
             <div class="flex items-center justify-between gap-1">
               <div class="flex items-center gap-1 min-w-0">
                 <app-tier-badge [tier]="task.tier" />
@@ -127,6 +128,8 @@ export class PlayerWorkbenchComponent {
   tasks = input.required<Task[]>();
   clickPower = input.required<number>();
   connectedDropLists = input<string[]>([]);
+  dragDisabled = input<boolean>(false);
+  fullWidth = input<boolean>(false);
 
   taskClicked = output<string>();
   taskDropped = output<CdkDragDrop<any>>();

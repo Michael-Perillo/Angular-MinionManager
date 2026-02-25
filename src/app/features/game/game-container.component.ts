@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed, viewChild, HostListener } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed, viewChild, HostListener, ElementRef } from '@angular/core';
 import { GameStateService } from '../../core/services/game-state.service';
 import { TimerService } from '../../core/services/timer.service';
 import { SaveService } from '../../core/services/save.service';
@@ -40,7 +40,7 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
     DepartmentColumnComponent,
   ],
   template: `
-    <div class="min-h-screen flex flex-col">
+    <div class="h-screen flex flex-col overflow-hidden">
       <!-- Header -->
       <app-header
         [gold]="gameState.gold()"
@@ -72,7 +72,7 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
           </div>
 
           <!-- Center: Kanban work area -->
-          <div class="flex-1 overflow-x-auto p-3">
+          <div class="flex-1 overflow-auto p-3">
             <app-kanban-board
               [departmentQueues]="gameState.departmentQueues()"
               [playerQueue]="gameState.playerQueue()"
@@ -115,33 +115,49 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                 [missions]="gameState.missionBoard()"
                 [activeCount]="gameState.activeMissions().length"
                 [activeSlots]="gameState.activeSlots()"
+                [dragDisabled]="true"
                 (missionAccepted)="onAcceptMission($event)"
                 (missionRouteRequested)="onMissionRouteRequested($event)" />
             }
             @case ('work') {
               <!-- Swipeable department columns -->
-              <div class="flex flex-col gap-3">
-                <!-- Department selector -->
-                <div class="flex items-center gap-2 overflow-x-auto">
-                  @for (cat of allCategories; track cat) {
-                    <button
-                      (click)="mobileDeptTab.set(cat)"
-                      class="px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap cursor-pointer transition-colors min-h-[36px]"
-                      [class]="mobileDeptTab() === cat
-                        ? 'bg-accent/20 text-accent border border-accent/30'
-                        : 'text-text-muted hover:text-text-secondary border border-transparent'">
-                      {{ getCategoryIcon(cat) }} {{ getCategoryLabel(cat) }}
-                    </button>
+              <div class="flex flex-col gap-2 h-full -mx-3">
+                <!-- Scroll-snap container -->
+                <div
+                  #deptSwipeContainer
+                  class="flex-1 flex overflow-x-auto snap-x snap-mandatory scroll-smooth"
+                  style="scrollbar-width: none; -ms-overflow-style: none;"
+                  (scroll)="onDeptScroll()">
+                  @for (cat of allCategories; track cat; let i = $index) {
+                    <div class="w-full shrink-0 snap-center px-3 overflow-y-auto">
+                      <app-department-column
+                        [category]="cat"
+                        [tasks]="gameState.departmentQueues()[cat]"
+                        [department]="gameState.departments()[cat]"
+                        [assignedMinions]="getDeptMinions(cat)"
+                        [connectedDropLists]="[]"
+                        [dragDisabled]="true"
+                        [fullWidth]="true" />
+                    </div>
                   }
                 </div>
 
-                <!-- Show selected department -->
-                <app-department-column
-                  [category]="mobileDeptTab()"
-                  [tasks]="gameState.departmentQueues()[mobileDeptTab()]"
-                  [department]="gameState.departments()[mobileDeptTab()]"
-                  [assignedMinions]="getMobileMinions()"
-                  [connectedDropLists]="[]" />
+                <!-- Dot indicators -->
+                <div class="flex items-center justify-center gap-2 py-2 px-3 shrink-0">
+                  @for (cat of allCategories; track cat; let i = $index) {
+                    <button
+                      (click)="scrollToDepartment(i)"
+                      class="w-2.5 h-2.5 rounded-full transition-all cursor-pointer"
+                      [class]="mobileDeptIndex() === i
+                        ? 'bg-accent scale-125'
+                        : 'bg-text-muted/30 hover:bg-text-muted/50'"
+                      [attr.aria-label]="getCategoryLabel(cat)">
+                    </button>
+                  }
+                  <span class="ml-2 text-[10px] text-text-muted">
+                    {{ getCategoryIcon(allCategories[mobileDeptIndex()]) }} {{ getCategoryLabel(allCategories[mobileDeptIndex()]) }}
+                  </span>
+                </div>
               </div>
             }
             @case ('click') {
@@ -149,6 +165,8 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                 [tasks]="gameState.playerQueue()"
                 [clickPower]="gameState.clickPower()"
                 [connectedDropLists]="[]"
+                [dragDisabled]="true"
+                [fullWidth]="true"
                 (taskClicked)="onTaskClick($event)" />
             }
             @case ('more') {
@@ -293,11 +311,13 @@ export class GameContainerComponent implements OnInit, OnDestroy {
 
   readonly drawerPanel = viewChild(DrawerPanelComponent);
   readonly missionRouter = viewChild(MissionRouterComponent);
+  readonly deptSwipeContainer = viewChild<ElementRef>('deptSwipeContainer');
 
   readonly currentTime = signal(Date.now());
   readonly isMobile = signal(false);
   readonly mobileTab = signal<MobileTab>('missions');
   readonly mobileDeptTab = signal<TaskCategory>('schemes');
+  readonly mobileDeptIndex = signal(0);
   readonly moreSection = signal<string | null>(null);
   readonly routerMission = signal<Task | null>(null);
 
@@ -413,8 +433,25 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     return cat.charAt(0).toUpperCase() + cat.slice(1);
   }
 
+  getDeptMinions(cat: TaskCategory) {
+    return this.gameState.minions().filter(m => m.assignedDepartment === cat);
+  }
+
   getMobileMinions() {
     const cat = this.mobileDeptTab();
     return this.gameState.minions().filter(m => m.assignedDepartment === cat);
+  }
+
+  onDeptScroll(): void {
+    const el = this.deptSwipeContainer()?.nativeElement;
+    if (!el) return;
+    const index = Math.round(el.scrollLeft / el.clientWidth);
+    this.mobileDeptIndex.set(Math.max(0, Math.min(index, this.allCategories.length - 1)));
+  }
+
+  scrollToDepartment(index: number): void {
+    const el = this.deptSwipeContainer()?.nativeElement;
+    if (!el) return;
+    el.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
   }
 }

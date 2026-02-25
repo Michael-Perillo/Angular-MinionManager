@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, input, output, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, signal, OnInit } from '@angular/core';
 import { Task, TaskCategory, QueueTarget } from '../../../core/models/task.model';
 import { DEPARTMENT_LABELS } from '../../../core/models/department.model';
 
@@ -68,7 +68,7 @@ interface QueueOption {
     }
   `,
 })
-export class MissionRouterComponent {
+export class MissionRouterComponent implements OnInit {
   mission = input<Task | null>(null);
   deptQueueCounts = input.required<Record<TaskCategory, number>>();
   playerQueueCount = input.required<number>();
@@ -77,7 +77,13 @@ export class MissionRouterComponent {
   queueSelected = output<{ missionId: string; target: QueueTarget }>();
   closed = output<void>();
 
+  initiallyOpen = input(false);
+
   visible = signal(false);
+
+  ngOnInit(): void {
+    if (this.initiallyOpen()) this.visible.set(true);
+  }
 
   queueOptions = (): QueueOption[] => {
     const counts = this.deptQueueCounts();

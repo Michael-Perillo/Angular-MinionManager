@@ -22,6 +22,7 @@ const ALL_CATEGORIES: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem
           [department]="getDepartment(cat)"
           [assignedMinions]="getDeptMinions(cat)"
           [connectedDropLists]="allDropListIds"
+          [dragDisabled]="dragDisabled()"
           (taskDropped)="onTaskDropped($event, cat)" />
       }
 
@@ -29,6 +30,7 @@ const ALL_CATEGORIES: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem
         [tasks]="playerQueue()"
         [clickPower]="clickPower()"
         [connectedDropLists]="allDropListIds"
+        [dragDisabled]="dragDisabled()"
         (taskClicked)="taskClicked.emit($event)"
         (taskDropped)="onTaskDropped($event, 'player')" />
     </div>
@@ -46,6 +48,7 @@ export class KanbanBoardComponent {
   departments = input.required<Record<TaskCategory, Department>>();
   minions = input.required<Minion[]>();
   clickPower = input.required<number>();
+  dragDisabled = input<boolean>(false);
 
   taskClicked = output<string>();
   taskMoved = output<{ taskId: string; from: QueueTarget; to: QueueTarget }>();

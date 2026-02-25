@@ -224,6 +224,16 @@ body {
   height: 6px;
 }
 
+/* Hide scrollbar on swipe containers */
+.snap-x::-webkit-scrollbar {
+  display: none;
+}
+
+/* Disable double-tap-to-zoom on interactive elements */
+button, a, [cdkDrag] {
+  touch-action: manipulation;
+}
+
 /* Click ripple effect container */
 .click-ripple {
   position: relative;
