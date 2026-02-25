@@ -3,29 +3,41 @@ import { Page } from '@playwright/test';
 /** Clear localStorage, reload, and wait for the app shell to render. */
 export async function resetGame(page: Page): Promise<void> {
   await page.goto('/');
-  await page.evaluate(() => localStorage.clear());
+  // Disable localStorage.setItem so the beforeunload save handler can't
+  // re-persist state when we reload, then clear storage.
+  await page.evaluate(() => {
+    Storage.prototype.setItem = () => {};
+    localStorage.clear();
+  });
   await page.reload();
   await page.locator('app-header').waitFor({ state: 'visible', timeout: 15_000 });
 }
 
 /**
- * Accept a mission from the board and click WORK until the task completes.
- * Returns the gold value shown in the header.
+ * Accept a mission from the board by clicking "Send to Queue",
+ * routing it to the player workbench, and clicking CLICK until
+ * the task completes. Returns the gold value shown in the header.
  */
 export async function earnGold(page: Page): Promise<number> {
-  // Accept first mission from the board
-  const boardCard = page.locator('app-mission-board .game-card').first();
-  await boardCard.click();
+  // Click "Send to Queue" on the first mission card
+  const sendBtn = page.locator('app-mission-board button').filter({ hasText: /Send to Queue/ }).first();
+  await sendBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  await sendBtn.click();
 
-  // Wait for the WORK button to appear in the active missions area
-  const workBtnLocator = page.locator('app-task-queue button', { hasText: /WORK|CLICK/i });
-  await workBtnLocator.first().waitFor({ state: 'visible', timeout: 5_000 });
+  // The mission router popup appears — click "My Workbench"
+  const workbenchOption = page.locator('app-mission-router button').filter({ hasText: /My Workbench/ });
+  await workbenchOption.waitFor({ state: 'visible', timeout: 3_000 });
+  await workbenchOption.click();
 
-  // Click the WORK / CLICK button until it disappears (task completed)
+  // Wait for the CLICK button to appear in the player workbench
+  const clickBtn = page.locator('app-player-workbench button').filter({ hasText: /CLICK/ });
+  await clickBtn.first().waitFor({ state: 'visible', timeout: 5_000 });
+
+  // Click the CLICK button until the task completes
   for (let i = 0; i < 60; i++) {
-    const count = await workBtnLocator.count();
+    const count = await clickBtn.count();
     if (count === 0) break;
-    await workBtnLocator.first().click();
+    await clickBtn.first().click();
     await page.waitForTimeout(100);
   }
 
@@ -48,29 +60,40 @@ export async function earnGoldUntil(page: Page, target: number): Promise<number>
   return gold;
 }
 
-/** Read a numeric stat value from the header by its label (Gold, Completed, Minions). */
+/**
+ * Read a numeric stat value from the header by its label.
+ * The new header uses emoji + value pairs (e.g. 🪙 100).
+ * Supported labels: Gold, Completed, Minions.
+ */
 export async function getHeaderStat(page: Page, label: string): Promise<number> {
-  // Use Playwright's text-based locators to find the stat label within the header,
-  // then navigate to the sibling value element.
-  // The structure is: <div><div>Label</div><div>Value</div></div>
-  // We find the label's parent div (which wraps both label + value), then get the second child.
-  const value = await page.locator('app-header').evaluate((header, lbl) => {
-    const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT, null);
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      if (node.textContent?.trim().toLowerCase() === lbl.toLowerCase()) {
-        // Found the label text node; its parent element is the label div.
-        const labelEl = node.parentElement;
-        if (!labelEl) continue;
-        // The next sibling element should be the value div.
-        const valueEl = labelEl.nextElementSibling;
-        if (valueEl) {
-          return valueEl.textContent?.trim() ?? '0';
+  const emojiMap: Record<string, string> = {
+    gold: '🪙',
+    completed: '✅',
+    minions: '👾',
+    notoriety: '🔥',
+    supplies: '⚗️',
+    intel: '🕵️',
+  };
+
+  const emoji = emojiMap[label.toLowerCase()];
+  if (!emoji) return 0;
+
+  // Find the stat group containing the emoji, then read the sibling value span
+  const value = await page.locator('app-header').evaluate((header, e) => {
+    const spans = header.querySelectorAll('span');
+    for (let i = 0; i < spans.length; i++) {
+      if (spans[i].textContent?.trim() === e) {
+        // The next span sibling should contain the numeric value
+        const valueSpan = spans[i].nextElementSibling;
+        if (valueSpan) {
+          // Handle notoriety format "X/100"
+          const text = valueSpan.textContent?.trim() ?? '0';
+          return text.split('/')[0];
         }
       }
     }
     return '0';
-  }, label);
+  }, emoji);
 
   return parseInt(value, 10);
 }
