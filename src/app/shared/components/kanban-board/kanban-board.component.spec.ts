@@ -20,6 +20,8 @@ describe('KanbanBoardComponent', () => {
     mayhem: { category: 'mayhem', xp: 0, level: 1 },
   };
 
+  const allCategories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [KanbanBoardComponent],
@@ -35,16 +37,18 @@ describe('KanbanBoardComponent', () => {
     departments?: Record<TaskCategory, Department>;
     minions?: any[];
     clickPower?: number;
+    unlockedDepartments?: TaskCategory[];
   } = {}): void {
     fixture.componentRef.setInput('departmentQueues', overrides.departmentQueues ?? emptyQueues);
     fixture.componentRef.setInput('playerQueue', overrides.playerQueue ?? []);
     fixture.componentRef.setInput('departments', overrides.departments ?? defaultDepartments);
     fixture.componentRef.setInput('minions', overrides.minions ?? []);
     fixture.componentRef.setInput('clickPower', overrides.clickPower ?? 1);
+    fixture.componentRef.setInput('unlockedDepartments', overrides.unlockedDepartments ?? allCategories);
     fixture.detectChanges();
   }
 
-  it('renders all four department columns and player workbench', () => {
+  it('renders department columns for unlocked departments and player workbench', () => {
     setInputs();
     const columns = fixture.nativeElement.querySelectorAll('app-department-column');
     expect(columns.length).toBe(4);
@@ -52,16 +56,26 @@ describe('KanbanBoardComponent', () => {
     expect(workbench).toBeTruthy();
   });
 
-  it('allDropListIds includes mission-board', () => {
-    expect(component.allDropListIds).toContain('mission-board');
+  it('renders only unlocked department columns', () => {
+    setInputs({ unlockedDepartments: ['schemes', 'heists'] });
+    const columns = fixture.nativeElement.querySelectorAll('app-department-column');
+    expect(columns.length).toBe(2);
   });
 
-  it('allDropListIds includes all department categories and player', () => {
-    expect(component.allDropListIds).toContain('schemes');
-    expect(component.allDropListIds).toContain('heists');
-    expect(component.allDropListIds).toContain('research');
-    expect(component.allDropListIds).toContain('mayhem');
-    expect(component.allDropListIds).toContain('player');
+  it('shows locked placeholder when not all departments unlocked', () => {
+    setInputs({ unlockedDepartments: ['schemes'] });
+    expect(component.hasLockedDepartments()).toBeTrue();
+  });
+
+  it('dropListIds includes unlocked departments, player, and mission-board', () => {
+    setInputs({ unlockedDepartments: ['schemes', 'heists'] });
+    const ids = component.dropListIds();
+    expect(ids).toContain('schemes');
+    expect(ids).toContain('heists');
+    expect(ids).toContain('player');
+    expect(ids).toContain('mission-board');
+    expect(ids).not.toContain('research');
+    expect(ids).not.toContain('mayhem');
   });
 
   it('onTaskDropped emits taskRouted when source is mission-board', () => {

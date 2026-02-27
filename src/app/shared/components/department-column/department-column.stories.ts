@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/angular';
+import { expect, within } from 'storybook/test';
 import { DepartmentColumnComponent } from './department-column.component';
 import { Task, TaskCategory, TaskTier } from '../../../core/models/task.model';
 import { Minion } from '../../../core/models/minion.model';
@@ -67,6 +68,15 @@ export const SingleMinion: Story = {
     ],
     department: makeDept({ level: 2 }),
     assignedMinions: [makeMinion({ name: 'Grim' })],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Verify minion lane renders
+    expect(canvas.getByText('Grim')).toBeTruthy();
+
+    // Verify queue section renders with task
+    expect(canvas.getByText('Forge Hall Passes')).toBeTruthy();
   },
 };
 

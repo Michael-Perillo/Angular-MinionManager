@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/angular';
+import { expect, within, userEvent } from 'storybook/test';
 import { DrawerPanelComponent } from './drawer-panel.component';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
@@ -63,6 +64,25 @@ export const Open: Story = {
     currentTime: Date.now(),
     nextMinionCost: 50,
     canHireMinion: true,
+    unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Default tab is Notoriety — verify it renders
+    expect(canvas.getByText('Notoriety')).toBeTruthy();
+
+    // Click "Minions" tab (hire panel)
+    await userEvent.click(canvas.getByText(/Minions/));
+    expect(canvas.getByText('Hire Minion')).toBeTruthy();
+
+    // Click "Upgrades" tab
+    await userEvent.click(canvas.getByText(/Upgrades/));
+    expect(canvas.getByText(/Lair Upgrades/)).toBeTruthy();
+
+    // Click "Depts" tab
+    await userEvent.click(canvas.getByText(/Depts/));
+    expect(canvas.getByText(/Departments/)).toBeTruthy();
   },
 };
 
@@ -82,6 +102,7 @@ export const Closed: Story = {
     currentTime: Date.now(),
     nextMinionCost: 50,
     canHireMinion: true,
+    unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
   },
 };
 
@@ -106,6 +127,7 @@ export const WithRaidAlert: Story = {
     currentTime: Date.now(),
     nextMinionCost: 120,
     canHireMinion: true,
+    unlockedDepartments: new Set(['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[]),
   },
 };
 
@@ -141,5 +163,6 @@ export const WithPrisonTimer: Story = {
     currentTime: Date.now(),
     nextMinionCost: 80,
     canHireMinion: true,
+    unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
   },
 };

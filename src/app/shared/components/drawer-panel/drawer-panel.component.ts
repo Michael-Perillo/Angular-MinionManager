@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, input, output, signal, computed, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, signal, computed, OnInit, viewChild } from '@angular/core';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
 import { Upgrade } from '../../../core/models/upgrade.model';
@@ -68,11 +68,14 @@ type DrawerTab = 'notoriety' | 'hire' | 'upgrades' | 'departments' | 'prison';
             }
             @case ('hire') {
               <app-hire-minion-panel
+                #hirePanel
                 [gold]="gold()"
                 [cost]="nextMinionCost()"
                 [minionCount]="minions().length"
                 [canHire]="canHireMinion()"
-                (hire)="hireClicked.emit()" />
+                [unlockedDepartments]="unlockedDepartments()"
+                (recruit)="recruitClicked.emit()"
+                (hireChosen)="hireChosenClicked.emit($event)" />
               <div class="mt-3">
                 <app-minion-roster
                   [minions]="minions()" />
@@ -123,15 +126,21 @@ export class DrawerPanelComponent implements OnInit {
   nextMinionCost = input.required<number>();
   canHireMinion = input.required<boolean>();
 
+  unlockedDepartments = input<Set<TaskCategory>>(new Set());
+
   // Outputs
   bribeClicked = output<void>();
   defendClicked = output<void>();
   hireClicked = output<void>();
+  recruitClicked = output<void>();
+  hireChosenClicked = output<Minion>();
   upgradeClicked = output<string>();
   drawerToggled = output<boolean>();
 
   initiallyOpen = input(false);
   initialTab = input<DrawerTab | null>(null);
+
+  readonly hirePanel = viewChild<HireMinionPanelComponent>('hirePanel');
 
   isOpen = signal(false);
   activeTab = signal<DrawerTab>('notoriety');

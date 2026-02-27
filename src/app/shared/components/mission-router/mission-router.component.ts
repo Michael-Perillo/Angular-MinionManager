@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, input, output, signal, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, signal, computed, OnInit } from '@angular/core';
 import { Task, TaskCategory, QueueTarget } from '../../../core/models/task.model';
 import { DEPARTMENT_LABELS } from '../../../core/models/department.model';
 
@@ -74,6 +74,7 @@ export class MissionRouterComponent implements OnInit {
   playerQueueCount = input.required<number>();
   isMobile = input<boolean>(false);
 
+  unlockedDepartments = input<TaskCategory[]>([]);
   queueSelected = output<{ missionId: string; target: QueueTarget }>();
   closed = output<void>();
 
@@ -85,11 +86,11 @@ export class MissionRouterComponent implements OnInit {
     if (this.initiallyOpen()) this.visible.set(true);
   }
 
-  queueOptions = (): QueueOption[] => {
+  queueOptions = computed((): QueueOption[] => {
     const counts = this.deptQueueCounts();
-    const categories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
+    const unlocked = this.unlockedDepartments();
 
-    const options: QueueOption[] = categories.map(cat => ({
+    const options: QueueOption[] = unlocked.map(cat => ({
       target: cat as QueueTarget,
       label: DEPARTMENT_LABELS[cat].label,
       icon: DEPARTMENT_LABELS[cat].icon,
@@ -104,7 +105,7 @@ export class MissionRouterComponent implements OnInit {
     });
 
     return options;
-  };
+  });
 
   open(): void {
     this.visible.set(true);

@@ -18,6 +18,7 @@ import { GameNotification } from '../../../core/models';
   styles: `
     :host {
       display: block;
+      pointer-events: auto;
     }
   `,
 })

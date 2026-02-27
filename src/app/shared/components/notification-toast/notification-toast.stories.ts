@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/angular';
+import { expect, within } from 'storybook/test';
 import { NotificationToastComponent } from './notification-toast.component';
 
 const meta: Meta<NotificationToastComponent> = {
@@ -18,6 +19,15 @@ export const GoldEarned: Story = {
       type: 'gold',
       timestamp: Date.now(),
     },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Verify toast is visible with correct message
+    expect(canvas.getByText('+5g from "Forge Hall Passes"')).toBeTruthy();
+
+    // Verify gold icon renders
+    expect(canvas.getByText('🪙')).toBeTruthy();
   },
 };
 

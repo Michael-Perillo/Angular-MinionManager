@@ -1,0 +1,3 @@
+maybe incentives for the other departments. research had the notoriety relief so i focused in on that at first but it'd be cool if each department had a unique passive
+i saw you had filters for the different department missions but maybe also a sorting button too to sort by the mission status or whatever you call like petty, sinsiter, etc.
+also idk if its cuz im getting old but some of the text was hard to read lol like when the queue was full it was hard to me to notice cuz the text is small and similar to the background color

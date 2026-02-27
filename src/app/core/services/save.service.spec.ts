@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { SaveService } from './save.service';
 import { GameStateService } from './game-state.service';
+import { STORAGE_BACKEND, StorageBackend } from './storage-backend';
 import { makeSaveData } from '../../../testing/factories/game-state.factory';
 
 const STORAGE_KEY = 'minion-manager-save';
@@ -8,15 +9,22 @@ const STORAGE_KEY = 'minion-manager-save';
 describe('SaveService', () => {
   let saveService: SaveService;
   let gameState: GameStateService;
-  let mockStorage: Record<string, string>;
+  let store: Record<string, string>;
+  let mockBackend: StorageBackend;
 
   beforeEach(() => {
-    mockStorage = {};
-    spyOn(localStorage, 'getItem').and.callFake((key: string) => mockStorage[key] ?? null);
-    spyOn(localStorage, 'setItem').and.callFake((key: string, value: string) => { mockStorage[key] = value; });
-    spyOn(localStorage, 'removeItem').and.callFake((key: string) => { delete mockStorage[key]; });
+    store = {};
+    mockBackend = {
+      getItem: (key: string) => store[key] ?? null,
+      setItem: (key: string, value: string) => { store[key] = value; },
+      removeItem: (key: string) => { delete store[key]; },
+    };
 
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: STORAGE_BACKEND, useValue: mockBackend },
+      ],
+    });
     gameState = TestBed.inject(GameStateService);
     saveService = TestBed.inject(SaveService);
     gameState.initializeGame();
@@ -114,7 +122,7 @@ describe('SaveService', () => {
         // Note: no capturedMinions field
       };
 
-      mockStorage[STORAGE_KEY] = JSON.stringify(v1Data);
+      store[STORAGE_KEY] = JSON.stringify(v1Data);
       const loaded = saveService.load();
       expect(loaded).toBe(true);
       expect(gameState.capturedMinions()).toEqual([]);
@@ -124,7 +132,7 @@ describe('SaveService', () => {
 
   describe('corrupt data', () => {
     it('should return false for corrupt JSON', () => {
-      mockStorage[STORAGE_KEY] = 'not-valid-json!!!';
+      store[STORAGE_KEY] = 'not-valid-json!!!';
       const loaded = saveService.load();
       expect(loaded).toBe(false);
     });
@@ -144,9 +152,9 @@ describe('SaveService', () => {
     });
   });
 
-  describe('save with localStorage error', () => {
-    it('should not throw when localStorage.setItem throws', () => {
-      (localStorage.setItem as jasmine.Spy).and.throwError('QuotaExceededError');
+  describe('save with storage error', () => {
+    it('should not throw when storage.setItem throws', () => {
+      spyOn(mockBackend, 'setItem').and.throwError('QuotaExceededError');
       expect(() => saveService.save()).not.toThrow();
     });
   });

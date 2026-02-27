@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './e2e',
+  testDir: './e2e/specs',
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env['CI'],
@@ -16,12 +16,12 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: /mobile\.spec/,
+      testIgnore: [/mobile-nav\.spec/, /storybook-viewport\.spec/],
     },
     {
       name: 'mobile-chrome',
       use: { ...devices['Pixel 5'] },
-      testMatch: /mobile\.spec/,
+      testIgnore: [/drag-drop\.spec/, /storybook-viewport\.spec/],
     },
   ],
   webServer: {

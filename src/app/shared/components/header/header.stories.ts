@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/angular';
+import { expect, within } from 'storybook/test';
 import { HeaderComponent } from './header.component';
 
 const meta: Meta<HeaderComponent> = {
@@ -22,6 +23,14 @@ export const EarlyGame: Story = {
     intel: 0,
     raidActive: false,
     capturedCount: 0,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Verify key stat values render
+    expect(canvas.getByText(/15/)).toBeTruthy();
+    expect(canvas.getByText(/Petty Troublemaker/)).toBeTruthy();
+    expect(canvas.getByText(/Lv\. ?1/)).toBeTruthy();
   },
 };
 

@@ -84,6 +84,7 @@ export const EarlyGame: Story = {
     minions: [
       makeMinion({ name: 'Grim', specialty: 'schemes', assignedDepartment: 'schemes' }),
     ],
+    unlockedDepartments: ['schemes'] as TaskCategory[],
     clickPower: 1,
   },
 };
@@ -121,6 +122,7 @@ export const MidGame: Story = {
       makeMinion({ name: 'Hex', appearance: { color: '#1e8449', accessory: 'horns' }, specialty: 'research', assignedDepartment: 'research', level: 2 }),
       makeMinion({ name: 'Vex', appearance: { color: '#7b241c', accessory: 'cape' }, specialty: 'schemes', assignedDepartment: 'schemes' }),
     ],
+    unlockedDepartments: ['schemes', 'heists', 'research'] as TaskCategory[],
     clickPower: 2,
   },
 };
@@ -169,6 +171,7 @@ export const LateGame: Story = {
       makeMinion({ id: lateIds.m4, name: 'Doom', appearance: { color: '#b9770e', accessory: 'horns' }, specialty: 'mayhem', assignedDepartment: 'mayhem', level: 4 }),
       makeMinion({ id: lateIds.m5, name: 'Hex', appearance: { color: '#1e8449', accessory: 'horns' }, specialty: 'research', assignedDepartment: 'research', status: 'working', assignedTaskId: lateIds.t3, level: 6 }),
     ],
+    unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
     clickPower: 5,
   },
 };

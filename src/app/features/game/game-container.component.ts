@@ -3,6 +3,7 @@ import { GameStateService } from '../../core/services/game-state.service';
 import { TimerService } from '../../core/services/timer.service';
 import { SaveService } from '../../core/services/save.service';
 import { QueueTarget, TaskCategory, Task } from '../../core/models/task.model';
+import { Minion } from '../../core/models/minion.model';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { MissionBoardComponent } from '../../shared/components/mission-board/mission-board.component';
 import { KanbanBoardComponent } from '../../shared/components/kanban-board/kanban-board.component';
@@ -67,6 +68,8 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
               [activeCount]="gameState.activeMissions().length"
               [activeSlots]="gameState.activeSlots()"
               [connectedDropLists]="kanbanDropListIds"
+              [unlockedDepartments]="gameState.unlockedDepartmentList()"
+              [departments]="gameState.departments()"
               (missionAccepted)="onAcceptMission($event)"
               (missionRouteRequested)="onMissionRouteRequested($event)" />
           </div>
@@ -79,6 +82,7 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
               [departments]="gameState.departments()"
               [minions]="gameState.minions()"
               [clickPower]="gameState.clickPower()"
+              [unlockedDepartments]="gameState.unlockedDepartmentList()"
               (taskClicked)="onTaskClick($event)"
               (taskMoved)="onTaskMoved($event)"
               (taskRouted)="onTaskRouted($event)" />
@@ -99,9 +103,11 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
             [currentTime]="currentTime()"
             [nextMinionCost]="gameState.nextMinionCost()"
             [canHireMinion]="gameState.canHireMinion()"
+            [unlockedDepartments]="gameState.unlockedDepartments()"
             (bribeClicked)="onBribe()"
             (defendClicked)="onDefendRaid()"
-            (hireClicked)="onHireMinion()"
+            (recruitClicked)="onRecruitMinion()"
+            (hireChosenClicked)="onHireChosenMinion($event)"
             (upgradeClicked)="onPurchaseUpgrade($event)" />
         </main>
       }
@@ -116,49 +122,62 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                 [activeCount]="gameState.activeMissions().length"
                 [activeSlots]="gameState.activeSlots()"
                 [dragDisabled]="true"
+                [unlockedDepartments]="gameState.unlockedDepartmentList()"
+                [departments]="gameState.departments()"
                 (missionAccepted)="onAcceptMission($event)"
                 (missionRouteRequested)="onMissionRouteRequested($event)" />
             }
             @case ('work') {
               <!-- Swipeable department columns -->
-              <div class="flex flex-col gap-2 h-full -mx-3">
-                <!-- Scroll-snap container -->
-                <div
-                  #deptSwipeContainer
-                  class="flex-1 flex overflow-x-auto snap-x snap-mandatory scroll-smooth"
-                  style="scrollbar-width: none; -ms-overflow-style: none;"
-                  (scroll)="onDeptScroll()">
-                  @for (cat of allCategories; track cat; let i = $index) {
-                    <div class="w-full shrink-0 snap-center px-3 overflow-y-auto">
-                      <app-department-column
-                        [category]="cat"
-                        [tasks]="gameState.departmentQueues()[cat]"
-                        [department]="gameState.departments()[cat]"
-                        [assignedMinions]="getDeptMinions(cat)"
-                        [connectedDropLists]="[]"
-                        [dragDisabled]="true"
-                        [fullWidth]="true" />
-                    </div>
-                  }
+              @if (gameState.unlockedDepartmentList().length === 0) {
+                <div class="flex flex-col items-center justify-center h-full text-center p-8">
+                  <span class="text-4xl mb-3 opacity-40">🔒</span>
+                  <p class="text-sm text-text-muted">No departments unlocked yet.</p>
+                  <p class="text-xs text-text-muted mt-1">Hire a minion to open your first department!</p>
                 </div>
+              } @else {
+                <div class="flex flex-col gap-2 h-full -mx-3">
+                  <!-- Scroll-snap container -->
+                  <div
+                    #deptSwipeContainer
+                    class="flex-1 flex overflow-x-auto snap-x snap-mandatory scroll-smooth"
+                    style="scrollbar-width: none; -ms-overflow-style: none;"
+                    (scroll)="onDeptScroll()">
+                    @for (cat of gameState.unlockedDepartmentList(); track cat; let i = $index) {
+                      <div class="w-full shrink-0 snap-center px-3 overflow-y-auto">
+                        <app-department-column
+                          [category]="cat"
+                          [tasks]="gameState.departmentQueues()[cat]"
+                          [department]="gameState.departments()[cat]"
+                          [assignedMinions]="getDeptMinions(cat)"
+                          [connectedDropLists]="[]"
+                          [dragDisabled]="true"
+                          [fullWidth]="true"
+                          (taskMoveRequested)="onTaskMoveRequested($event)" />
+                      </div>
+                    }
+                  </div>
 
-                <!-- Dot indicators -->
-                <div class="flex items-center justify-center gap-2 py-2 px-3 shrink-0">
-                  @for (cat of allCategories; track cat; let i = $index) {
-                    <button
-                      (click)="scrollToDepartment(i)"
-                      class="w-2.5 h-2.5 rounded-full transition-all cursor-pointer"
-                      [class]="mobileDeptIndex() === i
-                        ? 'bg-accent scale-125'
-                        : 'bg-text-muted/30 hover:bg-text-muted/50'"
-                      [attr.aria-label]="getCategoryLabel(cat)">
-                    </button>
-                  }
-                  <span class="ml-2 text-[10px] text-text-muted">
-                    {{ getCategoryIcon(allCategories[mobileDeptIndex()]) }} {{ getCategoryLabel(allCategories[mobileDeptIndex()]) }}
-                  </span>
+                  <!-- Dot indicators -->
+                  <div class="flex items-center justify-center gap-2 py-2 px-3 shrink-0">
+                    @for (cat of gameState.unlockedDepartmentList(); track cat; let i = $index) {
+                      <button
+                        (click)="scrollToDepartment(i)"
+                        class="w-2.5 h-2.5 rounded-full transition-all cursor-pointer"
+                        [class]="mobileDeptIndex() === i
+                          ? 'bg-accent scale-125'
+                          : 'bg-text-muted/30 hover:bg-text-muted/50'"
+                        [attr.aria-label]="getCategoryLabel(cat)">
+                      </button>
+                    }
+                    @if (gameState.unlockedDepartmentList().length > 0) {
+                      <span class="ml-2 text-xs text-text-muted">
+                        {{ getCategoryIcon(gameState.unlockedDepartmentList()[mobileDeptIndex()]) }} {{ getCategoryLabel(gameState.unlockedDepartmentList()[mobileDeptIndex()]) }}
+                      </span>
+                    }
+                  </div>
                 </div>
-              </div>
+              }
             }
             @case ('click') {
               <app-player-workbench
@@ -246,11 +265,14 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                     }
                     @case ('hire') {
                       <app-hire-minion-panel
+                        #mobileHirePanel
                         [gold]="gameState.gold()"
                         [cost]="gameState.nextMinionCost()"
                         [minionCount]="gameState.minions().length"
                         [canHire]="gameState.canHireMinion()"
-                        (hire)="onHireMinion()" />
+                        [unlockedDepartments]="gameState.unlockedDepartments()"
+                        (recruit)="onRecruitMinion('mobile')"
+                        (hireChosen)="onHireChosenMinion($event)" />
                       <div class="mt-3">
                         <app-minion-roster [minions]="gameState.minions()" />
                       </div>
@@ -289,11 +311,12 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
         [deptQueueCounts]="deptQueueCounts()"
         [playerQueueCount]="gameState.playerQueue().length"
         [isMobile]="isMobile()"
+        [unlockedDepartments]="gameState.unlockedDepartmentList()"
         (queueSelected)="onQueueSelected($event)"
-        (closed)="routerMission.set(null)" />
+        (closed)="routerMission.set(null); pendingMove.set(null)" />
 
       <!-- Notifications -->
-      <div class="fixed bottom-4 right-4 flex flex-col gap-2 z-50 max-w-sm"
+      <div class="fixed bottom-4 right-4 flex flex-col gap-2 z-50 max-w-sm pointer-events-none"
            [class]="isMobile() ? 'bottom-20' : 'bottom-4'">
         @for (notification of gameState.notifications(); track notification.id) {
           <app-notification-toast
@@ -312,6 +335,7 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly drawerPanel = viewChild(DrawerPanelComponent);
   readonly missionRouter = viewChild(MissionRouterComponent);
   readonly deptSwipeContainer = viewChild<ElementRef>('deptSwipeContainer');
+  readonly mobileHirePanel = viewChild<HireMinionPanelComponent>('mobileHirePanel');
 
   readonly currentTime = signal(Date.now());
   readonly isMobile = signal(false);
@@ -320,6 +344,7 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly mobileDeptIndex = signal(0);
   readonly moreSection = signal<string | null>(null);
   readonly routerMission = signal<Task | null>(null);
+  readonly pendingMove = signal<{ taskId: string; fromQueue: string } | null>(null);
 
   private currentTimeInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -378,7 +403,15 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   }
 
   onQueueSelected(event: { missionId: string; target: QueueTarget }): void {
-    this.gameState.routeMission(event.missionId, event.target);
+    const move = this.pendingMove();
+    if (move) {
+      // Moving an existing task between queues
+      this.gameState.moveTaskToQueue(move.taskId, move.fromQueue as QueueTarget, event.target);
+      this.pendingMove.set(null);
+    } else {
+      // Routing a new mission from the board
+      this.gameState.routeMission(event.missionId, event.target);
+    }
     this.routerMission.set(null);
   }
 
@@ -402,8 +435,28 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     this.gameState.purchaseUpgrade(upgradeId);
   }
 
+  onTaskMoveRequested(event: { taskId: string; fromQueue: string }): void {
+    this.pendingMove.set(event);
+    // Create a minimal task stub for the router (it only reads .id)
+    this.routerMission.set({ id: event.taskId } as Task);
+    this.missionRouter()?.open();
+  }
+
   onHireMinion(): void {
     this.gameState.hireMinion();
+  }
+
+  onRecruitMinion(source?: string): void {
+    const candidates = this.gameState.generateHiringCandidates();
+    if (source === 'mobile') {
+      this.mobileHirePanel()?.showCandidates(candidates);
+    } else {
+      this.drawerPanel()?.hirePanel()?.showCandidates(candidates);
+    }
+  }
+
+  onHireChosenMinion(minion: Minion): void {
+    this.gameState.hireChosenMinion(minion);
   }
 
   onReset(): void {
