@@ -45,5 +45,13 @@ export function bribeCost(notoriety: number): number {
   return Math.floor(20 + notoriety * 2);
 }
 
-/** Cover Your Tracks missions reduce notoriety by this amount */
-export const COVER_TRACKS_REDUCTION = 15;
+/** Cover Your Tracks missions reduce notoriety scaled by tier */
+export const COVER_TRACKS_REDUCTION: Record<TaskTier, number> = {
+  petty: 15,
+  sinister: 15,
+  diabolical: 25,
+  legendary: 40,
+};
+
+/** Base passive notoriety decay per tick */
+export const BASE_NOTORIETY_DECAY = 0.05;

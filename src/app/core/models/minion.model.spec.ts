@@ -1,4 +1,4 @@
-import { xpForLevel, levelFromXp, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES, SPECIALTY_CATEGORIES, SPECIALTY_BONUS, PRISON_DURATION_MS } from './minion.model';
+import { xpForLevel, levelFromXp, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES, SPECIALTY_CATEGORIES, SPECIALTY_BONUS, PRISON_DURATION_MS, getMinionRank, getMinionStars, getMinionRankColor } from './minion.model';
 
 describe('Minion Model', () => {
 
@@ -103,6 +103,64 @@ describe('Minion Model', () => {
 
     it('PRISON_DURATION_MS should be 5 minutes', () => {
       expect(PRISON_DURATION_MS).toBe(300_000);
+    });
+  });
+
+  describe('getMinionRank', () => {
+    it('should return Lackey for levels 1-2', () => {
+      expect(getMinionRank(1)).toBe('Lackey');
+      expect(getMinionRank(2)).toBe('Lackey');
+    });
+
+    it('should return Grunt for levels 3-4', () => {
+      expect(getMinionRank(3)).toBe('Grunt');
+      expect(getMinionRank(4)).toBe('Grunt');
+    });
+
+    it('should return Agent for levels 5-6', () => {
+      expect(getMinionRank(5)).toBe('Agent');
+      expect(getMinionRank(6)).toBe('Agent');
+    });
+
+    it('should return Operative for levels 7-8', () => {
+      expect(getMinionRank(7)).toBe('Operative');
+      expect(getMinionRank(8)).toBe('Operative');
+    });
+
+    it('should return Elite for levels 9-10', () => {
+      expect(getMinionRank(9)).toBe('Elite');
+      expect(getMinionRank(10)).toBe('Elite');
+    });
+
+    it('should return Mastermind for levels 11+', () => {
+      expect(getMinionRank(11)).toBe('Mastermind');
+      expect(getMinionRank(20)).toBe('Mastermind');
+    });
+  });
+
+  describe('getMinionStars', () => {
+    it('should return 1 star for levels 1-2', () => {
+      expect(getMinionStars(1)).toBe(1);
+      expect(getMinionStars(2)).toBe(1);
+    });
+
+    it('should return 5 stars for level 11+', () => {
+      expect(getMinionStars(11)).toBe(5);
+    });
+
+    it('should increase with level', () => {
+      expect(getMinionStars(3)).toBeGreaterThan(getMinionStars(1));
+      expect(getMinionStars(7)).toBeGreaterThan(getMinionStars(5));
+    });
+  });
+
+  describe('getMinionRankColor', () => {
+    it('should return different colors for different level ranges', () => {
+      const color1 = getMinionRankColor(1);
+      const color5 = getMinionRankColor(5);
+      const color9 = getMinionRankColor(9);
+      expect(color1).not.toBe(color5);
+      expect(color5).not.toBe(color9);
     });
   });
 });

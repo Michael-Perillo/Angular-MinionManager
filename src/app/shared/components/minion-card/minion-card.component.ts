@@ -1,5 +1,5 @@
 import { Component, ChangeDetectionStrategy, input, computed } from '@angular/core';
-import { Minion, xpForLevel } from '../../../core/models';
+import { Minion, xpForLevel, getMinionRank, getMinionStars, getMinionRankColor } from '../../../core/models';
 import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
@@ -23,7 +23,10 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
           <span class="text-sm font-semibold text-text-primary truncate">
             {{ minion().name }}
           </span>
-          <span class="text-xs text-text-muted">Lv.{{ minion().level }}</span>
+          <span class="text-xs" [class]="rankColor()">
+            Lv.{{ minion().level }} {{ rank() }}
+          </span>
+          <span class="text-xs text-gold">{{ starDisplay() }}</span>
         </div>
         <div class="flex items-center gap-2 text-xs text-text-muted mt-0.5">
           <span
@@ -52,7 +55,7 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
               [style.width.%]="xpPercent()">
             </div>
           </div>
-          <span class="text-[10px] text-text-muted tabular-nums">{{ xpDisplay() }}</span>
+          <span class="text-xs text-text-secondary tabular-nums">{{ xpDisplay() }}</span>
         </div>
         <div class="text-xs truncate mt-0.5" [class]="statusClasses()">
           @if (minion().status === 'idle') {
@@ -116,6 +119,10 @@ export class MinionCardComponent {
       case 'mayhem': return 'bg-red-500/20 text-red-400';
     }
   });
+
+  rank = computed(() => getMinionRank(this.minion().level));
+  rankColor = computed(() => getMinionRankColor(this.minion().level));
+  starDisplay = computed(() => '★'.repeat(getMinionStars(this.minion().level)));
 
   xpPercent = computed(() => {
     const m = this.minion();

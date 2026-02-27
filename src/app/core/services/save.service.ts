@@ -4,7 +4,7 @@ import { SaveData } from '../models/save-data.model';
 import { STORAGE_BACKEND } from './storage-backend';
 
 const STORAGE_KEY = 'minion-manager-save';
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 
 @Injectable({ providedIn: 'root' })
 export class SaveService {
@@ -54,7 +54,7 @@ export class SaveService {
         schemes: [], heists: [], research: [], mayhem: [],
       };
       data.playerQueue = data.playerQueue ?? [];
-      data.resources = data.resources ?? { supplies: 0, intel: 0 };
+      (data as any).resources = (data as any).resources ?? { supplies: 0, intel: 0 };
 
       // Ensure all minions have assignedDepartment (default to specialty)
       if (data.minions) {
@@ -73,6 +73,13 @@ export class SaveService {
       }
 
       data.version = 3;
+    }
+    if (data.version < 4) {
+      // v3 → v4: Consolidate supplies + intel into influence
+      const resources = (data as any).resources;
+      data.influence = (resources?.supplies ?? 0) + (resources?.intel ?? 0);
+      delete (data as any).resources;
+      data.version = 4;
     }
     return data;
   }

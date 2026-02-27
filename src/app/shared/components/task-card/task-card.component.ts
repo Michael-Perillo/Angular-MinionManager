@@ -53,13 +53,15 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
           <app-progress-bar
             [progress]="task().timeRemaining"
             [total]="task().timeToComplete"
+            [assignedAt]="task().assignedAt ?? null"
+            [completesAt]="task().completesAt ?? null"
             [tier]="task().tier" />
           <div class="flex items-center justify-between text-xs text-text-secondary">
             <span class="flex items-center gap-1">
               <span class="inline-block w-2 h-2 rounded-full bg-tier-petty animate-pulse"></span>
               Minion working...
             </span>
-            <span>{{ task().timeRemaining }}s</span>
+            <span>{{ timeRemaining() }}s</span>
           </div>
         </div>
       }
@@ -73,7 +75,17 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
 })
 export class TaskCardComponent {
   task = input.required<Task>();
+  currentTime = input<number>(Date.now());
   workClicked = output<string>();
+
+  timeRemaining = computed(() => {
+    const t = this.task();
+    if (t.completesAt) {
+      return Math.max(0, Math.ceil((t.completesAt - this.currentTime()) / 1000));
+    }
+    return t.timeRemaining;
+  });
+
 
   categoryIcon = computed(() => {
     switch (this.task().template.category) {

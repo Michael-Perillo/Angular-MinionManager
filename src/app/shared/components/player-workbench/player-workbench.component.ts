@@ -19,7 +19,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
             <h3 class="text-sm font-bold text-text-primary uppercase tracking-wider">
               Your Workbench
             </h3>
-            <span class="text-[10px] text-text-muted">Click Power: {{ clickPower() }}</span>
+            <span class="text-xs text-text-secondary">Click Power: {{ clickPower() }}</span>
           </div>
         </div>
         <span class="text-xs text-text-muted">
@@ -49,28 +49,30 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
               }
             </div>
 
-            @if (task.status === 'in-progress') {
+            @if (task.status === 'in-progress' || task.status === 'complete') {
               <app-progress-bar
                 [progress]="task.clicksRemaining"
                 [total]="task.clicksRequired"
                 [tier]="task.tier" />
             }
 
-            <button
-              (click)="taskClicked.emit(task.id)"
-              class="w-full mt-2 py-3 px-4 rounded-lg font-bold text-sm
-                     bg-gold/20 text-gold border border-gold/30
-                     hover:bg-gold/30 active:scale-95
-                     transition-all duration-150 cursor-pointer
-                     min-h-[48px]">
-              CLICK! ({{ task.clicksRemaining }} left)
-            </button>
+            @if (task.status !== 'complete') {
+              <button
+                (click)="taskClicked.emit(task.id)"
+                class="w-full mt-2 py-3 px-4 rounded-lg font-bold text-sm
+                       bg-gold/20 text-gold border border-gold/30
+                       hover:bg-gold/30 active:scale-95
+                       transition-all duration-150 cursor-pointer
+                       min-h-[48px]">
+                CLICK! ({{ task.clicksRemaining }} left)
+              </button>
+            }
           </div>
         }
 
         <!-- Queued tasks (remaining) -->
         @if (remainingTasks().length > 0) {
-          <div class="flex items-center gap-1 px-2 py-1 mt-1 text-[10px] text-text-muted uppercase tracking-wider border-t border-border/50">
+          <div class="flex items-center gap-1 px-2 py-1 mt-1 text-xs text-text-secondary uppercase tracking-wider border-t border-border/50">
             <span>Next Up</span>
           </div>
         }
@@ -90,7 +92,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
                 <span class="text-xs text-gold font-bold shrink-0">{{ task.goldReward }}g</span>
               }
             </div>
-            <div class="text-[10px] text-text-muted mt-0.5">
+            <div class="text-xs text-text-secondary mt-0.5">
               {{ task.clicksRequired }} clicks
             </div>
 

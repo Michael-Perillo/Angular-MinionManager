@@ -31,7 +31,7 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
         </div>
       </div>
 
-      <div class="flex items-center justify-between text-[10px] text-text-muted">
+      <div class="flex items-center justify-between text-xs text-text-secondary">
         <span>{{ notoriety() }} / {{ maxNotoriety }}</span>
         @if (goldPenalty() > 0) {
           <span class="text-red-400">-{{ goldPenalty() }}% gold from missions</span>

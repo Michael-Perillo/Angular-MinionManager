@@ -1,5 +1,5 @@
 import { Component, ChangeDetectionStrategy, input, output, computed, signal } from '@angular/core';
-import { Upgrade, upgradeCost, UpgradeCategory } from '../../../core/models/upgrade.model';
+import { Upgrade, upgradeCost, upgradeEffectAtLevel, UpgradeCategory } from '../../../core/models/upgrade.model';
 import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
@@ -40,33 +40,26 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-text-primary">{{ upgrade.name }}</span>
                 <span class="text-xs text-text-muted">
-                  {{ upgrade.currentLevel }}/{{ upgrade.maxLevel }}
+                  Lv.{{ upgrade.currentLevel }}
                 </span>
               </div>
-              <p class="text-[10px] text-text-secondary mt-0.5">{{ upgrade.description }}</p>
+              <p class="text-xs text-text-secondary mt-0.5">{{ upgrade.description }}</p>
               @if (upgrade.currentLevel > 0) {
-                <p class="text-[10px] text-accent mt-0.5">
-                  Current: {{ getCurrentEffect(upgrade) }}
-                  @if (upgrade.currentLevel < upgrade.maxLevel) {
-                    | Next: {{ getNextEffect(upgrade) }}
-                  }
+                <p class="text-xs text-accent mt-0.5">
+                  Current: {{ getCurrentEffect(upgrade) }} | Next: {{ getNextEffect(upgrade) }}
                 </p>
               }
             </div>
 
-            @if (upgrade.currentLevel < upgrade.maxLevel) {
-              <button
-                (click)="purchaseClicked.emit(upgrade.id)"
-                [disabled]="gold() < getCost(upgrade)"
-                class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                [class]="gold() >= getCost(upgrade)
-                  ? 'bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 active:scale-95'
-                  : 'bg-white/5 text-text-muted cursor-not-allowed'">
-                {{ getCost(upgrade) }}g
-              </button>
-            } @else {
-              <span class="text-xs text-tier-petty font-bold shrink-0 px-3 py-1.5">MAX</span>
-            }
+            <button
+              (click)="purchaseClicked.emit(upgrade.id)"
+              [disabled]="gold() < getCost(upgrade)"
+              class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
+              [class]="gold() >= getCost(upgrade)
+                ? 'bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 active:scale-95'
+                : 'bg-white/5 text-text-muted cursor-not-allowed'">
+              {{ getCost(upgrade) }}g
+            </button>
           </div>
         }
       </div>
@@ -91,6 +84,7 @@ export class UpgradeShopComponent {
     { key: 'minion' as UpgradeCategory, label: 'Minion Training' },
     { key: 'war-room' as UpgradeCategory, label: 'War Room' },
     { key: 'department' as UpgradeCategory, label: 'Departments' },
+    { key: 'notoriety' as UpgradeCategory, label: 'Notoriety' },
   ];
 
   filteredUpgrades = computed(() => {
@@ -104,42 +98,50 @@ export class UpgradeShopComponent {
   }
 
   getCurrentEffect(upgrade: Upgrade): string {
-    return this.computeEffect(upgrade, upgrade.currentLevel);
+    return this.formatEffect(upgrade, upgrade.currentLevel);
   }
 
   getNextEffect(upgrade: Upgrade): string {
-    return this.computeEffect(upgrade, upgrade.currentLevel + 1);
+    return this.formatEffect(upgrade, upgrade.currentLevel + 1);
   }
 
   getEffectTooltip(upgrade: Upgrade): string {
     if (upgrade.currentLevel === 0) return upgrade.description;
     const current = this.getCurrentEffect(upgrade);
-    if (upgrade.currentLevel >= upgrade.maxLevel) return `${upgrade.name}: ${current} (MAX)`;
     return `${upgrade.name}: ${current} (next: ${this.getNextEffect(upgrade)})`;
   }
 
-  private computeEffect(upgrade: Upgrade, level: number): string {
+  private formatEffect(upgrade: Upgrade, level: number): string {
+    const effect = upgradeEffectAtLevel(upgrade, level);
     switch (upgrade.id) {
       case 'click-power':
-        return `+${level} click power`;
+        return `+${effect} click power`;
       case 'click-gold':
-        return `+${level * 15}% gold from clicks`;
+        return `+${Math.round(effect * 100)}% gold from clicks`;
       case 'minion-speed':
-        return `+${level * 8}% minion speed`;
+        return `+${Math.round(effect * 100)}% minion speed`;
       case 'minion-efficiency':
-        return `+${level * 8}% minion efficiency`;
+        return `+${Math.round(effect * 100)}% minion efficiency`;
       case 'minion-xp':
-        return `+${level * 20}% minion XP`;
+        return `+${Math.round(effect * 100)}% minion XP`;
       case 'board-slots':
-        return `+${level * 3} board slots`;
+        return `+${effect} board slots`;
       case 'active-slots':
-        return `+${level} active slots`;
+        return `+${effect} active slots`;
       case 'board-refresh':
-        return `-${level * 20}% refresh time`;
+        return `-${Math.round((1 - effect) * 100)}% refresh time`;
       case 'dept-xp-boost':
-        return `+${level * 15}% dept XP`;
+        return `+${Math.round(effect * 100)}% dept XP`;
       case 'hire-discount':
-        return `-${level * 8}% hire cost`;
+        return `-${Math.round(effect * 100)}% hire cost`;
+      case 'bribe-network':
+        return `-${Math.round(effect * 100)}% bribe cost`;
+      case 'shadow-ops':
+        return `-${Math.round(effect * 100)}% notoriety gain`;
+      case 'cover-spawn':
+        return `+${Math.round(effect * 100)}% cover spawn rate`;
+      case 'lay-low':
+        return `-${effect.toFixed(2)}/tick notoriety decay`;
       default:
         return `Level ${level}`;
     }

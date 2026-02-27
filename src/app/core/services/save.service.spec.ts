@@ -97,6 +97,47 @@ describe('SaveService', () => {
   });
 
   describe('migration', () => {
+    it('should migrate v3 data (resources → influence) to v4', () => {
+      const v3Data: any = {
+        version: 3,
+        savedAt: Date.now(),
+        gold: 200,
+        completedCount: 10,
+        totalGoldEarned: 500,
+        notoriety: 20,
+        minions: [],
+        departments: {
+          schemes: { category: 'schemes', xp: 0, level: 1 },
+          heists: { category: 'heists', xp: 0, level: 1 },
+          research: { category: 'research', xp: 0, level: 1 },
+          mayhem: { category: 'mayhem', xp: 0, level: 1 },
+        },
+        upgradeLevels: [],
+        activeMissions: [],
+        missionBoard: [],
+        raidActive: false,
+        raidTimer: 0,
+        usedNameIndices: [],
+        lastBoardRefresh: 0,
+        capturedMinions: [],
+        departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
+        playerQueue: [],
+        resources: { supplies: 10, intel: 5 },
+      };
+
+      store[STORAGE_KEY] = JSON.stringify(v3Data);
+      const loaded = saveService.load();
+      expect(loaded).toBe(true);
+      expect(gameState.gold()).toBe(200);
+
+      // Verify influence is sum of supplies + intel
+      const snapshot = gameState.getSnapshot();
+      expect(snapshot.influence).toBe(15);
+      expect(snapshot.version).toBe(4);
+      // resources field should not exist in the migrated snapshot
+      expect((snapshot as any).resources).toBeUndefined();
+    });
+
     it('should migrate v1 data (missing capturedMinions) to v2', () => {
       const v1Data: any = {
         version: 1,

@@ -18,7 +18,7 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
         <div class="flex items-center gap-2">
           <button
             (click)="cycleSort()"
-            class="text-[10px] text-text-muted hover:text-text-secondary cursor-pointer
+            class="text-xs text-text-muted hover:text-text-secondary cursor-pointer
                    px-1.5 py-0.5 rounded border border-transparent hover:border-border transition-colors"
             [title]="'Sort: ' + sortLabel()">
             {{ sortIcon() }} {{ sortLabel() }}
@@ -38,7 +38,7 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
         <div class="flex gap-1 flex-wrap shrink-0">
           <button
             (click)="filterCategory.set(null)"
-            class="px-2 py-1 text-[10px] rounded cursor-pointer transition-colors"
+            class="px-2 py-1 text-xs rounded cursor-pointer transition-colors"
             [class]="filterCategory() === null ? 'bg-accent/20 text-accent border border-accent/30' : 'text-text-muted hover:text-text-secondary'">
             All
           </button>
@@ -46,13 +46,13 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
             @if (isFilterUnlocked(cat.key)) {
               <button
                 (click)="filterCategory.set(cat.key)"
-                class="px-1.5 py-1 text-[10px] rounded cursor-pointer transition-colors"
+                class="px-1.5 py-1 text-xs rounded cursor-pointer transition-colors"
                 [class]="filterCategory() === cat.key ? 'bg-accent/20 text-accent border border-accent/30' : 'text-text-muted hover:text-text-secondary'">
                 {{ cat.icon }}
               </button>
             } @else {
               <span
-                class="px-1.5 py-1 text-[10px] rounded text-text-muted/40 cursor-default"
+                class="px-1.5 py-1 text-xs rounded text-text-muted/40 cursor-default"
                 title="Reach dept level 2 to unlock this filter">
                 🔒
               </span>
@@ -82,17 +82,17 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
                     <span class="text-sm">{{ getCategoryIcon(mission.template.category) }}</span>
                     <app-tier-badge [tier]="mission.tier" />
                     @if (mission.isSpecialOp) {
-                      <span class="text-[10px] px-1 py-0.5 rounded-full bg-gold/20 text-gold font-bold uppercase">
+                      <span class="text-xs px-1 py-0.5 rounded-full bg-gold/20 text-gold font-bold uppercase">
                         Special
                       </span>
                     }
                     @if (mission.isCoverOp) {
-                      <span class="text-[10px] px-1 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold uppercase">
+                      <span class="text-xs px-1 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold uppercase">
                         Cover
                       </span>
                     }
                     @if (mission.isBreakoutOp) {
-                      <span class="text-[10px] px-1 py-0.5 rounded-full bg-orange-500/20 text-orange-400 font-bold uppercase">
+                      <span class="text-xs px-1 py-0.5 rounded-full bg-orange-500/20 text-orange-400 font-bold uppercase">
                         Breakout
                       </span>
                     }
@@ -102,7 +102,7 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
                   </h3>
                 </div>
                 @if (mission.isCoverOp || mission.isBreakoutOp) {
-                  <span class="font-bold text-[10px] shrink-0" [class]="mission.isCoverOp ? 'text-green-400' : 'text-orange-400'">
+                  <span class="font-bold text-xs shrink-0" [class]="mission.isCoverOp ? 'text-green-400' : 'text-orange-400'">
                     {{ mission.isCoverOp ? '-Heat' : 'Rescue' }}
                   </span>
                 } @else {

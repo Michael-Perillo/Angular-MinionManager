@@ -26,29 +26,30 @@
 ### Notoriety Management Rework
 *Source: [gameplay-improvements.md](../gameplay-improvements.md)*
 
-- [ ] Passive notoriety decay (0.05/tick base rate)
-- [ ] New upgrade: **Bribe Network** (5 levels, -10% bribe cost/level)
-- [ ] New upgrade: **Shadow Operations** (5 levels, -3% notoriety gain/level)
-- [ ] New upgrade: **Lay Low Protocol** (5 levels, +0.05 decay/tick/level)
-- [ ] Scaled Cover Your Tracks missions (tier-scaled reduction, not flat -15)
+- [x] Passive notoriety decay (0.05/tick base rate)
+- [x] New upgrade: **Bribe Network** (5 levels, -10% bribe cost/level, 80g base, 2.0x scale)
+- [x] New upgrade: **Shadow Operations** (5 levels, -6% notoriety gain/level, 100g base, 2.2x scale)
+- [x] New upgrade: **Lay Low Protocol** (5 levels, 1.5x decay multiplier/level, 120g base, 2.4x scale)
+- [x] Scaled Cover Your Tracks missions (tier-scaled reduction: petty/sinister -15, diabolical -25, legendary -40)
+- [x] New upgrade: **Deep Cover** (5 levels, +8% cover-tracks spawn rate/level, 90g base, 2.1x scale)
 
 ### Minion Rank Titles & Stat Visibility
 *Source: [gameplay-improvements.md](../gameplay-improvements.md)*
 
-- [ ] Rank title system (Lackey → Grunt → Agent → Operative → Elite → Mastermind)
-- [ ] Star rating display on minion cards
+- [x] Rank title system (Lackey → Grunt → Agent → Operative → Elite → Mastermind)
+- [x] Star rating display on minion cards (1–5 stars with color-coded rank)
 - [ ] Expandable stat breakdown panel on minion cards
 - [ ] Specialty match indicator on task cards (show which minions get bonuses)
 
 ### Consolidate Resources → Influence
 *Source: [game-design-vision.md](game-design-vision.md) — Economy*
 
-- [ ] Merge Supplies + Intel signals into single **Influence** signal in `GameStateService`
-- [ ] Update `Resources` interface in `resource.model.ts` → single `influence` field
-- [ ] Award Influence from ALL department task completions (Petty: 1, Sinister: 3, Diabolical: 5, Legendary: 8)
-- [ ] Update header display: replace ⚗️/🕵️ with Influence icon (📊 placeholder, TBD)
-- [ ] Save data migration: map `{ supplies, intel }` → `{ influence: supplies + intel }`
-- [ ] Update test factories and specs
+- [x] Merge Supplies + Intel signals into single **Influence** signal in `GameStateService`
+- [x] Update `Resources` interface in `resource.model.ts` → single `influence` field
+- [x] Award Influence from ALL department task completions (Petty: 1, Sinister: 3, Diabolical: 5, Legendary: 8)
+- [x] Update header display: replace ⚗️/🕵️ with 📊 Influence display
+- [x] Save data migration: map `{ supplies, intel }` → `{ influence: supplies + intel }`
+- [x] Update test factories and specs
 - [ ] ~~Loot/Chaos~~ — not building these (design dropped)
 
 ### Event-Driven Architecture Refactor
@@ -56,12 +57,12 @@
 
 Refactor the monolithic `tickTime()` in `GameStateService` into an event-driven architecture. This must happen before Phase 1 — rule triggers are event subscriptions, not tick polling.
 
-- [ ] Define core game events: `TaskCompleted`, `MinionIdle`, `ThreatChanged`, `BoardRefreshed`, `MinionCaptured`, `LevelUp`, `SpecialOpSpawned`
-- [ ] Create event bus / emitter service
-- [ ] Refactor `tickTime()`: timer still ticks at 1s but detects state changes and emits events instead of running 10 sequential steps
-- [ ] Migrate existing tick steps to event handlers (auto-assign, raid checks, prison expiry, board fill, etc.)
-- [ ] Verify no behavioral changes — same gameplay, different internal architecture
-- [ ] Update unit tests to test event emission and handler behavior
+- [x] Define core game events — 15 event types implemented (original 7 + `RaidStarted`, `RaidEnded`, `TaskQueued`, `TaskAssigned`, `MinionHired`, `MinionReassigned`, `UpgradePurchased`, `BreakoutCompleted`)
+- [x] Create `GameEventService` event bus with typed event emitters and subscriptions
+- [x] Refactor `tickTime()` → `GameTimerService` with event-driven scheduling (board refresh, task completion, raid checks, prison expiry, notoriety decay as independent timers)
+- [x] Migrate existing tick steps to event handlers (auto-assign via debounced microtasks, raid checks, prison expiry, board fill, etc.)
+- [x] Verify no behavioral changes — same gameplay, different internal architecture
+- [x] Update unit tests to test event emission and handler behavior
 
 ### Text Readability & Accessibility
 *Source: [../user-feedback.md](../user-feedback.md)*

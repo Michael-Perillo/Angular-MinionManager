@@ -5,8 +5,7 @@ const EMOJI_MAP: Record<string, string> = {
   completed: '✅',
   minions: '👾',
   notoriety: '🔥',
-  supplies: '⚗️',
-  intel: '🕵️',
+  influence: '📊',
 };
 
 export class HeaderPage {
