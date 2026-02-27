@@ -40,7 +40,7 @@ test('Purchase upgrade after earning gold', async ({ page, nav }) => {
   const buyBtn = page.locator('app-upgrade-shop button:not([disabled])').filter({ hasText: /\d+g/ }).first();
   await buyBtn.click();
 
-  await expect(page.locator('app-upgrade-shop').locator('text=1/')).toBeVisible();
+  await expect(page.locator('app-upgrade-shop').locator('text=Lv.1')).toBeVisible();
 });
 
 test('Drawer tab navigation shows correct content', async ({ page, nav }) => {

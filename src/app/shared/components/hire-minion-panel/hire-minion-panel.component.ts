@@ -69,12 +69,12 @@ import { TaskCategory } from '../../../core/models/task.model';
 
               <!-- Stats -->
               <div class="w-full flex flex-col gap-0.5 mt-1">
-                <div class="flex items-center justify-between text-[11px]">
-                  <span class="text-text-muted">Speed</span>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-text-secondary">Speed</span>
                   <span class="text-text-primary font-semibold">{{ minion.stats.speed.toFixed(2) }}</span>
                 </div>
-                <div class="flex items-center justify-between text-[11px]">
-                  <span class="text-text-muted">Efficiency</span>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-text-secondary">Efficiency</span>
                   <span class="text-text-primary font-semibold">{{ minion.stats.efficiency.toFixed(2) }}</span>
                 </div>
               </div>

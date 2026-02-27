@@ -96,6 +96,8 @@ export const MultipleMinions: Story = {
         assignedMinionId: workingMinionId,
         timeRemaining: 12,
         timeToComplete: 20,
+        assignedAt: Date.now(),
+        completesAt: Date.now() + 12000,
         assignedQueue: 'heists',
       }),
       makeTask({
@@ -110,6 +112,7 @@ export const MultipleMinions: Story = {
         assignedQueue: 'heists',
       }),
     ],
+    currentTime: Date.now(),
     department: makeDept({ category: 'heists', level: 3, xp: 60 }),
     assignedMinions: [
       makeMinion({

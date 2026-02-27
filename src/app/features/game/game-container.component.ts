@@ -1,6 +1,6 @@
 import { Component, inject, OnInit, OnDestroy, signal, computed, viewChild, HostListener, ElementRef } from '@angular/core';
 import { GameStateService } from '../../core/services/game-state.service';
-import { TimerService } from '../../core/services/timer.service';
+import { GameTimerService } from '../../core/services/game-timer.service';
 import { SaveService } from '../../core/services/save.service';
 import { QueueTarget, TaskCategory, Task } from '../../core/models/task.model';
 import { Minion } from '../../core/models/minion.model';
@@ -50,8 +50,7 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
         [villainLevel]="gameState.villainLevel()"
         [villainTitle]="gameState.villainTitle()"
         [notoriety]="gameState.notoriety()"
-        [supplies]="gameState.supplies()"
-        [intel]="gameState.intel()"
+        [influence]="gameState.influence()"
         [raidActive]="gameState.raidActive()"
         [capturedCount]="gameState.capturedMinions().length"
         [lastSaved]="gameState.lastSaved()"
@@ -83,6 +82,7 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
               [minions]="gameState.minions()"
               [clickPower]="gameState.clickPower()"
               [unlockedDepartments]="gameState.unlockedDepartmentList()"
+              [currentTime]="currentTime()"
               (taskClicked)="onTaskClick($event)"
               (taskMoved)="onTaskMoved($event)"
               (taskRouted)="onTaskRouted($event)" />
@@ -153,6 +153,7 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                           [connectedDropLists]="[]"
                           [dragDisabled]="true"
                           [fullWidth]="true"
+                          [currentTime]="currentTime()"
                           (taskMoveRequested)="onTaskMoveRequested($event)" />
                       </div>
                     }
@@ -329,7 +330,7 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
 })
 export class GameContainerComponent implements OnInit, OnDestroy {
   readonly gameState = inject(GameStateService);
-  private readonly timer = inject(TimerService);
+  private readonly gameTimer = inject(GameTimerService);
   private readonly saveService = inject(SaveService);
 
   readonly drawerPanel = viewChild(DrawerPanelComponent);
@@ -373,17 +374,14 @@ export class GameContainerComponent implements OnInit, OnDestroy {
       this.gameState.initializeGame();
     }
 
-    // Wire up auto-save callback
-    this.gameState.onAutoSave = () => this.saveService.save();
+    this.gameTimer.start();
 
-    this.timer.start();
-
-    // Tick currentTime every second for prison countdowns
-    this.currentTimeInterval = setInterval(() => this.currentTime.set(Date.now()), 1000);
+    // Tick currentTime frequently for smooth progress percentage updates
+    this.currentTimeInterval = setInterval(() => this.currentTime.set(Date.now()), 250);
   }
 
   ngOnDestroy(): void {
-    this.timer.stop();
+    this.gameTimer.stop();
     if (this.currentTimeInterval) {
       clearInterval(this.currentTimeInterval);
     }

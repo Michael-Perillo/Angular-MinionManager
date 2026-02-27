@@ -72,3 +72,35 @@ export interface CapturedMinion {
 }
 
 export const PRISON_DURATION_MS = 300_000; // 5 minutes
+
+// ─── Rank system ──────────────────────────
+export type MinionRank = 'Lackey' | 'Grunt' | 'Agent' | 'Operative' | 'Elite' | 'Mastermind';
+
+/** Get rank title based on level */
+export function getMinionRank(level: number): MinionRank {
+  if (level <= 2) return 'Lackey';
+  if (level <= 4) return 'Grunt';
+  if (level <= 6) return 'Agent';
+  if (level <= 8) return 'Operative';
+  if (level <= 10) return 'Elite';
+  return 'Mastermind';
+}
+
+/** Get star rating (1-5) based on level */
+export function getMinionStars(level: number): number {
+  if (level <= 2) return 1;
+  if (level <= 4) return 2;
+  if (level <= 6) return 3;
+  if (level <= 8) return 4;
+  return 5;
+}
+
+/** Get rank color class for display */
+export function getMinionRankColor(level: number): string {
+  if (level <= 2) return 'text-text-muted';
+  if (level <= 4) return 'text-green-400';
+  if (level <= 6) return 'text-blue-400';
+  if (level <= 8) return 'text-purple-400';
+  if (level <= 10) return 'text-gold';
+  return 'text-red-400';
+}

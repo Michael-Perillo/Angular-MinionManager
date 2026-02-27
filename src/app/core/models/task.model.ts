@@ -22,6 +22,8 @@ export interface Task {
   clicksRemaining: number;
   assignedMinionId: string | null;
   queuedAt: number;
+  assignedAt?: number | null;
+  completesAt?: number | null;
   isSpecialOp?: boolean;
   specialOpExpiry?: number;
   isCoverOp?: boolean;

@@ -1,7 +1,6 @@
 import { Minion } from './minion.model';
 import { Task, TaskCategory } from './task.model';
 import { Department } from './department.model';
-import { Resources } from './resource.model';
 
 export interface SaveData {
   version: number;
@@ -22,7 +21,7 @@ export interface SaveData {
   capturedMinions: CapturedMinion[];
   departmentQueues: Record<TaskCategory, Task[]>;
   playerQueue: Task[];
-  resources: Resources;
+  influence: number;
   unlockedDepartments?: string[];
 }
 

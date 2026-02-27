@@ -18,7 +18,7 @@ export type MobileTab = 'missions' | 'work' | 'click' | 'more';
             ? 'text-gold'
             : 'text-text-muted'">
           <span class="text-xl">{{ tab.icon }}</span>
-          <span class="text-[10px] font-semibold uppercase tracking-wider">{{ tab.label }}</span>
+          <span class="text-xs font-semibold uppercase tracking-wider">{{ tab.label }}</span>
         </button>
       }
     </nav>

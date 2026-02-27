@@ -1,11 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { GameStateService } from './game-state.service';
+import { GameEventService, GameEvent } from './game-event.service';
 import { completeTaskByClicking, setupGameWithMinions, acceptFirstMission, tickUntilComplete } from '../../../testing/helpers/game-test-helpers';
 import { makeSaveData } from '../../../testing/factories/game-state.factory';
 import { makeMinion, makeCapturedMinion } from '../../../testing/factories/minion.factory';
 import { makeTask, makeCoverOpTask, makeBreakoutTask } from '../../../testing/factories/task.factory';
-import { NOTORIETY_PER_TIER, COVER_TRACKS_REDUCTION } from '../models/notoriety.model';
+import { NOTORIETY_PER_TIER, COVER_TRACKS_REDUCTION, bribeCost, BASE_NOTORIETY_DECAY } from '../models/notoriety.model';
+import { INFLUENCE_PER_TIER } from '../models/resource.model';
 import { TIER_CONFIG } from '../models/task.model';
+import { upgradeEffect } from '../models/upgrade.model';
 
 describe('GameStateService', () => {
   let service: GameStateService;
@@ -13,6 +16,7 @@ describe('GameStateService', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({});
     service = TestBed.inject(GameStateService);
+    service.clickCompleteDelay = 0;
     service.initializeGame();
   });
 
@@ -275,7 +279,7 @@ describe('GameStateService', () => {
       expect(service.idleMinions().length).toBe(0);
     });
 
-    it('should complete task and free minion when timer reaches 0', () => {
+    it('should complete task and free minion via completeTaskByTimer', () => {
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       service.addGold(50);
@@ -283,24 +287,24 @@ describe('GameStateService', () => {
 
       // Reassign minion to matching department
       const minion = service.minions()[0];
-      service.reassignMinion(minion.id, mission.template.category);
+      const dept = mission.template.category;
+      service.reassignMinion(minion.id, dept);
 
-      service.tickTime(); // assigns minion
+      service.tickTime(); // auto-assigns minion
 
       const task = service.inProgressTasks()[0];
       expect(task).toBeTruthy();
       const goldBefore = service.gold();
       const completedBefore = service.completedCount();
 
-      // Tick enough times to complete the task (accounting for speed > 1)
-      for (let i = 0; i < task.timeToComplete + 5; i++) {
-        service.tickTime();
-      }
+      // Complete via event-driven path
+      service.completeTaskByTimer(task.id, dept);
 
-      expect(service.activeMissions().find(t => t.id === task.id)).toBeUndefined();
+      expect(service.departmentQueues()[dept].find(t => t.id === task.id)).toBeUndefined();
       expect(service.gold()).toBeGreaterThan(goldBefore);
       expect(service.completedCount()).toBeGreaterThan(completedBefore);
       expect(service.minions()[0]).toBeTruthy();
+      expect(service.minions()[0].status).toBe('idle');
     });
 
     it('should refill mission board over time', () => {
@@ -420,8 +424,9 @@ describe('GameStateService', () => {
   describe('clickTask edge cases', () => {
     it('should apply click power upgrade', () => {
       service.addGold(10_000);
-      service.purchaseUpgrade('click-power'); // level 1 → clickPower = 2
-      expect(service.clickPower()).toBe(2);
+      service.purchaseUpgrade('click-power'); // level 1 → clickPower = 1 + additive effect
+      const power = service.clickPower();
+      expect(power).toBeGreaterThan(1);
 
       const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
       service.acceptMission(mission.id);
@@ -431,7 +436,7 @@ describe('GameStateService', () => {
       service.clickTask(task.id);
       const after = service.activeMissions().find(t => t.id === task.id);
       if (after) {
-        expect(after.clicksRemaining).toBe(clicksBefore - 2);
+        expect(after.clicksRemaining).toBe(clicksBefore - power);
       }
     });
 
@@ -633,16 +638,16 @@ describe('GameStateService', () => {
 
   describe('raid mechanics', () => {
     it('should not trigger raid when notoriety < 60', () => {
-      spyOn(Math, 'random').and.returnValue(0.001); // would trigger if allowed
-      service.tickTime();
+      spyOn(Math, 'random').and.returnValue(0.001);
+      service.checkRaidTrigger();
       expect(service.raidActive()).toBe(false);
     });
 
     it('should trigger raid when notoriety >= 60 and random < 0.02', () => {
       const data = makeSaveData({ notoriety: 70 });
       service.loadSnapshot(data);
-      spyOn(Math, 'random').and.returnValue(0.01); // < 0.02
-      service.tickTime();
+      spyOn(Math, 'random').and.returnValue(0.01);
+      service.checkRaidTrigger();
       expect(service.raidActive()).toBe(true);
       expect(service.raidTimer()).toBeGreaterThan(0);
     });
@@ -651,7 +656,7 @@ describe('GameStateService', () => {
       const data = makeSaveData({ notoriety: 70 });
       service.loadSnapshot(data);
       spyOn(Math, 'random').and.returnValue(0.5);
-      service.tickTime();
+      service.checkRaidTrigger();
       expect(service.raidActive()).toBe(false);
     });
 
@@ -659,12 +664,11 @@ describe('GameStateService', () => {
       const data = makeSaveData({ notoriety: 70 });
       service.loadSnapshot(data);
       spyOn(Math, 'random').and.returnValue(0.01);
-      service.tickTime(); // triggers raid
+      service.checkRaidTrigger();
 
       const timerAfterTrigger = service.raidTimer();
-      // Next tick should decrement (raid is active, so step 7 runs)
-      (Math.random as jasmine.Spy).and.returnValue(0.99); // prevent new events
-      service.tickTime();
+      (Math.random as jasmine.Spy).and.returnValue(0.99);
+      service.processRaidCountdown(Date.now());
       expect(service.raidTimer()).toBeLessThan(timerAfterTrigger);
     });
 
@@ -672,13 +676,12 @@ describe('GameStateService', () => {
       const data = makeSaveData({ notoriety: 70 });
       service.loadSnapshot(data);
       spyOn(Math, 'random').and.returnValue(0.01);
-      service.tickTime(); // triggers raid
+      service.checkRaidTrigger();
 
-      // Defend until repelled
       while (service.raidActive()) {
         service.defendRaid();
       }
-      expect(service.notoriety()).toBe(50); // 70 - 20
+      expect(service.notoriety()).toBe(50);
     });
 
     it('should capture a minion when raid timer expires', () => {
@@ -686,18 +689,15 @@ describe('GameStateService', () => {
       const data = makeSaveData({
         notoriety: 70,
         minions: [minion],
+        raidActive: true,
+        raidTimer: 1,
       });
       service.loadSnapshot(data);
       expect(service.minions().length).toBe(1);
 
-      spyOn(Math, 'random').and.returnValue(0.01);
-      service.tickTime(); // triggers raid
+      spyOn(Math, 'random').and.returnValue(0.99);
+      service.processRaidCountdown(Date.now());
 
-      // Let raid timer expire by ticking
-      (Math.random as jasmine.Spy).and.returnValue(0.99);
-      tickUntilComplete(service, 15);
-
-      // Minion should be captured
       expect(service.minions().length).toBe(0);
       expect(service.capturedMinions().length).toBe(1);
     });
@@ -707,16 +707,14 @@ describe('GameStateService', () => {
       const data = makeSaveData({
         notoriety: 70,
         minions: [minion],
+        raidActive: true,
+        raidTimer: 1,
       });
       service.loadSnapshot(data);
 
-      spyOn(Math, 'random').and.returnValue(0.01);
-      service.tickTime();
+      spyOn(Math, 'random').and.returnValue(0.99);
+      service.processRaidCountdown(Date.now());
 
-      (Math.random as jasmine.Spy).and.returnValue(0.99);
-      tickUntilComplete(service, 15);
-
-      // notoriety = 70 - 15 = 55 (raid lost reduces by 15)
       expect(service.notoriety()).toBe(55);
     });
   });
@@ -731,9 +729,8 @@ describe('GameStateService', () => {
       service.loadSnapshot(data);
 
       // Board may contain breakout missions after refill
-      // Force a board refill by ticking
       spyOn(Math, 'random').and.returnValue(0.1); // 0.1 < 0.20 → breakout mission chance
-      tickUntilComplete(service, 5);
+      service.refreshBoard();
 
       const breakoutMission = service.missionBoard().find(m => m.isBreakoutOp);
       if (breakoutMission) {
@@ -747,19 +744,21 @@ describe('GameStateService', () => {
     it('should award minion XP after completing a task via minion', () => {
       setupGameWithMinions(service, 1);
       const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const dept = mission.template.category;
       service.acceptMission(mission.id);
 
       // Reassign minion to matching department
       const minion = service.minions()[0];
-      service.reassignMinion(minion.id, mission.template.category);
+      service.reassignMinion(minion.id, dept);
 
-      service.tickTime(); // assigns minion
+      service.tickTime(); // auto-assigns minion
 
       const minionBefore = service.minions()[0];
       expect(minionBefore.xp).toBe(0);
 
-      // Tick until task completes
-      tickUntilComplete(service, 100);
+      // Complete via event-driven path
+      const task = service.inProgressTasks()[0];
+      service.completeTaskByTimer(task.id, dept);
 
       const minionAfter = service.minions()[0];
       if (minionAfter) {
@@ -773,14 +772,16 @@ describe('GameStateService', () => {
       service.purchaseUpgrade('minion-xp'); // +20% XP
 
       const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const dept = mission.template.category;
       service.acceptMission(mission.id);
 
       // Reassign minion to matching department
-      service.reassignMinion(service.minions()[0].id, mission.template.category);
+      service.reassignMinion(service.minions()[0].id, dept);
 
-      service.tickTime();
+      service.tickTime(); // auto-assigns
 
-      tickUntilComplete(service, 100);
+      const task = service.inProgressTasks()[0];
+      service.completeTaskByTimer(task.id, dept);
 
       const minion = service.minions()[0];
       if (minion) {
@@ -854,13 +855,12 @@ describe('GameStateService', () => {
   });
 
   describe('purchaseUpgrade edge cases', () => {
-    it('should not exceed maxLevel', () => {
-      service.addGold(1_000_000);
-      const upgrade = service.upgrades().find(u => u.id === 'click-power')!;
-      for (let i = 0; i < upgrade.maxLevel + 5; i++) {
+    it('should allow purchasing beyond old max levels (uncapped)', () => {
+      service.addGold(1_000_000_000);
+      for (let i = 0; i < 15; i++) {
         service.purchaseUpgrade('click-power');
       }
-      expect(service.getUpgradeLevel('click-power')).toBe(upgrade.maxLevel);
+      expect(service.getUpgradeLevel('click-power')).toBe(15);
     });
 
     it('should do nothing for unknown upgrade ID', () => {
@@ -915,7 +915,7 @@ describe('GameStateService', () => {
       service.addGold(10_000);
       const baseCap = service.boardCapacity();
       service.purchaseUpgrade('board-slots');
-      expect(service.boardCapacity()).toBe(baseCap + 3);
+      expect(service.boardCapacity()).toBeGreaterThan(baseCap);
     });
 
     it('should increase active slots with minions', () => {
@@ -1054,10 +1054,8 @@ describe('GameStateService', () => {
       snapshot.missionBoard = [];
       service.loadSnapshot(snapshot);
 
-      // Tick to trigger board refill
-      for (let i = 0; i < 10; i++) {
-        service.tickTime();
-      }
+      // Trigger board refill directly (migrated from tickTime to GameTimerService)
+      service.refreshBoard();
 
       // All newly generated non-special missions should be from unlocked depts
       const boardMissions = service.missionBoard().filter(m => !m.isCoverOp && !m.isBreakoutOp);
@@ -1252,6 +1250,397 @@ describe('GameStateService', () => {
       const schemesIdx = list.indexOf('schemes');
       const mayhemIdx = list.indexOf('mayhem');
       expect(schemesIdx).toBeLessThan(mayhemIdx);
+    });
+  });
+
+  // ─── Phase 0: Influence System ──────────
+
+  describe('influence system', () => {
+    it('should start with 0 influence', () => {
+      expect(service.influence()).toBe(0);
+    });
+
+    it('should earn influence from task completion scaled by tier', () => {
+      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const tier = mission.tier;
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
+
+      const expectedInfluence = INFLUENCE_PER_TIER[tier];
+      expect(service.influence()).toBe(expectedInfluence);
+    });
+
+    it('should include influence in snapshot', () => {
+      // Set influence via task completion
+      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
+      expect(service.influence()).toBeGreaterThan(0);
+
+      const snapshot = service.getSnapshot();
+      expect(snapshot.influence).toBe(service.influence());
+    });
+
+    it('should restore influence from snapshot', () => {
+      const data = makeSaveData({ influence: 42 });
+      service.loadSnapshot(data);
+      expect(service.influence()).toBe(42);
+    });
+  });
+
+  // ─── Phase 0: Notoriety Upgrade Effects ──────────
+
+  describe('notoriety upgrade effects', () => {
+    it('bribe-network should reduce bribe cost', () => {
+      const board = service.missionBoard();
+      const data = makeSaveData({ notoriety: 50, gold: 10_000, missionBoard: board });
+      service.loadSnapshot(data);
+
+      // Calculate baseline bribe cost at notoriety=50
+      const baseCostAtN50 = bribeCost(50);
+
+      // Purchase bribe-network upgrade
+      service.purchaseUpgrade('bribe-network');
+      const goldBeforeBribe = service.gold();
+
+      service.payBribe();
+
+      const goldSpent = goldBeforeBribe - service.gold();
+      // With discount, should cost less than base
+      expect(goldSpent).toBeLessThan(baseCostAtN50);
+      expect(goldSpent).toBeGreaterThan(0);
+    });
+
+    it('shadow-ops should reduce notoriety gain from tasks', () => {
+      const board = service.missionBoard();
+      // Complete a task WITHOUT shadow-ops to get baseline notoriety gain
+      const mission1 = board.find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      service.acceptMission(mission1.id);
+      completeTaskByClicking(service, mission1.id);
+      const baseNotorietyGain = service.notoriety();
+
+      // Reset and do it again WITH shadow-ops
+      service.initializeGame();
+      service.addGold(10_000);
+      service.purchaseUpgrade('shadow-ops');
+
+      // Find a mission of the same tier
+      const mission2 = service.missionBoard().find(
+        m => !m.isCoverOp && !m.isBreakoutOp && m.tier === mission1.tier
+      )!;
+      service.acceptMission(mission2.id);
+      completeTaskByClicking(service, mission2.id);
+      const reducedNotorietyGain = service.notoriety();
+
+      expect(reducedNotorietyGain).toBeLessThanOrEqual(baseNotorietyGain);
+    });
+
+    it('cover-spawn should increase cover-tracks mission probability', () => {
+      // Verify the upgrade effect is positive and would increase spawn chance
+      service.addGold(10_000);
+      service.purchaseUpgrade('cover-spawn');
+      const upgrade = service.upgrades().find(u => u.id === 'cover-spawn')!;
+      const effect = upgradeEffect(upgrade);
+      expect(effect).toBeGreaterThan(0);
+      expect(effect).toBeLessThanOrEqual(0.38); // effectMax
+    });
+
+    it('lay-low should increase passive notoriety decay rate', () => {
+      // Set up with notoriety and lay-low upgrade
+      const board = service.missionBoard();
+      const data = makeSaveData({ notoriety: 30, gold: 10_000, missionBoard: board });
+      service.loadSnapshot(data);
+      service.purchaseUpgrade('lay-low');
+
+      const notorietyBefore = service.notoriety();
+
+      // Call processNotorietyDecay directly (migrated out of tickTime to GameTimerService)
+      // With lay-low level 1: effectRate=1.5, passive-decay formula = 1.5 * ln(2) ≈ 1.04
+      // Total per tick: BASE_NOTORIETY_DECAY (0.05) + 1.04 ≈ 1.09
+      for (let i = 0; i < 5; i++) {
+        service.processNotorietyDecay();
+      }
+
+      const notorietyAfter = service.notoriety();
+      expect(notorietyAfter).toBeLessThan(notorietyBefore);
+      const decay = notorietyBefore - notorietyAfter;
+      expect(decay).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ─── Phase 0: Passive Notoriety Decay ──────────
+
+  describe('passive notoriety decay', () => {
+    it('should passively decay notoriety over time (no upgrades)', () => {
+      const board = service.missionBoard();
+      const data = makeSaveData({ notoriety: 10, missionBoard: board });
+      service.loadSnapshot(data);
+
+      // BASE_NOTORIETY_DECAY = 0.05, so ~20 calls = 1 point
+      for (let i = 0; i < 22; i++) {
+        service.processNotorietyDecay();
+      }
+
+      expect(service.notoriety()).toBeLessThan(10);
+      expect(service.notoriety()).toBe(9);
+    });
+
+    it('should not decay notoriety below 0', () => {
+      const board = service.missionBoard();
+      const data = makeSaveData({ notoriety: 1, missionBoard: board });
+      service.loadSnapshot(data);
+
+      for (let i = 0; i < 50; i++) {
+        service.processNotorietyDecay();
+      }
+
+      expect(service.notoriety()).toBe(0);
+    });
+
+    it('should not decay notoriety during an active raid', () => {
+      const data = makeSaveData({ notoriety: 70, raidActive: true, raidTimer: 10 });
+      service.loadSnapshot(data);
+
+      const notorietyDuringRaid = service.notoriety();
+      for (let i = 0; i < 5; i++) {
+        service.processNotorietyDecay();
+      }
+      // processNotorietyDecay guards on raidActive — no decay
+      expect(service.notoriety()).toBe(notorietyDuringRaid);
+    });
+  });
+
+  // ─── Phase 0: Tier-scaled Cover-Op Reduction ──────────
+
+  describe('tier-scaled cover-op notoriety reduction', () => {
+    it('should reduce notoriety by 15 for a petty cover-op', () => {
+      // Build notoriety, then complete a petty cover op
+      for (let i = 0; i < 8; i++) {
+        const m = service.missionBoard().find(t => !t.isCoverOp && !t.isBreakoutOp);
+        if (!m) break;
+        service.acceptMission(m.id);
+        completeTaskByClicking(service, m.id);
+      }
+      const notorietyBefore = service.notoriety();
+      expect(notorietyBefore).toBeGreaterThan(15);
+
+      // Find or wait for a cover op
+      const coverMission = service.missionBoard().find(m => m.isCoverOp);
+      if (coverMission) {
+        service.acceptMission(coverMission.id);
+        completeTaskByClicking(service, coverMission.id);
+        // petty cover-ops reduce by COVER_TRACKS_REDUCTION.petty = 15
+        expect(service.notoriety()).toBe(Math.max(0, notorietyBefore - COVER_TRACKS_REDUCTION[coverMission.tier]));
+      }
+    });
+
+    it('should have higher reduction values for higher tiers', () => {
+      expect(COVER_TRACKS_REDUCTION.petty).toBeLessThan(COVER_TRACKS_REDUCTION.diabolical);
+      expect(COVER_TRACKS_REDUCTION.diabolical).toBeLessThan(COVER_TRACKS_REDUCTION.legendary);
+    });
+  });
+
+  describe('event emission integration', () => {
+    let events: GameEventService;
+    let emitted: GameEvent[];
+
+    beforeEach(() => {
+      events = TestBed.inject(GameEventService);
+      emitted = [];
+      events.events$.subscribe(e => emitted.push(e));
+    });
+
+    it('should emit TaskQueued when accepting a mission to player queue', () => {
+      const mission = service.missionBoard()[0];
+      service.acceptMission(mission.id);
+      const queued = emitted.filter(e => e.type === 'TaskQueued');
+      expect(queued.length).toBe(1);
+      expect(queued[0].type).toBe('TaskQueued');
+    });
+
+    it('should emit TaskQueued when routing a mission to player queue', () => {
+      const mission = service.missionBoard()[0];
+      service.routeMission(mission.id, 'player');
+      const queued = emitted.filter(e => e.type === 'TaskQueued');
+      expect(queued.length).toBe(1);
+      if (queued[0].type === 'TaskQueued') {
+        expect(queued[0].department).toBe('player');
+      }
+    });
+
+    it('should emit UpgradePurchased when buying an upgrade', () => {
+      service.addGold(500);
+      const upgrades = service.upgrades();
+      const upgrade = upgrades[0];
+      service.purchaseUpgrade(upgrade.id);
+      const purchased = emitted.filter(e => e.type === 'UpgradePurchased');
+      expect(purchased.length).toBe(1);
+      if (purchased[0].type === 'UpgradePurchased') {
+        expect(purchased[0].upgradeId).toBe(upgrade.id);
+        expect(purchased[0].newLevel).toBe(1);
+      }
+    });
+
+    it('should emit ThreatChanged when completing a task that adds notoriety', () => {
+      const mission = service.missionBoard()[0];
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
+      const threat = emitted.filter(e => e.type === 'ThreatChanged');
+      expect(threat.length).toBeGreaterThanOrEqual(1);
+      if (threat[0].type === 'ThreatChanged') {
+        expect(threat[0].newNotoriety).toBeGreaterThan(threat[0].oldNotoriety);
+      }
+    });
+
+    it('should emit ThreatChanged when paying a bribe', () => {
+      // Build notoriety first
+      for (let i = 0; i < 5; i++) {
+        const m = service.missionBoard()[0];
+        if (!m) break;
+        service.acceptMission(m.id);
+        completeTaskByClicking(service, m.id);
+      }
+      const notBefore = service.notoriety();
+      if (notBefore === 0) return; // skip if no notoriety built
+
+      service.addGold(10000);
+      emitted = [];
+      service.payBribe();
+      const threat = emitted.filter(e => e.type === 'ThreatChanged');
+      expect(threat.length).toBe(1);
+      if (threat[0].type === 'ThreatChanged') {
+        expect(threat[0].newNotoriety).toBeLessThan(threat[0].oldNotoriety);
+      }
+    });
+
+    it('should emit MinionHired when hiring a minion', () => {
+      service.addGold(500);
+      service.hireMinion();
+      const hired = emitted.filter(e => e.type === 'MinionHired');
+      expect(hired.length).toBe(1);
+      if (hired[0].type === 'MinionHired') {
+        expect(hired[0].minionId).toBeTruthy();
+      }
+    });
+
+    it('should emit MinionReassigned when reassigning a minion', () => {
+      service.addGold(500);
+      service.hireMinion();
+      const minion = service.minions()[0];
+      const newDept = minion.assignedDepartment === 'schemes' ? 'heists' : 'schemes';
+      service.reassignMinion(minion.id, newDept);
+      const reassigned = emitted.filter(e => e.type === 'MinionReassigned');
+      expect(reassigned.length).toBe(1);
+      if (reassigned[0].type === 'MinionReassigned') {
+        expect(reassigned[0].minionId).toBe(minion.id);
+        expect(reassigned[0].toDepartment).toBe(newDept);
+      }
+    });
+
+    it('should emit TaskAssigned when auto-assigning a minion to a task', () => {
+      service.addGold(500);
+      service.hireMinion();
+      const minion = service.minions()[0];
+      const dept = minion.assignedDepartment;
+
+      // Route a mission to the minion's department
+      const mission = service.missionBoard().find(m => m.template.category === dept)
+        || service.missionBoard()[0];
+      service.routeMission(mission.id, dept);
+
+      // Auto-assign triggers in tickTime
+      service.tickTime();
+      const assigned = emitted.filter(e => e.type === 'TaskAssigned');
+      expect(assigned.length).toBeGreaterThanOrEqual(1);
+      if (assigned[0].type === 'TaskAssigned') {
+        expect(assigned[0].minionId).toBe(minion.id);
+        expect(assigned[0].durationMs).toBeGreaterThan(0);
+      }
+    });
+
+    it('should emit ThreatChanged when notoriety decays passively', () => {
+      // Set notoriety high enough that a single decay tick drops 1+ point
+      // BASE_NOTORIETY_DECAY = 0.05, so need 20 ticks to accumulate 1.0
+      for (let i = 0; i < 5; i++) {
+        const m = service.missionBoard()[0];
+        if (!m) break;
+        service.acceptMission(m.id);
+        completeTaskByClicking(service, m.id);
+      }
+      if (service.notoriety() === 0) return;
+
+      emitted = [];
+      // Tick enough times for decay accumulator to reach 1.0
+      for (let i = 0; i < 25; i++) {
+        service.processNotorietyDecay();
+      }
+      const threat = emitted.filter(e => e.type === 'ThreatChanged');
+      expect(threat.length).toBeGreaterThanOrEqual(1);
+      if (threat[0].type === 'ThreatChanged') {
+        expect(threat[0].newNotoriety).toBeLessThan(threat[0].oldNotoriety);
+      }
+    });
+
+    it('should emit ThreatChanged and RaidEnded when raid fails', () => {
+      setupGameWithMinions(service, 1);
+      service.loadSnapshot(makeSaveData({
+        notoriety: 50,
+        raidActive: true,
+        raidTimer: 1,
+      }));
+      emitted = [];
+      service.processRaidCountdown(Date.now()); // timer decrements to 0, raid fails
+
+      const threat = emitted.filter(e => e.type === 'ThreatChanged');
+      expect(threat.length).toBeGreaterThanOrEqual(1);
+      const raidEnded = emitted.filter(e => e.type === 'RaidEnded');
+      expect(raidEnded.length).toBe(1);
+    });
+
+    it('should emit LevelUp for villain when completedCount crosses level threshold', () => {
+      // level = min(20, floor(sqrt(c/2.5)) + 1)
+      // Level 1: c < 2.5 → c in [0, 2]
+      // Level 2: sqrt(c/2.5) >= 1 → c >= 2.5 → c >= 3 (integer)
+      // Start at completedCount = 2 (still level 1), complete a task to cross to 3+
+      // Use initializeGame board (already populated), then set completedCount via loadSnapshot
+      // preserving board missions
+      const board = service.missionBoard().slice();
+      service.loadSnapshot(makeSaveData({ completedCount: 2, missionBoard: board }));
+      emitted = [];
+
+      const mission = service.missionBoard()[0];
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
+
+      const levelUps = emitted.filter(e => e.type === 'LevelUp' && e.target === 'villain');
+      expect(levelUps.length).toBe(1);
+      if (levelUps[0].type === 'LevelUp') {
+        expect(levelUps[0].newLevel).toBe(2);
+      }
+    });
+
+    it('should emit BreakoutCompleted when completing a breakout mission', () => {
+      const captured = makeCapturedMinion();
+      service.loadSnapshot(makeSaveData({
+        capturedMinions: [captured],
+      }));
+
+      // Find breakout mission on board (they spawn 20% of the time when minions captured)
+      // Since it's random, load a breakout directly into the player queue
+      const breakoutTask = makeBreakoutTask(captured.minion.id);
+      service.loadSnapshot(makeSaveData({
+        capturedMinions: [captured],
+        playerQueue: [breakoutTask],
+      }));
+      emitted = [];
+
+      completeTaskByClicking(service, breakoutTask.id);
+
+      const breakouts = emitted.filter(e => e.type === 'BreakoutCompleted');
+      expect(breakouts.length).toBe(1);
+      if (breakouts[0].type === 'BreakoutCompleted') {
+        expect(breakouts[0].minionId).toBe(captured.minion.id);
+      }
     });
   });
 });

@@ -9,19 +9,23 @@
 
 ## Core Game Loop [CURRENT]
 
-### Tick Cycle
+### Event-Driven Architecture
 
-The game runs on a **1-second tick** driven by `TimerService`. Each tick:
+The game uses an **event-driven architecture** powered by `GameEventService` (15 event types) and `GameTimerService` (replaces the old monolithic `TimerService`/`tickTime()`).
 
-1. Decrement timers on all in-progress minion tasks
-2. Complete finished tasks — award gold, XP (minion + department), notoriety
-3. Expire stale Special Operations (30s timeout)
-4. Refill mission board (every ~3s base, reduced by upgrades/passives)
-5. Auto-assign idle minions to queued tasks (specialty-match priority)
-6. Roll for hero raids (2% per tick when notoriety >= 60)
-7. Check prison expirations (5-minute limit)
-8. Clean up old notifications (>4s)
-9. Auto-save (~every 30 ticks)
+Instead of a single tick function running 9 sequential steps, each game system runs on its own independent timer or event subscription:
+
+- **Task completion** — per-task timers scheduled on assignment, awards gold/XP/notoriety/Influence on completion
+- **Board refresh** — dynamic interval (~3s base, reduced by upgrades/passives), fills empty mission board slots
+- **Auto-assign** — debounced microtask triggered by `MinionIdle`, `TaskQueued`, `MinionHired`, and `MinionReassigned` events
+- **Notoriety decay** — 1s interval, applies passive decay (0.05/tick base, boosted by Lay Low Protocol upgrade)
+- **Raid checks** — 1s interval when notoriety >= 60, 2% chance per tick; separate countdown timer for active raids
+- **Prison expiry** — per-minion 5-minute timer scheduled on capture
+- **Special Op expiry** — per-task 30s timer scheduled on spawn
+- **Notification cleanup** — 1s interval, removes notifications older than 4s
+- **Auto-save** — 30s interval
+
+`GameEventService` emits typed events (`TaskCompleted`, `MinionIdle`, `ThreatChanged`, `BoardRefreshed`, `MinionCaptured`, `LevelUp`, `SpecialOpSpawned`, `RaidStarted`, `RaidEnded`, `TaskQueued`, `TaskAssigned`, `MinionHired`, `MinionReassigned`, `UpgradePurchased`, `BreakoutCompleted`) that any system can subscribe to. This architecture unblocks Phase 1 — rule triggers are event subscriptions, not tick polling.
 
 ### The Satisfactory Loop
 
@@ -111,40 +115,26 @@ The core tension mechanic. Rises from completing tasks, causes gold penalties an
 
 **Gold penalty curve:** 0% below 35 notoriety, then linear from 0% to 30% at 100: `min(0.30, ((notoriety - 35) / 65) * 0.30)`
 
+**Passive decay:** 0.05 notoriety/tick base rate (boosted by Lay Low Protocol upgrade: 1.5x multiplier per level). Decay is continuous — notoriety slowly drops even without player action.
+
 **Notoriety reduction tools:**
-- Bribe: costs `20 + (notoriety * 2)` gold, removes 10 notoriety
-- Cover Your Tracks missions: -15 notoriety, spawn at 12% rate when notoriety > 20
-- Raid defense success: -20 notoriety
+- **Passive decay:** 0.05/tick base (boosted by Lay Low Protocol)
+- **Bribe:** costs `20 + (notoriety * 2)` gold, removes 10 notoriety (reduced by Bribe Network: -10%/level)
+- **Cover Your Tracks missions:** tier-scaled reduction (petty/sinister -15, diabolical -25, legendary -40), spawn rate 12% base when notoriety > 20 (boosted by Deep Cover: +8%/level)
+- **Shadow Operations upgrade:** -6% notoriety gain from all tasks per level
+- **Raid defense success:** -20 notoriety
 
 **Hero raids:** 2% chance per tick when notoriety >= 60. 10-second defense countdown. Failure captures a random minion for 5 minutes (permanent loss if not rescued).
 
-### Supplies [CURRENT → CONSOLIDATING INTO INFLUENCE]
+### ~~Supplies~~ [CONSOLIDATED INTO INFLUENCE]
 
-> **Design change:** Supplies is being consolidated into **Influence** — a unified strategic currency earned from all departments. See [game-design-vision.md](game-design-vision.md) for the full economy rationale. The per-department resource model was dropped because it doesn't scale to the multi-phase vision (Divisions/Regions).
+> Supplies was a secondary resource produced by Research department tasks. It has been merged into the unified **Influence** currency. Save migration maps `{ supplies, intel }` → `{ influence: supplies + intel }`.
 
-Currently implemented as a secondary resource produced by **Research** department tasks. Accumulated but has no spending sink.
+### ~~Intel~~ [CONSOLIDATED INTO INFLUENCE]
 
-| Tier | Supplies Earned (current) |
-|------|--------------------------|
-| Petty | 2 |
-| Sinister | 4 |
-| Diabolical | 6 |
-| Legendary | 10 |
+> Intel was a secondary resource produced by Schemes department tasks. It has been merged into the unified **Influence** currency. Save migration maps `{ supplies, intel }` → `{ influence: supplies + intel }`.
 
-### Intel [CURRENT → CONSOLIDATING INTO INFLUENCE]
-
-> **Design change:** Same as Supplies — consolidating into Influence.
-
-Currently implemented as a secondary resource produced by **Schemes** department tasks. Accumulated but has no spending sink.
-
-| Tier | Intel Earned (current) |
-|------|----------------------|
-| Petty | 1 |
-| Sinister | 2 |
-| Diabolical | 3 |
-| Legendary | 5 |
-
-### Influence [PROPOSED — replaces Supplies, Intel, Loot, Chaos]
+### Influence [CURRENT — replaces Supplies, Intel, Loot, Chaos]
 
 Unified strategic currency earned from completing tasks in **any** department. Spent on card packs and automation investments.
 
@@ -300,7 +290,7 @@ Pick-one-of-two choice system. `generateHiringCandidates()` creates 2 minions wi
 - 5 accessory types (goggles, helmet, cape, horns, none)
 - 4 specialty categories matching departments
 
-### Rank Titles [PROPOSED — from gameplay-improvements.md]
+### Rank Titles [CURRENT]
 
 | Level | Rank | Stars |
 |-------|------|-------|
@@ -395,7 +385,7 @@ Upgrades fall into two tracks. See [game-design-vision.md](game-design-vision.md
 
 **Operational Upgrades (Gold)** — Local, scoped to specific unit. At Phase 2+, each new division starts without operational upgrades and must be invested in separately.
 
-### Current Operational Upgrades (10 total) [CURRENT]
+### Current Operational Upgrades (14 total) [CURRENT]
 
 **Click Power:**
 
@@ -429,13 +419,14 @@ Upgrades fall into two tracks. See [game-design-vision.md](game-design-vision.md
 
 **Cost formula:** `floor(baseCost * costScale^currentLevel)`
 
-### Proposed Notoriety Upgrades [PROPOSED — from gameplay-improvements.md]
+**Notoriety:**
 
-| Upgrade | Max Lv | Effect |
-|---------|--------|--------|
-| Bribe Network | 5 | -10% bribe cost/level |
-| Shadow Operations | 5 | -3% notoriety gain from all tasks/level |
-| Lay Low Protocol | 5 | Passive notoriety decay: 0.05 base + 0.05/level per tick |
+| Upgrade | Max Lv | Base Cost | Scale | Effect |
+|---------|--------|-----------|-------|--------|
+| Bribe Network | 5 | 80g | 2.0x | -10% bribe cost/level |
+| Shadow Ops | 5 | 100g | 2.2x | -6% notoriety gain from all tasks/level |
+| Deep Cover | 5 | 90g | 2.1x | +8% cover-tracks spawn rate/level |
+| Lay Low Protocol | 5 | 120g | 2.4x | 1.5x passive decay multiplier/level |
 
 ### ~~Tech Tree~~ [DROPPED]
 

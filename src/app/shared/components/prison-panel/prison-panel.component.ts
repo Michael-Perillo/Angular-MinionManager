@@ -37,7 +37,7 @@ import { CapturedMinion } from '../../../core/models/minion.model';
                     </span>
                     <span class="text-xs text-text-muted ml-1">Lv.{{ captured.minion.level }}</span>
                   </div>
-                  <span class="px-1 rounded text-[10px]" [class]="getSpecialtyClasses(captured.minion.specialty)">
+                  <span class="px-1 rounded text-xs" [class]="getSpecialtyClasses(captured.minion.specialty)">
                     {{ getSpecialtyLabel(captured.minion.specialty) }}
                   </span>
                 </div>
@@ -45,7 +45,7 @@ import { CapturedMinion } from '../../../core/models/minion.model';
 
               <!-- Countdown -->
               <div class="flex items-center justify-between mt-1">
-                <span class="text-[10px] text-text-muted">Time remaining:</span>
+                <span class="text-xs text-text-secondary">Time remaining:</span>
                 <span class="text-sm font-bold tabular-nums" [class]="getTimerTextClass(captured)">
                   {{ formatCountdown(captured) }}
                 </span>

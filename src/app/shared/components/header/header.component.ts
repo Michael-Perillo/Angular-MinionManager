@@ -51,16 +51,10 @@ import { ThreatLevel } from '../../../core/models/notoriety.model';
           <span class="font-bold text-text-primary tabular-nums text-sm">{{ minionCount() }}</span>
         </div>
 
-        <!-- Supplies -->
+        <!-- Influence -->
         <div class="flex items-center gap-1">
-          <span>⚗️</span>
-          <span class="font-bold text-text-primary tabular-nums text-sm">{{ supplies() }}</span>
-        </div>
-
-        <!-- Intel -->
-        <div class="flex items-center gap-1">
-          <span>🕵️</span>
-          <span class="font-bold text-text-primary tabular-nums text-sm">{{ intel() }}</span>
+          <span>📊</span>
+          <span class="font-bold text-text-primary tabular-nums text-sm">{{ influence() }}</span>
         </div>
       </div>
 
@@ -101,8 +95,7 @@ export class HeaderComponent {
   villainLevel = input.required<number>();
   villainTitle = input.required<string>();
   notoriety = input<number>(0);
-  supplies = input<number>(0);
-  intel = input<number>(0);
+  influence = input<number>(0);
   raidActive = input<boolean>(false);
   capturedCount = input<number>(0);
   lastSaved = input<number>(0);

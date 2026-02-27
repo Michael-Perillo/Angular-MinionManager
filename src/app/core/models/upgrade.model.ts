@@ -1,4 +1,5 @@
-export type UpgradeCategory = 'click' | 'minion' | 'war-room' | 'department';
+export type UpgradeCategory = 'click' | 'minion' | 'war-room' | 'department' | 'notoriety';
+export type UpgradeEffectType = 'percentage' | 'additive' | 'refresh-multiplier' | 'passive-decay';
 
 export interface Upgrade {
   id: string;
@@ -6,14 +7,40 @@ export interface Upgrade {
   description: string;
   category: UpgradeCategory;
   icon: string;
-  maxLevel: number;
   currentLevel: number;
   baseCost: number;
   costScale: number; // multiplier per level
+  effectType: UpgradeEffectType;
+  effectRate: number;
+  effectMax: number; // asymptotic cap for percentage types; 0 = not used
 }
 
 export function upgradeCost(upgrade: Upgrade): number {
   return Math.floor(upgrade.baseCost * Math.pow(upgrade.costScale, upgrade.currentLevel));
+}
+
+/** Calculate the current effect of an upgrade at its current level */
+export function upgradeEffect(upgrade: Upgrade): number {
+  return upgradeEffectAtLevel(upgrade, upgrade.currentLevel);
+}
+
+/** Calculate the effect of an upgrade at a given level */
+export function upgradeEffectAtLevel(upgrade: Upgrade, level: number): number {
+  if (level <= 0) return 0;
+  switch (upgrade.effectType) {
+    case 'percentage':
+      // Asymptotic: approaches effectMax
+      return upgrade.effectMax * (1 - 1 / (1 + level * upgrade.effectRate));
+    case 'additive':
+      // Logarithmic growth
+      return Math.floor(upgrade.effectRate * Math.log(level + 1));
+    case 'refresh-multiplier':
+      // Asymptotic speedup: returns multiplier on interval (smaller = faster)
+      return 1 / (1 + level * upgrade.effectRate);
+    case 'passive-decay':
+      // Logarithmic decay rate
+      return upgrade.effectRate * Math.log(level + 1);
+  }
 }
 
 export function createDefaultUpgrades(): Upgrade[] {
@@ -25,115 +52,189 @@ export function createDefaultUpgrades(): Upgrade[] {
       description: 'Each click counts as multiple clicks.',
       category: 'click',
       icon: '👆',
-      maxLevel: 10,
       currentLevel: 0,
       baseCost: 30,
       costScale: 1.8,
+      effectType: 'additive',
+      effectRate: 4.17,
+      effectMax: 0,
     },
     {
       id: 'click-gold',
       name: 'Golden Touch',
-      description: '+15% gold from manually completed tasks per level.',
+      description: 'Bonus gold from manually completed tasks.',
       category: 'click',
       icon: '✨',
-      maxLevel: 8,
       currentLevel: 0,
       baseCost: 50,
       costScale: 2.0,
+      effectType: 'percentage',
+      effectRate: 0.5,
+      effectMax: 1.5,
     },
 
     // Minion Training upgrades
     {
       id: 'minion-speed',
       name: 'Speed Drills',
-      description: '+8% global minion speed per level.',
+      description: 'Global minion speed bonus.',
       category: 'minion',
       icon: '⚡',
-      maxLevel: 10,
       currentLevel: 0,
       baseCost: 60,
       costScale: 1.9,
+      effectType: 'percentage',
+      effectRate: 0.4,
+      effectMax: 1.0,
     },
     {
       id: 'minion-efficiency',
       name: 'Profit Training',
-      description: '+8% global minion efficiency per level.',
+      description: 'Global minion efficiency bonus.',
       category: 'minion',
       icon: '💰',
-      maxLevel: 10,
       currentLevel: 0,
       baseCost: 60,
       costScale: 1.9,
+      effectType: 'percentage',
+      effectRate: 0.4,
+      effectMax: 1.0,
     },
     {
       id: 'minion-xp',
       name: 'Fast Learner',
-      description: '+20% minion XP gain per level.',
+      description: 'Bonus minion XP gain from tasks.',
       category: 'minion',
       icon: '📚',
-      maxLevel: 5,
       currentLevel: 0,
       baseCost: 100,
       costScale: 2.2,
+      effectType: 'percentage',
+      effectRate: 0.2,
+      effectMax: 2.0,
     },
 
     // War Room upgrades
     {
       id: 'board-slots',
       name: 'Expanded Intel',
-      description: '+3 mission board slots per level.',
+      description: 'Additional mission board slots.',
       category: 'war-room',
       icon: '📋',
-      maxLevel: 5,
       currentLevel: 0,
       baseCost: 80,
       costScale: 2.0,
+      effectType: 'additive',
+      effectRate: 8.37,
+      effectMax: 0,
     },
     {
       id: 'active-slots',
       name: 'Operations Desk',
-      description: '+1 active mission slot per level.',
+      description: 'Additional active mission slots.',
       category: 'war-room',
       icon: '🗂️',
-      maxLevel: 5,
       currentLevel: 0,
       baseCost: 120,
       costScale: 2.5,
+      effectType: 'additive',
+      effectRate: 2.79,
+      effectMax: 0,
     },
     {
       id: 'board-refresh',
       name: 'Rapid Intel',
-      description: 'Board refreshes 20% faster per level.',
+      description: 'Board refreshes faster.',
       category: 'war-room',
       icon: '🔄',
-      maxLevel: 5,
       currentLevel: 0,
       baseCost: 70,
       costScale: 2.0,
+      effectType: 'refresh-multiplier',
+      effectRate: 0.4,
+      effectMax: 0,
     },
 
     // Department upgrades
     {
       id: 'dept-xp-boost',
       name: 'Department Funding',
-      description: '+15% department XP gain per level.',
+      description: 'Bonus department XP gain.',
       category: 'department',
       icon: '🏛️',
-      maxLevel: 8,
       currentLevel: 0,
       baseCost: 90,
       costScale: 2.0,
+      effectType: 'percentage',
+      effectRate: 0.5,
+      effectMax: 1.5,
     },
     {
       id: 'hire-discount',
       name: 'Recruitment Agency',
-      description: '-8% minion hire cost per level.',
+      description: 'Reduced minion hire cost.',
       category: 'minion',
       icon: '🏷️',
-      maxLevel: 5,
       currentLevel: 0,
       baseCost: 75,
       costScale: 2.2,
+      effectType: 'percentage',
+      effectRate: 0.4,
+      effectMax: 0.6,
+    },
+
+    // Notoriety upgrades
+    {
+      id: 'bribe-network',
+      name: 'Bribe Network',
+      description: 'Reduced bribe cost.',
+      category: 'notoriety',
+      icon: '💸',
+      currentLevel: 0,
+      baseCost: 80,
+      costScale: 2.0,
+      effectType: 'percentage',
+      effectRate: 0.1,
+      effectMax: 0.6,
+    },
+    {
+      id: 'shadow-ops',
+      name: 'Shadow Ops',
+      description: 'Reduced notoriety gain from tasks.',
+      category: 'notoriety',
+      icon: '🕶️',
+      currentLevel: 0,
+      baseCost: 100,
+      costScale: 2.2,
+      effectType: 'percentage',
+      effectRate: 0.06,
+      effectMax: 0.7,
+    },
+    {
+      id: 'cover-spawn',
+      name: 'Deep Cover',
+      description: 'Increased cover-tracks mission spawn rate.',
+      category: 'notoriety',
+      icon: '🎭',
+      currentLevel: 0,
+      baseCost: 90,
+      costScale: 2.1,
+      effectType: 'percentage',
+      effectRate: 0.08,
+      effectMax: 0.38,
+    },
+    {
+      id: 'lay-low',
+      name: 'Lay Low',
+      description: 'Passive notoriety decay over time.',
+      category: 'notoriety',
+      icon: '🤫',
+      currentLevel: 0,
+      baseCost: 120,
+      costScale: 2.4,
+      effectType: 'passive-decay',
+      effectRate: 1.5,
+      effectMax: 0,
     },
   ];
 }

@@ -64,3 +64,27 @@ export const WithHorns: Story = {
     }),
   },
 };
+
+export const HighLevel: Story = {
+  args: {
+    minion: makeMinion({
+      name: 'Mortis',
+      appearance: { color: '#922b21', accessory: 'cape' },
+      level: 9,
+      xp: 800,
+      stats: { speed: 1.2, efficiency: 1.3 },
+    }),
+  },
+};
+
+export const Mastermind: Story = {
+  args: {
+    minion: makeMinion({
+      name: 'Wraith',
+      appearance: { color: '#4a235a', accessory: 'horns' },
+      level: 12,
+      xp: 2000,
+      stats: { speed: 1.3, efficiency: 1.3 },
+    }),
+  },
+};

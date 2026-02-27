@@ -1,6 +1,7 @@
 import {
   getThreatLevel, notorietyGoldPenalty, bribeCost,
   NOTORIETY_PER_TIER, MAX_NOTORIETY, COVER_TRACKS_REDUCTION,
+  BASE_NOTORIETY_DECAY,
 } from './notoriety.model';
 
 describe('Notoriety Model', () => {
@@ -116,8 +117,15 @@ describe('Notoriety Model', () => {
       expect(MAX_NOTORIETY).toBe(100);
     });
 
-    it('COVER_TRACKS_REDUCTION should be 15', () => {
-      expect(COVER_TRACKS_REDUCTION).toBe(15);
+    it('COVER_TRACKS_REDUCTION should have per-tier values', () => {
+      expect(COVER_TRACKS_REDUCTION.petty).toBe(15);
+      expect(COVER_TRACKS_REDUCTION.sinister).toBe(15);
+      expect(COVER_TRACKS_REDUCTION.diabolical).toBe(25);
+      expect(COVER_TRACKS_REDUCTION.legendary).toBe(40);
+    });
+
+    it('BASE_NOTORIETY_DECAY should be 0.05', () => {
+      expect(BASE_NOTORIETY_DECAY).toBe(0.05);
     });
   });
 });

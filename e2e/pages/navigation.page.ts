@@ -17,7 +17,7 @@ export interface NavigationPage {
 function baseSaveData(): Record<string, unknown> {
   const defaultDept = (category: string) => ({ category, xp: 0, level: 1 });
   return {
-    version: 3,
+    version: 4,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,
@@ -40,7 +40,7 @@ function baseSaveData(): Record<string, unknown> {
     capturedMinions: [],
     departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
     playerQueue: [],
-    resources: { supplies: 0, intel: 0 },
+    influence: 0,
     unlockedDepartments: [],
   };
 }
@@ -58,7 +58,7 @@ export class DesktopNavigation implements NavigationPage {
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
-    const save = { ...baseSaveData(), ...overrides, version: 3, savedAt: Date.now() };
+    const save = { ...baseSaveData(), ...overrides, version: 4, savedAt: Date.now() };
     const json = JSON.stringify(save);
     // Use addInitScript so seeded data is written before the Angular app boots.
     // This avoids the beforeunload auto-save race (app saves empty state over seed on reload).
@@ -141,7 +141,7 @@ export class MobileNavigation implements NavigationPage {
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
-    const save = { ...baseSaveData(), ...overrides, version: 3, savedAt: Date.now() };
+    const save = { ...baseSaveData(), ...overrides, version: 4, savedAt: Date.now() };
     await this.page.evaluate((data) => {
       localStorage.setItem('minion-manager-save', JSON.stringify(data));
     }, save);

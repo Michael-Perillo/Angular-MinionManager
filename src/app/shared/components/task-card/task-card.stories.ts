@@ -89,6 +89,9 @@ export const InProgressMinion: Story = {
       status: 'in-progress',
       assignedMinionId: 'minion-1',
       timeRemaining: 5,
+      assignedAt: Date.now(),
+      completesAt: Date.now() + 5000,
     }),
+    currentTime: Date.now(),
   },
 };

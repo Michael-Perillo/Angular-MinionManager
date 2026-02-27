@@ -29,7 +29,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
             {{ assignedMinions().length }} minion{{ assignedMinions().length !== 1 ? 's' : '' }}
           </span>
           @if (passiveBonus() > 0) {
-            <div class="text-[10px] text-green-400">
+            <div class="text-xs text-green-400">
               {{ passiveName() }} +{{ passiveBonus() }}%
             </div>
           }
@@ -49,7 +49,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
         @for (minion of assignedMinions(); track minion.id) {
           @if (minionTask(minion); as task) {
             <div class="mb-1">
-              <div class="flex items-center gap-1.5 px-2 py-1 text-[10px] text-text-muted uppercase tracking-wider">
+              <div class="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary uppercase tracking-wider">
                 <div
                   class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0"
                   [style.background-color]="minion.appearance.color">
@@ -68,15 +68,17 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
                 <app-progress-bar
                   [progress]="task.timeRemaining"
                   [total]="task.timeToComplete"
+                  [assignedAt]="task.assignedAt ?? null"
+                  [completesAt]="task.completesAt ?? null"
                   [tier]="task.tier" />
-                <div class="flex items-center justify-between text-[10px] text-text-muted mt-1">
-                  <span>{{ Math.round((1 - task.timeRemaining / task.timeToComplete) * 100) }}%</span>
-                  <span>{{ task.timeRemaining }}s</span>
+                <div class="flex items-center justify-between text-xs text-text-secondary mt-1">
+                  <span>{{ getProgressPercent(task) }}%</span>
+                  <span>{{ getTimeRemaining(task) }}s</span>
                 </div>
               </div>
             </div>
           } @else {
-            <div class="flex items-center gap-1.5 px-2 py-1 text-[10px] text-text-muted">
+            <div class="flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted">
               <div
                 class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0 animate-minion-idle"
                 [style.background-color]="minion.appearance.color">
@@ -90,7 +92,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
 
         <!-- Queued section -->
         @if (queuedTasks().length > 0) {
-          <div class="flex items-center gap-1 px-2 py-1 mt-1 text-[10px] text-text-muted uppercase tracking-wider border-t border-border/50">
+          <div class="flex items-center gap-1 px-2 py-1 mt-1 text-xs text-text-secondary uppercase tracking-wider border-t border-border/50">
             <span>Queued</span>
             <span>({{ queuedTasks().length }})</span>
           </div>
@@ -110,9 +112,9 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
               @if (task.goldReward) {
                 <span class="text-xs text-gold font-bold shrink-0">{{ task.goldReward }}g</span>
               } @else if (task.isCoverOp) {
-                <span class="text-[10px] text-green-400 shrink-0">-Heat</span>
+                <span class="text-xs text-green-400 shrink-0">-Heat</span>
               } @else if (task.isBreakoutOp) {
-                <span class="text-[10px] text-orange-400 shrink-0">Rescue</span>
+                <span class="text-xs text-orange-400 shrink-0">Rescue</span>
               }
             </div>
             <div class="flex items-center justify-between mt-0.5">
@@ -122,7 +124,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
               @if (dragDisabled()) {
                 <button
                   (click)="onMoveRequest(task.id); $event.stopPropagation()"
-                  class="text-[10px] text-accent hover:text-gold cursor-pointer px-1.5 py-0.5 rounded
+                  class="text-xs text-accent hover:text-gold cursor-pointer px-1.5 py-0.5 rounded
                          border border-accent/20 hover:border-accent/40 transition-colors">
                   Move...
                 </button>
@@ -172,6 +174,7 @@ export class DepartmentColumnComponent {
   dragDisabled = input<boolean>(false);
   fullWidth = input<boolean>(false);
   allMinions = input<Minion[]>([]);
+  currentTime = input<number>(Date.now());
 
   taskDropped = output<CdkDragDrop<any>>();
   taskReordered = output<string[]>();
@@ -215,6 +218,24 @@ export class DepartmentColumnComponent {
       case 'mayhem': return '💥';
       default: return '';
     }
+  }
+
+  getTimeRemaining(task: Task): number {
+    if (task.completesAt) {
+      return Math.max(0, Math.ceil((task.completesAt - this.currentTime()) / 1000));
+    }
+    return task.timeRemaining;
+  }
+
+  getProgressPercent(task: Task): number {
+    if (task.assignedAt && task.completesAt) {
+      const totalMs = task.completesAt - task.assignedAt;
+      if (totalMs <= 0) return 100;
+      const elapsed = this.currentTime() - task.assignedAt;
+      return Math.min(100, Math.max(0, Math.round((elapsed / totalMs) * 100)));
+    }
+    if (task.timeToComplete <= 0) return 0;
+    return Math.round((1 - this.getTimeRemaining(task) / task.timeToComplete) * 100);
   }
 
   onMoveRequest(taskId: string): void {

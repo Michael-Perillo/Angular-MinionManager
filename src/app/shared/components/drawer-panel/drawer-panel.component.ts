@@ -43,7 +43,7 @@ type DrawerTab = 'notoriety' | 'hire' | 'upgrades' | 'departments' | 'prison';
           @for (tab of visibleTabs(); track tab.id) {
             <button
               (click)="activeTab.set(tab.id)"
-              class="flex-1 py-1.5 px-1 text-[10px] font-semibold transition-colors cursor-pointer border-b-2 whitespace-nowrap"
+              class="flex-1 py-1.5 px-1 text-xs font-semibold transition-colors cursor-pointer border-b-2 whitespace-nowrap"
               [class]="activeTab() === tab.id
                 ? 'text-gold border-gold'
                 : 'text-text-muted border-transparent hover:text-text-secondary'">
