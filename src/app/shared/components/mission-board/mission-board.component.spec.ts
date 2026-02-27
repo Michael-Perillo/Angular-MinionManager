@@ -171,4 +171,176 @@ describe('MissionBoardComponent', () => {
     setInputs();
     expect(component.connectedDropLists()).toEqual([]);
   });
+
+  // ─── Phase 3A: Mission Board Sorting ──────────
+
+  describe('sort mode cycling', () => {
+    it('should start with default sort mode', () => {
+      setInputs();
+      expect(component.sortMode()).toBe('default');
+    });
+
+    it('should cycle through all 4 sort modes', () => {
+      setInputs();
+      expect(component.sortMode()).toBe('default');
+
+      component.cycleSort();
+      expect(component.sortMode()).toBe('tier');
+
+      component.cycleSort();
+      expect(component.sortMode()).toBe('gold');
+
+      component.cycleSort();
+      expect(component.sortMode()).toBe('time');
+
+      component.cycleSort();
+      expect(component.sortMode()).toBe('default'); // wraps around
+    });
+
+    it('should return correct sort labels', () => {
+      setInputs();
+      expect(component.sortLabel()).toBe('Default');
+
+      component.cycleSort();
+      expect(component.sortLabel()).toBe('Tier');
+
+      component.cycleSort();
+      expect(component.sortLabel()).toBe('Gold');
+
+      component.cycleSort();
+      expect(component.sortLabel()).toBe('Time');
+    });
+
+    it('should return correct sort icons', () => {
+      setInputs();
+      expect(component.sortIcon()).toBe('↕');
+
+      component.cycleSort();
+      expect(component.sortIcon()).toBe('⭐');
+
+      component.cycleSort();
+      expect(component.sortIcon()).toBe('🪙');
+
+      component.cycleSort();
+      expect(component.sortIcon()).toBe('⏱');
+    });
+  });
+
+  describe('filteredMissions sorting', () => {
+    const sortTasks = [
+      makeTask({
+        tier: 'petty',
+        goldReward: 10,
+        timeToComplete: 30,
+        template: { name: 'Petty Task', description: 'd', category: 'schemes', tier: 'petty' },
+      }),
+      makeTask({
+        tier: 'legendary',
+        goldReward: 500,
+        timeToComplete: 5,
+        template: { name: 'Legend Task', description: 'd', category: 'heists', tier: 'legendary' },
+      }),
+      makeTask({
+        tier: 'sinister',
+        goldReward: 50,
+        timeToComplete: 15,
+        template: { name: 'Sinister Task', description: 'd', category: 'research', tier: 'sinister' },
+      }),
+      makeTask({
+        tier: 'diabolical',
+        goldReward: 200,
+        timeToComplete: 10,
+        template: { name: 'Diabolical Task', description: 'd', category: 'mayhem', tier: 'diabolical' },
+      }),
+    ];
+
+    it('should not sort in default mode (preserve original order)', () => {
+      setInputs(sortTasks);
+      expect(component.sortMode()).toBe('default');
+      const result = component.filteredMissions();
+      expect(result[0].template.name).toBe('Petty Task');
+      expect(result[1].template.name).toBe('Legend Task');
+      expect(result[2].template.name).toBe('Sinister Task');
+      expect(result[3].template.name).toBe('Diabolical Task');
+    });
+
+    it('should sort by tier descending (legendary first)', () => {
+      setInputs(sortTasks);
+      component.cycleSort(); // → tier
+      expect(component.sortMode()).toBe('tier');
+
+      const result = component.filteredMissions();
+      expect(result[0].tier).toBe('legendary');
+      expect(result[1].tier).toBe('diabolical');
+      expect(result[2].tier).toBe('sinister');
+      expect(result[3].tier).toBe('petty');
+    });
+
+    it('should sort by gold descending (highest first)', () => {
+      setInputs(sortTasks);
+      component.cycleSort(); // → tier
+      component.cycleSort(); // → gold
+      expect(component.sortMode()).toBe('gold');
+
+      const result = component.filteredMissions();
+      expect(result[0].goldReward).toBe(500);
+      expect(result[1].goldReward).toBe(200);
+      expect(result[2].goldReward).toBe(50);
+      expect(result[3].goldReward).toBe(10);
+    });
+
+    it('should sort by time ascending (fastest first)', () => {
+      setInputs(sortTasks);
+      component.cycleSort(); // → tier
+      component.cycleSort(); // → gold
+      component.cycleSort(); // → time
+      expect(component.sortMode()).toBe('time');
+
+      const result = component.filteredMissions();
+      expect(result[0].timeToComplete).toBe(5);
+      expect(result[1].timeToComplete).toBe(10);
+      expect(result[2].timeToComplete).toBe(15);
+      expect(result[3].timeToComplete).toBe(30);
+    });
+
+    it('should combine filter and sort correctly', () => {
+      setInputs(sortTasks);
+      component.filterCategory.set('schemes');
+      component.cycleSort(); // → tier
+
+      const result = component.filteredMissions();
+      expect(result.length).toBe(1);
+      expect(result[0].template.category).toBe('schemes');
+    });
+  });
+
+  describe('sort button in template', () => {
+    it('should render the sort button', () => {
+      setInputs([makeTask()]);
+      const buttons: HTMLButtonElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('button')
+      );
+      const sortBtn = buttons.find(b => b.textContent?.includes('Default'));
+      expect(sortBtn).toBeTruthy();
+    });
+
+    it('should cycle sort on button click', () => {
+      setInputs([makeTask()]);
+      const buttons: HTMLButtonElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('button')
+      );
+      const sortBtn = buttons.find(b => b.textContent?.includes('Default'));
+      expect(sortBtn).toBeTruthy();
+
+      sortBtn!.click();
+      fixture.detectChanges();
+
+      expect(component.sortMode()).toBe('tier');
+      const updatedBtns: HTMLButtonElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('button')
+      );
+      const tierBtn = updatedBtns.find(b => b.textContent?.includes('Tier'));
+      expect(tierBtn).toBeTruthy();
+    });
+  });
 });

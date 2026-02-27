@@ -847,9 +847,9 @@ describe('GameStateService', () => {
       expect(service.capturedMinions().length).toBe(0);
     });
 
-    it('should include version 3 in snapshot', () => {
+    it('should include version 4 in snapshot', () => {
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(3);
+      expect(snapshot.version).toBe(4);
     });
   });
 
@@ -957,6 +957,301 @@ describe('GameStateService', () => {
     it('should not accept a mission not on the board', () => {
       service.acceptMission('nonexistent-id');
       expect(service.activeMissions().length).toBe(0);
+    });
+  });
+
+  // ─── Phase 1A: Progressive Department Unlocking ──────────
+
+  describe('progressive department unlocking', () => {
+    it('should start with empty unlockedDepartments', () => {
+      expect(service.unlockedDepartments().size).toBe(0);
+      expect(service.unlockedDepartmentList().length).toBe(0);
+    });
+
+    it('should unlock department when hireMinion is called', () => {
+      service.addGold(50);
+      service.hireMinion();
+      const minion = service.minions()[0];
+      expect(service.unlockedDepartments().has(minion.assignedDepartment)).toBe(true);
+      expect(service.unlockedDepartmentList().length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should unlock department when hireChosenMinion is called', () => {
+      const candidates = service.generateHiringCandidates();
+      service.addGold(50);
+      service.hireChosenMinion(candidates[0]);
+      expect(service.unlockedDepartments().has(candidates[0].assignedDepartment)).toBe(true);
+    });
+
+    it('should not duplicate department in unlocked set on second hire in same dept', () => {
+      service.addGold(10_000);
+      service.hireMinion();
+      const dept = service.minions()[0].assignedDepartment;
+      const sizeBefore = service.unlockedDepartments().size;
+
+      // Hire another minion and force it into the same department via hireChosenMinion
+      const candidate = makeMinion({ assignedDepartment: dept, specialty: dept });
+      service.hireChosenMinion(candidate);
+      expect(service.unlockedDepartments().size).toBe(sizeBefore);
+    });
+
+    it('should emit notification when a new department is unlocked', () => {
+      service.addGold(50);
+      const notifsBefore = service.notifications().length;
+      service.hireMinion();
+      const deptNotif = service.notifications().find(n => n.message.includes('Department opened'));
+      expect(deptNotif).toBeTruthy();
+    });
+
+    it('should persist unlockedDepartments in snapshot (version 4)', () => {
+      service.addGold(10_000);
+      service.hireMinion();
+      const snapshot = service.getSnapshot();
+      expect(snapshot.version).toBe(4);
+      expect(snapshot.unlockedDepartments).toBeDefined();
+      expect(snapshot.unlockedDepartments!.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should restore unlockedDepartments from v4 save data', () => {
+      const data = makeSaveData({
+        unlockedDepartments: ['schemes', 'heists'],
+      });
+      service.loadSnapshot(data);
+      expect(service.unlockedDepartments().has('schemes' as any)).toBe(true);
+      expect(service.unlockedDepartments().has('heists' as any)).toBe(true);
+      expect(service.unlockedDepartments().has('research' as any)).toBe(false);
+    });
+
+    it('should derive unlockedDepartments from minions for older saves without the field', () => {
+      const minions = [
+        makeMinion({ assignedDepartment: 'research' }),
+        makeMinion({ assignedDepartment: 'mayhem' }),
+      ];
+      const data = makeSaveData({ minions, unlockedDepartments: [] });
+      service.loadSnapshot(data);
+      expect(service.unlockedDepartments().has('research' as any)).toBe(true);
+      expect(service.unlockedDepartments().has('mayhem' as any)).toBe(true);
+    });
+
+    it('should reset unlockedDepartments on initializeGame', () => {
+      service.addGold(50);
+      service.hireMinion();
+      expect(service.unlockedDepartments().size).toBeGreaterThan(0);
+
+      service.initializeGame();
+      expect(service.unlockedDepartments().size).toBe(0);
+    });
+
+    it('should only generate new missions from unlocked departments', () => {
+      // Start a fresh game, hire a minion to unlock one department
+      service.addGold(50);
+      service.hireMinion();
+      const unlocked = service.unlockedDepartments();
+
+      // Clear the board and force a complete refill so all missions are newly generated
+      // We can do this via loadSnapshot with an empty board and the current state
+      const snapshot = service.getSnapshot();
+      snapshot.missionBoard = [];
+      service.loadSnapshot(snapshot);
+
+      // Tick to trigger board refill
+      for (let i = 0; i < 10; i++) {
+        service.tickTime();
+      }
+
+      // All newly generated non-special missions should be from unlocked depts
+      const boardMissions = service.missionBoard().filter(m => !m.isCoverOp && !m.isBreakoutOp);
+      expect(boardMissions.length).toBeGreaterThan(0);
+      for (const m of boardMissions) {
+        expect(unlocked.has(m.template.category)).toBe(true);
+      }
+    });
+  });
+
+  // ─── Phase 1B: Minion Hiring Choice ──────────
+
+  describe('generateHiringCandidates', () => {
+    it('should return exactly 2 minions', () => {
+      const candidates = service.generateHiringCandidates();
+      expect(candidates.length).toBe(2);
+      expect(candidates[0]).toBeTruthy();
+      expect(candidates[1]).toBeTruthy();
+    });
+
+    it('should return minions with valid properties', () => {
+      const candidates = service.generateHiringCandidates();
+      for (const minion of candidates) {
+        expect(minion.id).toBeTruthy();
+        expect(minion.name).toBeTruthy();
+        expect(minion.stats.speed).toBeGreaterThan(0);
+        expect(minion.stats.efficiency).toBeGreaterThan(0);
+        expect(minion.specialty).toBeTruthy();
+        expect(minion.assignedDepartment).toBeTruthy();
+      }
+    });
+
+    it('should include at least one candidate from a locked department when locked depts exist', () => {
+      // At start, no departments are unlocked. Unlock one via hire.
+      service.addGold(50);
+      service.hireMinion();
+      const unlockedDept = service.minions()[0].assignedDepartment;
+
+      // If there are still locked depts, at least one candidate should open a new one
+      if (service.unlockedDepartments().size < 4) {
+        // Run multiple times to account for random ordering
+        let foundLockedCandidate = false;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const candidates = service.generateHiringCandidates();
+          const hasLocked = candidates.some(c => !service.unlockedDepartments().has(c.assignedDepartment));
+          if (hasLocked) {
+            foundLockedCandidate = true;
+            break;
+          }
+        }
+        expect(foundLockedCandidate).toBe(true);
+      }
+    });
+
+    it('should return both random when all departments are unlocked', () => {
+      // Unlock all 4 departments
+      service.addGold(100_000);
+      const allDepts = ['schemes', 'heists', 'research', 'mayhem'] as const;
+      for (const dept of allDepts) {
+        const candidate = makeMinion({ assignedDepartment: dept, specialty: dept });
+        service.hireChosenMinion(candidate);
+        service.addGold(100_000); // replenish
+      }
+      expect(service.unlockedDepartments().size).toBe(4);
+
+      // All candidates should be from unlocked depts (which is all of them)
+      const candidates = service.generateHiringCandidates();
+      expect(candidates.length).toBe(2);
+    });
+
+    it('should generate two different minion IDs', () => {
+      const candidates = service.generateHiringCandidates();
+      expect(candidates[0].id).not.toBe(candidates[1].id);
+    });
+  });
+
+  describe('hireChosenMinion', () => {
+    it('should deduct gold and add the chosen minion', () => {
+      service.addGold(100);
+      const cost = service.nextMinionCost();
+      const candidates = service.generateHiringCandidates();
+
+      service.hireChosenMinion(candidates[0]);
+      expect(service.gold()).toBe(100 - cost);
+      expect(service.minions().length).toBe(1);
+      expect(service.minions()[0].id).toBe(candidates[0].id);
+    });
+
+    it('should not hire when gold is insufficient', () => {
+      const candidates = service.generateHiringCandidates();
+      service.hireChosenMinion(candidates[0]);
+      expect(service.minions().length).toBe(0);
+    });
+
+    it('should add a hire notification', () => {
+      service.addGold(100);
+      const candidates = service.generateHiringCandidates();
+      service.hireChosenMinion(candidates[0]);
+      const minionNotif = service.notifications().find(n => n.type === 'minion');
+      expect(minionNotif).toBeTruthy();
+    });
+  });
+
+  // ─── Phase 2B: Department Passives ──────────
+
+  describe('department passives', () => {
+    it('should apply Heists loot bonus to gold awards', () => {
+      // Grab board from existing initialized game, then reload with custom depts
+      const board = service.missionBoard();
+      // Set heists dept to level 3 → getPassiveBonus('heists', 3) = (3-1)*4 = 8%
+      const data = makeSaveData({
+        departments: {
+          schemes: { category: 'schemes', xp: 0, level: 1 },
+          heists: { category: 'heists', xp: 100, level: 3 },
+          research: { category: 'research', xp: 0, level: 1 },
+          mayhem: { category: 'mayhem', xp: 0, level: 1 },
+        },
+        missionBoard: board,
+      });
+      service.loadSnapshot(data);
+
+      // Complete a task via clicking and compare gold to base reward
+      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp && m.goldReward > 0)!;
+      service.acceptMission(mission.id);
+      const task = service.activeMissions().find(t => t.id === mission.id)!;
+      const baseReward = task.goldReward;
+
+      completeTaskByClicking(service, task.id);
+
+      // With 8% heists bonus, gold = round(baseReward * 1.08)
+      // At 0 notoriety, no penalty
+      const expected = Math.round(baseReward * 1.08);
+      expect(service.gold()).toBe(expected);
+    });
+
+    it('should not apply Heists loot bonus at level 1', () => {
+      // Departments start at level 1, so no bonus
+      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp && m.goldReward > 0)!;
+      service.acceptMission(mission.id);
+      const task = service.activeMissions().find(t => t.id === mission.id)!;
+      const baseReward = task.goldReward;
+
+      completeTaskByClicking(service, task.id);
+      expect(service.gold()).toBe(baseReward);
+    });
+
+    it('should reduce notoriety gain with Research passive', () => {
+      // Set research dept to level 3 → -5% * (3-1) = -10% notoriety gain
+      const board = service.missionBoard();
+      const data = makeSaveData({
+        departments: {
+          schemes: { category: 'schemes', xp: 0, level: 1 },
+          heists: { category: 'heists', xp: 0, level: 1 },
+          research: { category: 'research', xp: 100, level: 3 },
+          mayhem: { category: 'mayhem', xp: 0, level: 1 },
+        },
+        missionBoard: board,
+      });
+      service.loadSnapshot(data);
+
+      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
+      const notorietyWithBonus = service.notoriety();
+
+      // Reset and do same without bonus
+      service.initializeGame();
+      const mission2 = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp && m.tier === mission.tier)!;
+      service.acceptMission(mission2.id);
+      completeTaskByClicking(service, mission2.id);
+      const notorietyWithout = service.notoriety();
+
+      // With research passive, notoriety gain should be less or equal
+      expect(notorietyWithBonus).toBeLessThanOrEqual(notorietyWithout);
+    });
+  });
+
+  // ─── Phase 3A: Mission Board (service-level) ──────────
+
+  describe('unlockedDepartmentList ordering', () => {
+    it('should maintain canonical category order', () => {
+      service.addGold(100_000);
+      // Unlock mayhem first, then schemes
+      const m1 = makeMinion({ assignedDepartment: 'mayhem', specialty: 'mayhem' });
+      service.hireChosenMinion(m1);
+      service.addGold(100_000);
+      const m2 = makeMinion({ assignedDepartment: 'schemes', specialty: 'schemes' });
+      service.hireChosenMinion(m2);
+
+      const list = service.unlockedDepartmentList();
+      // Should follow ALL_CATEGORIES order: schemes before mayhem
+      const schemesIdx = list.indexOf('schemes');
+      const mayhemIdx = list.indexOf('mayhem');
+      expect(schemesIdx).toBeLessThan(mayhemIdx);
     });
   });
 });

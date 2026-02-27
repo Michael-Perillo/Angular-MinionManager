@@ -6,8 +6,6 @@ import { Department } from '../../../core/models/department.model';
 import { DepartmentColumnComponent } from '../department-column/department-column.component';
 import { PlayerWorkbenchComponent } from '../player-workbench/player-workbench.component';
 
-const ALL_CATEGORIES: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
-
 @Component({
   selector: 'app-kanban-board',
   standalone: true,
@@ -15,21 +13,29 @@ const ALL_CATEGORIES: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex gap-3 overflow-x-auto pb-2 h-full">
-      @for (cat of categories; track cat) {
+      @for (cat of unlockedCategories(); track cat) {
         <app-department-column
           [category]="cat"
           [tasks]="getDeptTasks(cat)"
           [department]="getDepartment(cat)"
           [assignedMinions]="getDeptMinions(cat)"
-          [connectedDropLists]="allDropListIds"
+          [connectedDropLists]="dropListIds()"
           [dragDisabled]="dragDisabled()"
           (taskDropped)="onTaskDropped($event, cat)" />
+      }
+
+      @if (hasLockedDepartments()) {
+        <div class="min-w-[200px] max-w-[240px] flex flex-col items-center justify-center
+                    rounded-lg border border-dashed border-border/50 bg-bg-card/10 p-4 text-center">
+          <span class="text-2xl mb-2 opacity-40">🔒</span>
+          <p class="text-xs text-text-muted">More departments unlock when you hire minions with new specialties</p>
+        </div>
       }
 
       <app-player-workbench
         [tasks]="playerQueue()"
         [clickPower]="clickPower()"
-        [connectedDropLists]="allDropListIds"
+        [connectedDropLists]="dropListIds()"
         [dragDisabled]="dragDisabled()"
         (taskClicked)="taskClicked.emit($event)"
         (taskDropped)="onTaskDropped($event, 'player')" />
@@ -49,14 +55,19 @@ export class KanbanBoardComponent {
   minions = input.required<Minion[]>();
   clickPower = input.required<number>();
   dragDisabled = input<boolean>(false);
+  unlockedDepartments = input<TaskCategory[]>([]);
 
   taskClicked = output<string>();
   taskMoved = output<{ taskId: string; from: QueueTarget; to: QueueTarget }>();
   taskRouted = output<{ taskId: string; target: QueueTarget }>();
 
-  readonly categories = ALL_CATEGORIES;
+  readonly unlockedCategories = computed(() => this.unlockedDepartments());
 
-  readonly allDropListIds = ['schemes', 'heists', 'research', 'mayhem', 'player', 'mission-board'];
+  readonly hasLockedDepartments = computed(() => this.unlockedDepartments().length < 4);
+
+  readonly dropListIds = computed(() => [
+    ...this.unlockedDepartments(), 'player', 'mission-board',
+  ]);
 
   minionsByDept = computed(() => {
     const result: Record<TaskCategory, Minion[]> = {

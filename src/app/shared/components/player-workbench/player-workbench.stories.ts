@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/angular';
+import { expect, within, userEvent, fn } from 'storybook/test';
 import { PlayerWorkbenchComponent } from './player-workbench.component';
 import { Task, TaskCategory, TaskTier } from '../../../core/models/task.model';
 
@@ -51,6 +52,18 @@ export const WithTasks: Story = {
       }),
     ],
     clickPower: 1,
+    taskClicked: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+
+    // Verify the CLICK button exists
+    const clickButton = canvas.getByText(/CLICK!/);
+    expect(clickButton).toBeTruthy();
+
+    // Click it and verify the taskClicked output fires
+    await userEvent.click(clickButton);
+    expect(args.taskClicked).toHaveBeenCalled();
   },
 };
 

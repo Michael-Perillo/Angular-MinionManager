@@ -14,7 +14,7 @@ import { ThreatLevel } from '../../../core/models/notoriety.model';
           <h1 class="text-lg sm:text-xl font-display font-black text-text-primary uppercase tracking-widest leading-tight">
             Minion Manager
           </h1>
-          <p class="text-[10px] text-text-muted">
+          <p class="text-xs text-text-muted">
             Lv.{{ villainLevel() }} {{ villainTitle() }}
           </p>
         </div>

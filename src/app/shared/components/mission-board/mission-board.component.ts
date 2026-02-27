@@ -1,6 +1,7 @@
 import { Component, ChangeDetectionStrategy, input, output, computed, signal } from '@angular/core';
 import { CdkDropList, CdkDrag, CdkDragPreview } from '@angular/cdk/drag-drop';
-import { Task, QueueTarget } from '../../../core/models';
+import { Task, QueueTarget, TaskCategory } from '../../../core/models';
+import { Department } from '../../../core/models/department.model';
 import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
 
 @Component({
@@ -14,9 +15,18 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
         <h2 class="text-sm font-bold text-text-primary font-display uppercase tracking-wider">
           Mission Board
         </h2>
-        <span class="text-[10px] text-text-muted">
-          {{ missions().length }} avail
-        </span>
+        <div class="flex items-center gap-2">
+          <button
+            (click)="cycleSort()"
+            class="text-[10px] text-text-muted hover:text-text-secondary cursor-pointer
+                   px-1.5 py-0.5 rounded border border-transparent hover:border-border transition-colors"
+            [title]="'Sort: ' + sortLabel()">
+            {{ sortIcon() }} {{ sortLabel() }}
+          </button>
+          <span class="text-xs text-text-muted">
+            {{ missions().length }}
+          </span>
+        </div>
       </div>
 
       @if (missions().length === 0) {
@@ -32,13 +42,21 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
             [class]="filterCategory() === null ? 'bg-accent/20 text-accent border border-accent/30' : 'text-text-muted hover:text-text-secondary'">
             All
           </button>
-          @for (cat of categories; track cat.key) {
-            <button
-              (click)="filterCategory.set(cat.key)"
-              class="px-1.5 py-1 text-[10px] rounded cursor-pointer transition-colors"
-              [class]="filterCategory() === cat.key ? 'bg-accent/20 text-accent border border-accent/30' : 'text-text-muted hover:text-text-secondary'">
-              {{ cat.icon }}
-            </button>
+          @for (cat of categories(); track cat.key) {
+            @if (isFilterUnlocked(cat.key)) {
+              <button
+                (click)="filterCategory.set(cat.key)"
+                class="px-1.5 py-1 text-[10px] rounded cursor-pointer transition-colors"
+                [class]="filterCategory() === cat.key ? 'bg-accent/20 text-accent border border-accent/30' : 'text-text-muted hover:text-text-secondary'">
+                {{ cat.icon }}
+              </button>
+            } @else {
+              <span
+                class="px-1.5 py-1 text-[10px] rounded text-text-muted/40 cursor-default"
+                title="Reach dept level 2 to unlock this filter">
+                🔒
+              </span>
+            }
           }
         </div>
 
@@ -93,7 +111,7 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
               </div>
 
               <!-- Footer -->
-              <div class="flex items-center justify-between text-[10px] text-text-muted">
+              <div class="flex items-center justify-between text-xs text-text-muted">
                 <span>{{ mission.timeToComplete }}s / {{ mission.clicksRequired }} clicks</span>
                 @if (mission.isSpecialOp) {
                   <span class="text-gold">Expires soon</span>
@@ -104,14 +122,14 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
               @if (canAccept()) {
                 <button
                   (click)="onSendToQueue(mission); $event.stopPropagation()"
-                  class="w-full py-1.5 px-2 rounded text-[10px] font-bold uppercase tracking-wider
+                  class="w-full py-1.5 px-2 rounded text-xs font-bold uppercase tracking-wider
                          bg-accent/10 text-accent border border-accent/20
                          hover:bg-accent/20 active:scale-95
                          transition-all cursor-pointer min-h-[36px]">
                   Send to Queue ▶
                 </button>
               } @else {
-                <div class="text-[10px] text-text-muted text-center py-1">
+                <div class="text-xs text-amber-400 font-semibold text-center py-1.5 bg-amber-500/10 rounded border border-amber-500/20">
                   Queue slots full
                 </div>
               }
@@ -151,24 +169,71 @@ export class MissionBoardComponent {
   dragDisabled = input<boolean>(false);
   missionAccepted = output<string>();
   missionRouteRequested = output<Task>();
+  unlockedDepartments = input<TaskCategory[]>([]);
+  departments = input<Record<TaskCategory, Department>>({} as Record<TaskCategory, Department>);
 
   filterCategory = signal<string | null>(null);
 
-  categories = [
+  readonly sortModes = ['default', 'tier', 'gold', 'time'] as const;
+  readonly sortIndex = signal(0);
+  readonly sortMode = computed(() => this.sortModes[this.sortIndex()]);
+  readonly sortLabel = computed(() => {
+    switch (this.sortMode()) {
+      case 'default': return 'Default';
+      case 'tier': return 'Tier';
+      case 'gold': return 'Gold';
+      case 'time': return 'Time';
+    }
+  });
+  readonly sortIcon = computed(() => {
+    switch (this.sortMode()) {
+      case 'default': return '↕';
+      case 'tier': return '⭐';
+      case 'gold': return '🪙';
+      case 'time': return '⏱';
+    }
+  });
+
+  readonly allCategories = [
     { key: 'schemes', label: 'Schemes', icon: '🗝️' },
     { key: 'heists', label: 'Heists', icon: '💎' },
     { key: 'research', label: 'Research', icon: '🧪' },
     { key: 'mayhem', label: 'Mayhem', icon: '💥' },
   ];
 
+  categories = computed(() => {
+    const unlocked = this.unlockedDepartments();
+    if (unlocked.length === 0) return this.allCategories;
+    return this.allCategories.filter(c => unlocked.includes(c.key as TaskCategory));
+  });
+
   canAccept = computed(() =>
     this.activeCount() < this.activeSlots()
   );
 
+  private readonly TIER_RANK: Record<string, number> = {
+    petty: 1, sinister: 2, diabolical: 3, legendary: 4,
+  };
+
   filteredMissions = computed(() => {
-    const all = this.missions();
-    if (!this.filterCategory()) return all;
-    return all.filter(m => m.template.category === this.filterCategory());
+    let result = this.missions();
+    if (this.filterCategory()) {
+      result = result.filter(m => m.template.category === this.filterCategory());
+    }
+    const mode = this.sortMode();
+    if (mode === 'default') return result;
+    return [...result].sort((a, b) => {
+      switch (mode) {
+        case 'tier':
+          return (this.TIER_RANK[b.tier] ?? 0) - (this.TIER_RANK[a.tier] ?? 0);
+        case 'gold':
+          return (b.goldReward ?? 0) - (a.goldReward ?? 0);
+        case 'time':
+          return a.timeToComplete - b.timeToComplete;
+        default:
+          return 0;
+      }
+    });
   });
 
   categoryCount(category: string): number {
@@ -190,6 +255,16 @@ export class MissionBoardComponent {
       case 'mayhem': return '💥';
       default: return '?';
     }
+  }
+
+  cycleSort(): void {
+    this.sortIndex.update(i => (i + 1) % this.sortModes.length);
+  }
+
+  isFilterUnlocked(catKey: string): boolean {
+    const depts = this.departments();
+    if (!depts || !depts[catKey as TaskCategory]) return true;
+    return depts[catKey as TaskCategory].level >= 2;
   }
 
   onSendToQueue(mission: Task): void {

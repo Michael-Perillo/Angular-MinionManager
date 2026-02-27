@@ -12,6 +12,7 @@ import { GameNotification } from '../models/game-state.model';
 import { TASK_POOL } from '../models/task-pool';
 import {
   Department, DEPT_TIER_XP, deptLevelFromXp, deptXpForLevel, availableTiersForDeptLevel,
+  DEPARTMENT_LABELS, getPassiveBonus,
 } from '../models/department.model';
 import { Upgrade, upgradeCost, createDefaultUpgrades } from '../models/upgrade.model';
 import {
@@ -171,6 +172,32 @@ export class GameStateService {
     return result;
   });
 
+  // ─── Progressive department unlocking ────
+  /**
+   * Tracks which departments have been unlocked (have or had a minion assigned).
+   * Persisted so departments stay unlocked even if the minion is lost.
+   */
+  private readonly _unlockedDepartments = signal<Set<TaskCategory>>(new Set());
+
+  /** Departments the player has unlocked (computed from persisted set) */
+  readonly unlockedDepartments = computed(() => this._unlockedDepartments());
+
+  /** Ordered list of unlocked department categories */
+  readonly unlockedDepartmentList = computed(() =>
+    ALL_CATEGORIES.filter(cat => this._unlockedDepartments().has(cat))
+  );
+
+  /** Department queues filtered to only unlocked departments */
+  readonly unlockedDepartmentQueues = computed(() => {
+    const queues = this._departmentQueues();
+    const unlocked = this._unlockedDepartments();
+    const result = {} as Record<TaskCategory, Task[]>;
+    for (const cat of ALL_CATEGORIES) {
+      result[cat] = unlocked.has(cat) ? queues[cat] : [];
+    }
+    return result;
+  });
+
   // ─── Constants ─────────────────────────────
   private readonly BOARD_REFRESH_INTERVAL = 3_000;
   private readonly SPECIAL_OP_CHANCE = 0.15;
@@ -221,6 +248,7 @@ export class GameStateService {
     this._playerQueue.set([]);
     this._supplies.set(0);
     this._intel.set(0);
+    this._unlockedDepartments.set(new Set());
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
     this.tickCount = 0;
@@ -236,7 +264,7 @@ export class GameStateService {
   // ─── Snapshot (persistence) ─────────────────
   getSnapshot(): SaveData {
     return {
-      version: 3,
+      version: 4,
       savedAt: Date.now(),
       gold: this._gold(),
       completedCount: this._completedCount(),
@@ -245,7 +273,7 @@ export class GameStateService {
       minions: this._minions(),
       departments: this._departments(),
       upgradeLevels: this._upgrades().map(u => ({ id: u.id, currentLevel: u.currentLevel })),
-      activeMissions: [], // kept empty for v3; all tasks live in department/player queues
+      activeMissions: [], // kept empty for v3+; all tasks live in department/player queues
       missionBoard: this._missionBoard(),
       raidActive: this._raidActive(),
       raidTimer: this._raidTimer(),
@@ -255,6 +283,7 @@ export class GameStateService {
       departmentQueues: this._departmentQueues(),
       playerQueue: this._playerQueue(),
       resources: { supplies: this._supplies(), intel: this._intel() },
+      unlockedDepartments: [...this._unlockedDepartments()],
     };
   }
 
@@ -323,6 +352,18 @@ export class GameStateService {
       if (match) match.currentLevel = saved.currentLevel;
     }
     this._upgrades.set(upgrades);
+
+    // Load unlocked departments (v4+), or derive from current minions for older saves
+    if (data.unlockedDepartments && data.unlockedDepartments.length > 0) {
+      this._unlockedDepartments.set(new Set(data.unlockedDepartments as TaskCategory[]));
+    } else {
+      // Backwards compat: derive from minion assignments
+      const unlocked = new Set<TaskCategory>();
+      for (const m of this._minions()) {
+        unlocked.add(m.assignedDepartment);
+      }
+      this._unlockedDepartments.set(unlocked);
+    }
 
     this.usedNameIndices = new Set(data.usedNameIndices);
     this.lastBoardRefresh = data.lastBoardRefresh;
@@ -406,6 +447,9 @@ export class GameStateService {
 
     const totalActive = this.activeMissions().length;
     if (totalActive >= this.activeSlots()) return;
+
+    // Prevent routing to a locked department
+    if (target !== 'player' && !this._unlockedDepartments().has(target as TaskCategory)) return;
 
     this._missionBoard.update(board => board.filter(m => m.id !== missionId));
 
@@ -496,6 +540,9 @@ export class GameStateService {
           : m
       )
     );
+
+    // Unlock the department if this is the first minion in it
+    this.unlockDepartment(newDept, minion.name);
   }
 
   // ─── Manual work (clicking) ────────────────
@@ -580,10 +627,61 @@ export class GameStateService {
     const minion = this.createMinion();
     this._minions.update(list => [...list, minion]);
 
+    // Unlock the department if this is the first minion in it
+    this.unlockDepartment(minion.assignedDepartment, minion.name);
+
     const specialtyLabel = minion.specialty.charAt(0).toUpperCase() + minion.specialty.slice(1);
     this.addNotification(
       `${minion.name} joined! Spd:${minion.stats.speed.toFixed(1)} Eff:${minion.stats.efficiency.toFixed(1)} [${specialtyLabel}]`,
       'minion'
+    );
+  }
+
+  /** Hire a specific pre-generated minion (from the pick-one-of-two choice) */
+  hireChosenMinion(minion: Minion): void {
+    const cost = this.nextMinionCost();
+    if (this._gold() < cost) return;
+
+    this._gold.update(g => g - cost);
+    this._minions.update(list => [...list, minion]);
+
+    this.unlockDepartment(minion.assignedDepartment, minion.name);
+
+    const specialtyLabel = minion.specialty.charAt(0).toUpperCase() + minion.specialty.slice(1);
+    this.addNotification(
+      `${minion.name} joined! Spd:${minion.stats.speed.toFixed(1)} Eff:${minion.stats.efficiency.toFixed(1)} [${specialtyLabel}]`,
+      'minion'
+    );
+  }
+
+  /** Generate 2 hiring candidates. If not all depts unlocked, at least one opens a new dept. */
+  generateHiringCandidates(): [Minion, Minion] {
+    const unlocked = this._unlockedDepartments();
+    const lockedDepts = ALL_CATEGORIES.filter(cat => !unlocked.has(cat));
+
+    if (lockedDepts.length > 0) {
+      // Guarantee at least one candidate is from a locked department
+      const newDept = lockedDepts[Math.floor(Math.random() * lockedDepts.length)];
+      const candidate1 = this.createMinion(newDept);
+      const candidate2 = this.createMinion();
+      // Randomize order so the "new dept" candidate isn't always first
+      return Math.random() < 0.5 ? [candidate1, candidate2] : [candidate2, candidate1];
+    }
+
+    return [this.createMinion(), this.createMinion()];
+  }
+
+  /** Unlock a department, firing a notification if it was newly unlocked */
+  private unlockDepartment(dept: TaskCategory, minionName: string): void {
+    const current = this._unlockedDepartments();
+    if (current.has(dept)) return;
+    const updated = new Set(current);
+    updated.add(dept);
+    this._unlockedDepartments.set(updated);
+    const label = DEPARTMENT_LABELS[dept];
+    this.addNotification(
+      `${label.icon} ${label.label} Department opened! ${minionName} is ready to work.`,
+      'task'
     );
   }
 
@@ -631,9 +729,11 @@ export class GameStateService {
       })
     );
 
-    // 4. Refill mission board continuously (refresh speed affected by upgrade)
+    // 4. Refill mission board continuously (refresh speed affected by upgrade + Schemes passive)
     const refreshSpeedMult = 1 - this.getUpgradeLevel('board-refresh') * 0.20;
-    const effectiveRefresh = this.BOARD_REFRESH_INTERVAL * Math.max(0.2, refreshSpeedMult);
+    const schemesPassive = getPassiveBonus('schemes', this._departments().schemes.level);
+    const schemesRefreshBonus = 1 - schemesPassive * 0.01; // -8% per level above 1
+    const effectiveRefresh = this.BOARD_REFRESH_INTERVAL * Math.max(0.2, refreshSpeedMult * schemesRefreshBonus);
     if (now - this.lastBoardRefresh >= effectiveRefresh) {
       this.fillBoard();
       this.lastBoardRefresh = now;
@@ -786,7 +886,10 @@ export class GameStateService {
     const levelBonus = 1 + (this.villainLevel() - 1) * GOLD_SCALE_PER_LEVEL;
     let scaledGold = Math.round(config.gold * levelBonus);
 
-    const isSpecialOp = Math.random() < this.SPECIAL_OP_CHANCE;
+    // Mayhem passive: increased Special Op appearance rate
+    const mayhemBonus = getPassiveBonus('mayhem', this._departments().mayhem.level);
+    const specialOpChance = this.SPECIAL_OP_CHANCE + mayhemBonus * 0.01;
+    const isSpecialOp = Math.random() < specialOpChance;
     if (isSpecialOp) {
       scaledGold = Math.round(scaledGold * 1.5);
     }
@@ -852,8 +955,9 @@ export class GameStateService {
     else if (roll < pettyWeight + sinisterWeight + diabolicalWeight) desiredTier = 'diabolical';
     else desiredTier = 'legendary';
 
-    // Pick a random category, then check department gating
-    const categories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
+    // Pick a random category from unlocked departments only
+    const unlocked = this.unlockedDepartmentList();
+    const categories = unlocked.length > 0 ? unlocked : ALL_CATEGORIES;
     const category = categories[Math.floor(Math.random() * categories.length)];
     const depts = this._departments();
     const deptLevel = depts[category].level;
@@ -1054,9 +1158,13 @@ export class GameStateService {
   }
 
   private awardGold(amount: number, taskName: string, taskTier?: TaskTier, taskCategory?: TaskCategory): void {
+    // Apply Heists passive: +gold from all tasks
+    const heistsBonus = getPassiveBonus('heists', this._departments().heists.level);
+    const boostedAmount = Math.round(amount * (1 + heistsBonus * 0.01));
+
     // Apply notoriety gold penalty
     const penalty = notorietyGoldPenalty(this._notoriety());
-    const finalAmount = Math.round(amount * (1 - penalty));
+    const finalAmount = Math.round(boostedAmount * (1 - penalty));
 
     this._gold.update(g => g + finalAmount);
     this._totalGoldEarned.update(g => g + finalAmount);
@@ -1140,11 +1248,11 @@ export class GameStateService {
     );
   }
 
-  private createMinion(): Minion {
+  private createMinion(forceSpecialty?: TaskCategory): Minion {
     const name = this.pickMinionName();
     const color = MINION_COLORS[Math.floor(Math.random() * MINION_COLORS.length)];
     const accessory = MINION_ACCESSORIES[Math.floor(Math.random() * MINION_ACCESSORIES.length)];
-    const specialty = SPECIALTY_CATEGORIES[Math.floor(Math.random() * SPECIALTY_CATEGORIES.length)];
+    const specialty = forceSpecialty ?? SPECIALTY_CATEGORIES[Math.floor(Math.random() * SPECIALTY_CATEGORIES.length)];
 
     const randStat = () => {
       const r = (Math.random() + Math.random()) / 2;

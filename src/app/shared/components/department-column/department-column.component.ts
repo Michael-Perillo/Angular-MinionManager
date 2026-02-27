@@ -2,7 +2,7 @@ import { Component, ChangeDetectionStrategy, input, output, computed } from '@an
 import { CdkDropList, CdkDrag, CdkDragDrop, CdkDragPreview } from '@angular/cdk/drag-drop';
 import { Task, TaskCategory } from '../../../core/models/task.model';
 import { Minion } from '../../../core/models/minion.model';
-import { Department, DEPARTMENT_LABELS } from '../../../core/models/department.model';
+import { Department, DEPARTMENT_LABELS, DEPARTMENT_PASSIVES, getPassiveBonus } from '../../../core/models/department.model';
 import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
 import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
 
@@ -21,12 +21,19 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
             <h3 class="text-sm font-bold text-text-primary uppercase tracking-wider">
               {{ deptLabel().label }}
             </h3>
-            <span class="text-[10px] text-text-muted">Dept Lv.{{ department().level }}</span>
+            <span class="text-xs text-text-muted">Dept Lv.{{ department().level }}</span>
           </div>
         </div>
-        <span class="text-xs text-text-muted">
-          {{ assignedMinions().length }} minion{{ assignedMinions().length !== 1 ? 's' : '' }}
-        </span>
+        <div class="text-right">
+          <span class="text-xs text-text-muted">
+            {{ assignedMinions().length }} minion{{ assignedMinions().length !== 1 ? 's' : '' }}
+          </span>
+          @if (passiveBonus() > 0) {
+            <div class="text-[10px] text-green-400">
+              {{ passiveName() }} +{{ passiveBonus() }}%
+            </div>
+          }
+        </div>
       </div>
 
       <!-- Drop zone -->
@@ -108,8 +115,18 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
                 <span class="text-[10px] text-orange-400 shrink-0">Rescue</span>
               }
             </div>
-            <div class="text-[10px] text-text-muted mt-0.5">
-              {{ task.timeToComplete }}s / {{ task.clicksRequired }} clicks
+            <div class="flex items-center justify-between mt-0.5">
+              <span class="text-xs text-text-muted">
+                {{ task.timeToComplete }}s / {{ task.clicksRequired }} clicks
+              </span>
+              @if (dragDisabled()) {
+                <button
+                  (click)="onMoveRequest(task.id); $event.stopPropagation()"
+                  class="text-[10px] text-accent hover:text-gold cursor-pointer px-1.5 py-0.5 rounded
+                         border border-accent/20 hover:border-accent/40 transition-colors">
+                  Move...
+                </button>
+              }
             </div>
 
             <!-- Drag preview -->
@@ -158,10 +175,14 @@ export class DepartmentColumnComponent {
 
   taskDropped = output<CdkDragDrop<any>>();
   taskReordered = output<string[]>();
+  taskMoveRequested = output<{ taskId: string; fromQueue: string }>();
 
   protected readonly Math = Math;
 
   deptLabel = computed(() => DEPARTMENT_LABELS[this.category()]);
+
+  passiveBonus = computed(() => getPassiveBonus(this.category(), this.department().level));
+  passiveName = computed(() => DEPARTMENT_PASSIVES[this.category()].name);
 
   inProgressTasks = computed(() =>
     this.tasks().filter(t => t.status === 'in-progress' && t.assignedMinionId)
@@ -194,6 +215,10 @@ export class DepartmentColumnComponent {
       case 'mayhem': return '💥';
       default: return '';
     }
+  }
+
+  onMoveRequest(taskId: string): void {
+    this.taskMoveRequested.emit({ taskId, fromQueue: this.category() });
   }
 
   onDrop(event: CdkDragDrop<any>): void {

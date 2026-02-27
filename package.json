@@ -15,7 +15,13 @@
     "e2e:headed": "playwright test --headed",
     "e2e:ui": "playwright test --ui",
     "storybook": "ng run Angular-MinionManager:storybook",
-    "build-storybook": "ng run Angular-MinionManager:build-storybook"
+    "build-storybook": "ng run Angular-MinionManager:build-storybook",
+    "test:storybook": "test-storybook --coverage",
+    "coverage:merge": "mkdir -p coverage/.nyc_merge && cp coverage/angular-minionmanager/coverage-final.json coverage/.nyc_merge/karma.json && cp coverage/storybook/coverage-storybook.json coverage/.nyc_merge/storybook.json && nyc merge coverage/.nyc_merge coverage/merged/coverage-final.json",
+    "coverage:check": "nyc check-coverage --temp-dir coverage/merged",
+    "coverage:check:core": "nyc check-coverage --temp-dir coverage/angular-minionmanager --lines 60 --statements 60 --branches 45 --functions 50",
+    "coverage:report": "nyc report --temp-dir coverage/merged --reporter=text --reporter=lcov --report-dir coverage/merged",
+    "test:storybook:viewport": "playwright test --config playwright-storybook.config.ts"
   },
   "private": true,
   "dependencies": {
@@ -43,15 +49,19 @@
     "@compodoc/compodoc": "^1.2.1",
     "@playwright/test": "^1.58.2",
     "@storybook/addon-a11y": "^10.2.8",
+    "@storybook/addon-coverage": "^3.0.0",
     "@storybook/addon-docs": "^10.2.8",
     "@storybook/angular": "^10.2.8",
+    "@storybook/test-runner": "^0.24.2",
     "@types/jasmine": "~5.1.0",
+    "http-server": "^14.1.1",
     "jasmine-core": "~5.7.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
+    "nyc": "^18.0.0",
     "storybook": "^10.2.8",
     "typescript": "~5.8.2"
   }

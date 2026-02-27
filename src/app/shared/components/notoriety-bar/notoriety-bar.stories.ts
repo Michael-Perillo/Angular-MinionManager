@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/angular';
+import { expect, within } from 'storybook/test';
 import { NotorietyBarComponent } from './notoriety-bar.component';
 
 const meta: Meta<NotorietyBarComponent> = {
@@ -73,6 +74,15 @@ export const RaidActive: Story = {
     gold: 400,
     raidActive: true,
     raidTimer: 7,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Verify raid warning is visible
+    expect(canvas.getByText(/HERO RAID IN PROGRESS/)).toBeTruthy();
+
+    // Verify defend button renders
+    expect(canvas.getByText('DEFEND!')).toBeTruthy();
   },
 };
 

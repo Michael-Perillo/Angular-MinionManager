@@ -1,6 +1,6 @@
 import { Component, ChangeDetectionStrategy, input, computed } from '@angular/core';
 import { TaskCategory } from '../../../core/models/task.model';
-import { Department, deptXpForLevel, DEPARTMENT_LABELS, availableTiersForDeptLevel } from '../../../core/models/department.model';
+import { Department, deptXpForLevel, DEPARTMENT_LABELS, availableTiersForDeptLevel, DEPARTMENT_PASSIVES, getPassiveBonus } from '../../../core/models/department.model';
 import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
@@ -46,17 +46,20 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
                   [style.width.%]="getDeptXpPercent(dept)">
                 </div>
               </div>
-              <span class="text-[10px] text-text-muted tabular-nums w-16 text-right">
+              <span class="text-xs text-text-muted tabular-nums w-16 text-right">
                 {{ dept.xp }}/{{ getNextLevelXp(dept.level) }}
               </span>
             </div>
 
-            <!-- Research passive -->
-            @if (dept.category === 'research' && dept.level > 1) {
-              <div class="mt-1 text-[10px] text-green-400">
-                Passive: Notoriety gain reduced by {{ (dept.level - 1) * 5 }}%
-              </div>
-            }
+            <!-- Department passive -->
+            <div class="mt-1 text-xs" [class]="dept.level > 1 ? 'text-green-400' : 'text-text-muted/60'">
+              {{ getPassiveName(dept.category) }}: {{ getPassiveDescription(dept.category) }}
+              @if (dept.level > 1) {
+                <span class="font-semibold">({{ getPassiveBonusValue(dept.category, dept.level) }}{{ getPassiveUnit(dept.category) }})</span>
+              } @else {
+                <span class="italic">(unlocks at Lv.2)</span>
+              }
+            </div>
 
             <!-- Tier roadmap -->
             <div class="mt-1.5 flex items-center gap-1 flex-wrap">
@@ -112,13 +115,29 @@ export class DepartmentPanelComponent {
   }
 
   getDeptTooltip(category: TaskCategory): string {
+    const passive = DEPARTMENT_PASSIVES[category];
+    const level = this.departments()[category].level;
+    const bonus = getPassiveBonus(category, level);
     let tip = `Complete ${category} missions to level up. Higher levels unlock better tiers.`;
-    if (category === 'research') {
-      const level = this.departments().research.level;
-      const reduction = Math.max(0, (level - 1) * 5);
-      tip += ` Passive: Reduces notoriety gain by ${reduction}%.`;
-    }
+    tip += ` Passive: ${passive.name} — ${passive.description}`;
+    if (bonus > 0) tip += ` (${bonus}${passive.unit})`;
     return tip;
+  }
+
+  getPassiveName(category: TaskCategory): string {
+    return DEPARTMENT_PASSIVES[category].name;
+  }
+
+  getPassiveDescription(category: TaskCategory): string {
+    return DEPARTMENT_PASSIVES[category].description;
+  }
+
+  getPassiveBonusValue(category: TaskCategory, level: number): number {
+    return getPassiveBonus(category, level);
+  }
+
+  getPassiveUnit(category: TaskCategory): string {
+    return DEPARTMENT_PASSIVES[category].unit;
   }
 
   getTierBadges(level: number): string[] {

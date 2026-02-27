@@ -23,6 +23,7 @@ export interface SaveData {
   departmentQueues: Record<TaskCategory, Task[]>;
   playerQueue: Task[];
   resources: Resources;
+  unlockedDepartments?: string[];
 }
 
 // Re-export for convenience — CapturedMinion is defined in minion.model

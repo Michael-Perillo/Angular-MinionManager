@@ -51,3 +51,44 @@ export const DEPARTMENT_LABELS: Record<TaskCategory, { label: string; icon: stri
   research: { label: 'Research', icon: '🧪' },
   mayhem: { label: 'Mayhem', icon: '💥' },
 };
+
+/** Department passive abilities that scale with level */
+export interface DepartmentPassive {
+  name: string;
+  description: string;
+  scalingPerLevel: number; // percentage per level above 1
+  unit: string;
+}
+
+export const DEPARTMENT_PASSIVES: Record<TaskCategory, DepartmentPassive> = {
+  research: {
+    name: 'Covert Ops',
+    description: 'Reduces notoriety gain',
+    scalingPerLevel: 5,
+    unit: '%',
+  },
+  schemes: {
+    name: 'Intel Network',
+    description: 'Faster mission board refresh',
+    scalingPerLevel: 8,
+    unit: '%',
+  },
+  heists: {
+    name: 'Loot Bonus',
+    description: 'Bonus gold from all tasks',
+    scalingPerLevel: 4,
+    unit: '%',
+  },
+  mayhem: {
+    name: 'Intimidation',
+    description: 'Increased Special Op rate',
+    scalingPerLevel: 3,
+    unit: '%',
+  },
+};
+
+/** Get the passive bonus value for a department at a given level */
+export function getPassiveBonus(category: TaskCategory, level: number): number {
+  if (level <= 1) return 0;
+  return (level - 1) * DEPARTMENT_PASSIVES[category].scalingPerLevel;
+}
