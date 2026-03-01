@@ -1484,4 +1484,139 @@ describe('GameStateService', () => {
       expect(service.quarterProgress().quarter).toBe(1);
     });
   });
+
+  describe('modifier effects', () => {
+    function enterReview(missedQuarters = 0): void {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 3,
+          grossGoldEarned: 1500,
+          tasksCompleted: 60,
+          isComplete: true,
+          missedQuarters,
+          quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+    }
+
+    it('should block hiring when hiringDisabled is active', () => {
+      enterReview();
+      // Force the hiring-disabled constraint directly for deterministic testing
+      (service as any)._hiringDisabled.set(true);
+
+      service.addGold(10_000);
+      const minionsBefore = service.minions().length;
+      service.hireMinion();
+      expect(service.minions().length).toBe(minionsBefore);
+    });
+
+    it('should block hireChosenMinion when hiringDisabled is active', () => {
+      enterReview();
+      (service as any)._hiringDisabled.set(true);
+
+      service.addGold(10_000);
+      const candidates = service.generateHiringCandidates();
+      service.hireChosenMinion(candidates[0]);
+      expect(service.minions().length).toBe(0);
+    });
+
+    it('should block upgrades when upgradesDisabled is active', () => {
+      enterReview();
+      (service as any)._upgradesDisabled.set(true);
+
+      service.addGold(10_000);
+      const levelBefore = service.getUpgradeLevel('click-power');
+      service.purchaseUpgrade('click-power');
+      expect(service.getUpgradeLevel('click-power')).toBe(levelBefore);
+    });
+
+    it('should block board refresh when boardFrozen is active', () => {
+      enterReview();
+      (service as any)._boardFrozen.set(true);
+
+      // Clear the board manually
+      const snapshot = service.getSnapshot();
+      snapshot.missionBoard = [];
+      service.loadSnapshot(snapshot);
+      (service as any)._boardFrozen.set(true);
+
+      service.refreshBoard();
+      expect(service.missionBoard().length).toBe(0); // Board stays empty
+    });
+
+    it('should limit board capacity to 2 when boardLimited is active', () => {
+      enterReview();
+      (service as any)._boardLimited.set(true);
+
+      expect(service.boardCapacity()).toBe(2);
+    });
+
+    it('should apply gold drain per task', () => {
+      (service as any)._goldDrainPerTask.set(5);
+
+      const mission = service.missionBoard()[0];
+      const reward = mission.goldReward;
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
+
+      // Gold should be reward - 5 (drain)
+      expect(service.gold()).toBe(Math.max(0, reward - 5));
+    });
+
+    it('should apply gold reward multiplier', () => {
+      (service as any)._goldRewardMultiplier.set(0.7);
+
+      const mission = service.missionBoard()[0];
+      const reward = mission.goldReward;
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
+
+      expect(service.gold()).toBe(Math.round(reward * 0.7));
+    });
+
+    it('should block routing to locked category', () => {
+      service.addGold(10_000);
+      // Unlock schemes
+      const m = makeMinion({ assignedDepartment: 'schemes', specialty: 'schemes' });
+      service.hireChosenMinion(m);
+
+      (service as any)._lockedCategory.set('schemes');
+
+      const mission = service.missionBoard()[0];
+      service.routeMission(mission.id, 'schemes');
+      // Should not have been routed
+      expect(service.departmentQueues().schemes.length).toBe(0);
+    });
+
+    it('should revert all constraints when Q4 passes', () => {
+      enterReview();
+      // Set up some constraints
+      (service as any)._hiringDisabled.set(true);
+      (service as any)._upgradesDisabled.set(true);
+      (service as any)._boardFrozen.set(true);
+
+      // Simulate Q4 completion and pass
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 4,
+          grossGoldEarned: 500,
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 4, passed: true, goldEarned: 500, target: 200, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      expect(service.hiringDisabled()).toBe(false);
+      expect(service.upgradesDisabled()).toBe(false);
+      expect(service.boardFrozen()).toBe(false);
+      expect(service.lockedCategory()).toBeNull();
+    });
+  });
 });

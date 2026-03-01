@@ -67,6 +67,15 @@ export class GameStateService {
   private readonly _isRunOver = signal(false);
   private readonly _showReviewerIntro = signal(false);
 
+  // ─── Modifier constraint signals ────────────
+  private readonly _hiringDisabled = signal(false);
+  private readonly _upgradesDisabled = signal(false);
+  private readonly _boardFrozen = signal(false);
+  private readonly _boardLimited = signal(false);
+  private readonly _goldDrainPerTask = signal(0);
+  private readonly _goldRewardMultiplier = signal(1);
+  private readonly _lockedCategory = signal<TaskCategory | null>(null);
+
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
   readonly minions = this._minions.asReadonly();
@@ -90,6 +99,11 @@ export class GameStateService {
     if (!reviewer) return 0;
     return getReviewerGoldTarget(reviewer, this._quarterProgress().year);
   });
+  readonly hiringDisabled = this._hiringDisabled.asReadonly();
+  readonly upgradesDisabled = this._upgradesDisabled.asReadonly();
+  readonly boardFrozen = this._boardFrozen.asReadonly();
+  readonly boardLimited = this._boardLimited.asReadonly();
+  readonly lockedCategory = this._lockedCategory.asReadonly();
   readonly currentQuarterTarget = computed(() => {
     const p = this._quarterProgress();
     return getQuarterTarget(p.year, p.quarter);
@@ -155,8 +169,9 @@ export class GameStateService {
     this.activeMissions().filter(t => t.status === 'in-progress')
   );
 
-  /** Mission board capacity: base 12, scales with minions + upgrades */
+  /** Mission board capacity: base 12, scales with minions + upgrades. Clamped to 2 by board-limited modifier. */
   readonly boardCapacity = computed(() => {
+    if (this._boardLimited()) return 2;
     const base = 12;
     const minionBonus = Math.min(8, this._minions().length * 2);
     const upgradeBonus = this.getUpgradeEffect('board-slots');
@@ -250,6 +265,13 @@ export class GameStateService {
     this._activeModifiers.set([]);
     this._isRunOver.set(false);
     this._showReviewerIntro.set(false);
+    this._hiringDisabled.set(false);
+    this._upgradesDisabled.set(false);
+    this._boardFrozen.set(false);
+    this._boardLimited.set(false);
+    this._goldDrainPerTask.set(0);
+    this._goldRewardMultiplier.set(1);
+    this._lockedCategory.set(null);
     this._unlockedDepartments.set(new Set());
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
@@ -366,6 +388,7 @@ export class GameStateService {
 
   // ─── Upgrades ──────────────────────────────
   purchaseUpgrade(upgradeId: string): void {
+    if (this._upgradesDisabled()) return;
     const upgrade = this._upgrades().find(u => u.id === upgradeId);
     if (!upgrade) return;
     const cost = upgradeCost(upgrade);
@@ -422,8 +445,9 @@ export class GameStateService {
     const totalActive = this.activeMissions().length;
     if (totalActive >= this.activeSlots()) return;
 
-    // Prevent routing to a locked department
+    // Prevent routing to a locked department (unlocking or modifier-locked)
     if (target !== 'player' && !this._unlockedDepartments().has(target as TaskCategory)) return;
+    if (target !== 'player' && this._lockedCategory() === target) return;
 
     this._missionBoard.update(board => board.filter(m => m.id !== missionId));
 
@@ -594,6 +618,7 @@ export class GameStateService {
 
   // ─── Hire minion ───────────────────────────
   hireMinion(): void {
+    if (this._hiringDisabled()) return;
     const cost = this.nextMinionCost();
     if (this._gold() < cost) return;
 
@@ -614,6 +639,7 @@ export class GameStateService {
 
   /** Hire a specific pre-generated minion (from the pick-one-of-two choice) */
   hireChosenMinion(minion: Minion): void {
+    if (this._hiringDisabled()) return;
     const cost = this.nextMinionCost();
     if (this._gold() < cost) return;
 
@@ -706,6 +732,7 @@ export class GameStateService {
 
   /** Step 4: Refill mission board and emit BoardRefreshed */
   refreshBoard(): void {
+    if (this._boardFrozen()) return;
     this.fillBoard();
     this.lastBoardRefresh = Date.now();
     this.events.emit({
@@ -970,7 +997,11 @@ export class GameStateService {
   private awardGold(amount: number, taskName: string, taskTier?: TaskTier, taskCategory?: TaskCategory): void {
     // Apply Heists passive: +gold from all tasks
     const heistsBonus = getPassiveBonus('heists', this._departments().heists.level);
-    const finalAmount = Math.round(amount * (1 + heistsBonus * 0.01));
+    let finalAmount = Math.round(amount * (1 + heistsBonus * 0.01));
+
+    // Apply modifier effects
+    finalAmount = Math.round(finalAmount * this._goldRewardMultiplier());
+    finalAmount = Math.max(0, finalAmount - this._goldDrainPerTask());
 
     this._gold.update(g => g + finalAmount);
     this._totalGoldEarned.update(g => g + finalAmount);
@@ -1205,6 +1236,7 @@ export class GameStateService {
     this._currentReviewer.set(reviewer);
     this._activeModifiers.set(modifiers);
     this._showReviewerIntro.set(true);
+    this.applyModifiers(modifiers);
 
     this.events.emit({
       type: 'ReviewStarted',
@@ -1214,9 +1246,63 @@ export class GameStateService {
     });
   }
 
+  private applyModifiers(modifiers: Modifier[]): void {
+    for (const mod of modifiers) {
+      switch (mod.id) {
+        case 'no-hiring':
+          this._hiringDisabled.set(true);
+          break;
+        case 'upgrades-disabled':
+          this._upgradesDisabled.set(true);
+          break;
+        case 'board-frozen':
+          this._boardFrozen.set(true);
+          break;
+        case 'board-limited':
+          this._boardLimited.set(true);
+          break;
+        case 'gold-drain':
+          this._goldDrainPerTask.set(5);
+          break;
+        case 'gold-halved':
+          this._goldRewardMultiplier.set(this._goldRewardMultiplier() * 0.5);
+          break;
+        case 'gold-reduced-30':
+          this._goldRewardMultiplier.set(this._goldRewardMultiplier() * 0.7);
+          break;
+        case 'starting-gold-zero':
+          this._gold.set(0);
+          break;
+        case 'lock-schemes':
+          this._lockedCategory.set('schemes');
+          break;
+        case 'lock-heists':
+          this._lockedCategory.set('heists');
+          break;
+        case 'lock-research':
+          this._lockedCategory.set('research');
+          break;
+        case 'lock-mayhem':
+          this._lockedCategory.set('mayhem');
+          break;
+      }
+    }
+  }
+
+  private revertModifiers(): void {
+    this._hiringDisabled.set(false);
+    this._upgradesDisabled.set(false);
+    this._boardFrozen.set(false);
+    this._boardLimited.set(false);
+    this._goldDrainPerTask.set(0);
+    this._goldRewardMultiplier.set(1);
+    this._lockedCategory.set(null);
+  }
+
   private revertReview(): void {
     this._currentReviewer.set(null);
     this._activeModifiers.set([]);
     this._showReviewerIntro.set(false);
+    this.revertModifiers();
   }
 }
