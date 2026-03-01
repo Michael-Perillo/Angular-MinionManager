@@ -738,6 +738,22 @@ export class GameStateService {
     }));
   }
 
+  /** Shift assignedAt/completesAt forward on all in-progress tasks (preserves progress bar ratio after a pause) */
+  shiftTaskTiming(pauseDuration: number): void {
+    this._departmentQueues.update(queues => {
+      const updated: Record<string, any[]> = {};
+      for (const dept of ALL_CATEGORIES) {
+        updated[dept] = queues[dept].map(t => {
+          if (t.status === 'in-progress' && t.assignedAt != null && t.completesAt != null) {
+            return { ...t, assignedAt: t.assignedAt + pauseDuration, completesAt: t.completesAt + pauseDuration };
+          }
+          return t;
+        });
+      }
+      return updated as typeof queues;
+    });
+  }
+
   // ─── Tick step methods ────────────────
 
   /** Step 3: Remove a specific expired special op from the board */

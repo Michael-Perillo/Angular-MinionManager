@@ -3,6 +3,8 @@ import { GameTimerService } from './game-timer.service';
 import { GameStateService } from './game-state.service';
 import { GameEventService } from './game-event.service';
 import { SaveService } from './save.service';
+import { makeSaveData } from '../../../testing/factories/game-state.factory';
+import { makeMinion } from '../../../testing/factories/minion.factory';
 
 describe('GameTimerService', () => {
   let timerService: GameTimerService;
@@ -197,6 +199,78 @@ describe('GameTimerService', () => {
       events.emit({ type: 'TaskQueued', taskId: 't2', department: 'heists' });
       tick(0);
       expect(gameState.autoAssignMinions).toHaveBeenCalledTimes(2);
+
+      timerService.stop();
+    }));
+  });
+
+  describe('scheduleExistingTaskTimers with completesAt', () => {
+    const makeTask = (overrides: Partial<any> = {}): any => ({
+      id: 't1',
+      template: { name: 'Test', description: 'desc', category: 'schemes', tier: 'petty' },
+      status: 'in-progress',
+      tier: 'petty',
+      goldReward: 10,
+      timeToComplete: 10,
+      timeRemaining: 10,
+      clicksRequired: 0,
+      clicksRemaining: 0,
+      assignedMinionId: null,
+      queuedAt: Date.now(),
+      assignedQueue: 'schemes',
+      ...overrides,
+    });
+
+    it('should use completesAt for remaining duration when already set', fakeAsync(() => {
+      spyOn(gameState, 'completeTaskByTimer');
+      spyOn(gameState, 'setTaskTimingInfo');
+
+      const now = Date.now();
+      const data = makeSaveData({
+        minions: [makeMinion({ id: 'm1', assignedDepartment: 'schemes' })],
+        departmentQueues: {
+          schemes: [makeTask({ assignedMinionId: 'm1', assignedAt: now, completesAt: now + 3000 })],
+          heists: [],
+          research: [],
+          mayhem: [],
+        },
+      });
+      gameState.loadSnapshot(data);
+
+      timerService.start();
+
+      // setTaskTimingInfo should NOT be called since completesAt was already set
+      expect(gameState.setTaskTimingInfo).not.toHaveBeenCalled();
+
+      tick(3000);
+      expect(gameState.completeTaskByTimer).toHaveBeenCalledWith('t1', 'schemes');
+
+      timerService.stop();
+    }));
+
+    it('should fall back to timeRemaining when completesAt is not set', fakeAsync(() => {
+      spyOn(gameState, 'completeTaskByTimer');
+      spyOn(gameState, 'setTaskTimingInfo').and.callThrough();
+
+      const now = Date.now();
+      const data = makeSaveData({
+        minions: [makeMinion({ id: 'm1', assignedDepartment: 'schemes' })],
+        departmentQueues: {
+          schemes: [makeTask({ timeRemaining: 5, assignedMinionId: 'm1' })],
+          heists: [],
+          research: [],
+          mayhem: [],
+        },
+      });
+      gameState.loadSnapshot(data);
+
+      timerService.start();
+
+      // setTaskTimingInfo SHOULD be called since completesAt was not set
+      expect(gameState.setTaskTimingInfo).toHaveBeenCalled();
+
+      tick(5000);
+      expect(gameState.completeTaskByTimer).toHaveBeenCalledWith('t1', 'schemes');
 
       timerService.stop();
     }));

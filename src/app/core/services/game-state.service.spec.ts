@@ -1640,4 +1640,61 @@ describe('GameStateService', () => {
       expect(service.lockedCategory()).toBeNull();
     });
   });
+
+  describe('shiftTaskTiming', () => {
+    const makeTask = (overrides: Partial<any> = {}): any => ({
+      id: 't1',
+      template: { name: 'Test', description: 'desc', category: 'schemes', tier: 'petty' },
+      status: 'in-progress',
+      tier: 'petty',
+      goldReward: 10,
+      timeToComplete: 10,
+      timeRemaining: 10,
+      clicksRequired: 0,
+      clicksRemaining: 0,
+      assignedMinionId: null,
+      queuedAt: Date.now(),
+      assignedQueue: 'schemes',
+      ...overrides,
+    });
+
+    it('should shift assignedAt and completesAt forward by the given duration', () => {
+      const now = Date.now();
+      const data = makeSaveData({
+        minions: [makeMinion({ id: 'm1', assignedDepartment: 'schemes' })],
+        departmentQueues: {
+          schemes: [makeTask({ assignedMinionId: 'm1', assignedAt: now, completesAt: now + 10000 })],
+          heists: [],
+          research: [],
+          mayhem: [],
+        },
+      });
+      service.loadSnapshot(data);
+
+      service.shiftTaskTiming(5000);
+
+      const task = service.departmentQueues().schemes[0];
+      expect(task.assignedAt).toBe(now + 5000);
+      expect(task.completesAt).toBe(now + 15000);
+    });
+
+    it('should not shift tasks that are not in-progress', () => {
+      const now = Date.now();
+      const data = makeSaveData({
+        departmentQueues: {
+          schemes: [makeTask({ status: 'pending', assignedMinionId: null, assignedAt: undefined, completesAt: undefined })],
+          heists: [],
+          research: [],
+          mayhem: [],
+        },
+      });
+      service.loadSnapshot(data);
+
+      service.shiftTaskTiming(5000);
+
+      const task = service.departmentQueues().schemes[0];
+      expect(task.assignedAt).toBeUndefined();
+      expect(task.completesAt).toBeUndefined();
+    });
+  });
 });

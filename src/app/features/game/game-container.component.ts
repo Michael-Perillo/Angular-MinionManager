@@ -342,6 +342,7 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly pendingMove = signal<{ taskId: string; fromQueue: string } | null>(null);
 
   private currentTimeInterval: ReturnType<typeof setInterval> | null = null;
+  private pausedAt: number | null = null;
 
   readonly allCategories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
   readonly kanbanDropListIds = ['schemes', 'heists', 'research', 'mayhem', 'player'];
@@ -368,6 +369,11 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     effect(() => {
       if (this.gameState.quarterProgress().isComplete) {
         this.gameTimer.stop();
+        if (this.currentTimeInterval) {
+          clearInterval(this.currentTimeInterval);
+          this.currentTimeInterval = null;
+        }
+        this.pausedAt = Date.now();
       }
     });
   }
@@ -475,6 +481,18 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   }
 
   onQuarterAdvance(): void {
+    // Shift task timing to account for time spent in the modal
+    if (this.pausedAt) {
+      const pauseDuration = Date.now() - this.pausedAt;
+      this.gameState.shiftTaskTiming(pauseDuration);
+      this.pausedAt = null;
+    }
+
+    // Restart the currentTime interval for progress bars
+    if (!this.currentTimeInterval) {
+      this.currentTimeInterval = setInterval(() => this.currentTime.set(Date.now()), 250);
+    }
+
     this.gameState.advanceQuarter();
     // Don't restart timers if the reviewer intro is showing (Q3→Q4 transition)
     if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver()) {
