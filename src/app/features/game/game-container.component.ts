@@ -18,6 +18,7 @@ import { MinionRosterComponent } from '../../shared/components/minion-roster/min
 import { PlayerWorkbenchComponent } from '../../shared/components/player-workbench/player-workbench.component';
 import { DepartmentColumnComponent } from '../../shared/components/department-column/department-column.component';
 import { QuarterReviewComponent } from '../../shared/components/quarter-review/quarter-review.component';
+import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/reviewer-intro.component';
 
 @Component({
   selector: 'app-game-container',
@@ -37,6 +38,7 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
     PlayerWorkbenchComponent,
     DepartmentColumnComponent,
     QuarterReviewComponent,
+    ReviewerIntroComponent,
   ],
   template: `
     <div class="h-screen flex flex-col overflow-hidden">
@@ -52,6 +54,7 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
         [taskBudget]="gameState.currentQuarterTarget().taskBudget"
         [goldTarget]="gameState.currentQuarterTarget().goldTarget"
         [lastSaved]="gameState.lastSaved()"
+        [activeModifiers]="gameState.activeModifiers()"
         (drawerToggle)="onDrawerToggle()"
         (reset)="onReset()" />
 
@@ -281,6 +284,15 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
           (advance)="onQuarterAdvance()" />
       }
 
+      <!-- Reviewer Intro Modal (shown at Q4 start) -->
+      @if (gameState.showReviewerIntro() && gameState.currentReviewer(); as reviewer) {
+        <app-reviewer-intro
+          [reviewer]="reviewer"
+          [modifiers]="gameState.activeModifiers()"
+          [goldTarget]="gameState.reviewGoldTarget()"
+          (beginReview)="onBeginReview()" />
+      }
+
       <!-- Notifications -->
       <div class="fixed bottom-4 right-4 flex flex-col gap-2 z-50 max-w-sm pointer-events-none"
            [class]="isMobile() ? 'bottom-20' : 'bottom-4'">
@@ -447,6 +459,14 @@ export class GameContainerComponent implements OnInit, OnDestroy {
 
   onQuarterAdvance(): void {
     this.gameState.advanceQuarter();
+    // Don't restart timers if the reviewer intro is showing (Q3→Q4 transition)
+    if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver()) {
+      this.gameTimer.restartTimers();
+    }
+  }
+
+  onBeginReview(): void {
+    this.gameState.dismissReviewerIntro();
     this.gameTimer.restartTimers();
   }
 
