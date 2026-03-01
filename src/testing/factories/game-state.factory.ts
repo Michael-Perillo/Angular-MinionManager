@@ -11,22 +11,18 @@ export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
   };
 
   return {
-    version: 4,
+    version: 6,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,
     totalGoldEarned: 0,
-    notoriety: 0,
     minions: [],
     departments: defaultDepts,
     upgradeLevels: [],
     activeMissions: [],
     missionBoard: [],
-    raidActive: false,
-    raidTimer: 0,
     usedNameIndices: [],
     lastBoardRefresh: 0,
-    capturedMinions: [],
     departmentQueues: {
       schemes: [],
       heists: [],
@@ -34,7 +30,6 @@ export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
       mayhem: [],
     },
     playerQueue: [],
-    influence: 0,
     ...overrides,
   };
 }

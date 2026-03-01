@@ -96,16 +96,6 @@ describe('Upgrade Model', () => {
       expect(upgradeEffect(upgrade)).toBeCloseTo(0.3333, 3);
     });
 
-    it('should compute passive-decay correctly', () => {
-      const upgrade: Upgrade = {
-        id: 'test', name: 'Test', description: '', category: 'notoriety',
-        icon: '', currentLevel: 3, baseCost: 100, costScale: 2.0,
-        effectType: 'passive-decay', effectRate: 1.5, effectMax: 0,
-      };
-      // 1.5 * ln(4) = 1.5 * 1.3863 = 2.0794
-      expect(upgradeEffect(upgrade)).toBeCloseTo(2.0794, 3);
-    });
-
     it('percentage effects should approach but not exceed effectMax', () => {
       const upgrade: Upgrade = {
         id: 'test', name: 'Test', description: '', category: 'click',
@@ -131,8 +121,8 @@ describe('Upgrade Model', () => {
   });
 
   describe('createDefaultUpgrades', () => {
-    it('should return 14 upgrades (10 base + 4 notoriety)', () => {
-      expect(createDefaultUpgrades().length).toBe(14);
+    it('should return 10 upgrades', () => {
+      expect(createDefaultUpgrades().length).toBe(10);
     });
 
     it('should have unique IDs', () => {
@@ -165,10 +155,6 @@ describe('Upgrade Model', () => {
       expect(ids).toContain('board-refresh');
       expect(ids).toContain('dept-xp-boost');
       expect(ids).toContain('hire-discount');
-      expect(ids).toContain('bribe-network');
-      expect(ids).toContain('shadow-ops');
-      expect(ids).toContain('cover-spawn');
-      expect(ids).toContain('lay-low');
     });
 
     it('should have positive baseCost and costScale > 1 for all', () => {
@@ -176,11 +162,6 @@ describe('Upgrade Model', () => {
         expect(u.baseCost).toBeGreaterThan(0);
         expect(u.costScale).toBeGreaterThan(1);
       });
-    });
-
-    it('should include 4 notoriety-category upgrades', () => {
-      const notorietyUpgrades = createDefaultUpgrades().filter(u => u.category === 'notoriety');
-      expect(notorietyUpgrades.length).toBe(4);
     });
   });
 });

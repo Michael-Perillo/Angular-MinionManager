@@ -1,12 +1,11 @@
 import { Injectable, computed, signal, inject } from '@angular/core';
 import {
-  Task, TaskStatus, TaskTier, TaskCategory, TIER_CONFIG, TaskTemplate, GOLD_SCALE_PER_LEVEL,
+  Task, TaskStatus, TaskTier, TaskCategory, TIER_CONFIG, TaskTemplate, VILLAIN_SCALE_PER_LEVEL,
   QueueTarget,
 } from '../models/task.model';
 import {
   Minion, MinionAppearance, MinionStats, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES,
   SPECIALTY_CATEGORIES, SPECIALTY_BONUS, levelFromXp, xpForLevel,
-  CapturedMinion, PRISON_DURATION_MS,
 } from '../models/minion.model';
 import { GameNotification } from '../models/game-state.model';
 import { TASK_POOL } from '../models/task-pool';
@@ -16,10 +15,9 @@ import {
 } from '../models/department.model';
 import { Upgrade, upgradeCost, upgradeEffect, createDefaultUpgrades } from '../models/upgrade.model';
 import {
-  NOTORIETY_PER_TIER, MAX_NOTORIETY, getThreatLevel, notorietyGoldPenalty,
-  bribeCost, COVER_TRACKS_REDUCTION, BASE_NOTORIETY_DECAY, ThreatLevel,
-} from '../models/notoriety.model';
-import { INFLUENCE_PER_TIER } from '../models/resource.model';
+  QuarterProgress, createInitialProgress, getQuarterTarget,
+  isQuarterBudgetExhausted, evaluateQuarter,
+} from '../models/quarter.model';
 import { SaveData } from '../models/save-data.model';
 import { GameEventService } from './game-event.service';
 
@@ -48,10 +46,6 @@ export class GameStateService {
   });
 
   private readonly _upgrades = signal<Upgrade[]>(createDefaultUpgrades());
-  private readonly _notoriety = signal(0);
-  private readonly _raidActive = signal(false);
-  private readonly _raidTimer = signal(0); // seconds to defend
-  private readonly _capturedMinions = signal<CapturedMinion[]>([]);
   private readonly _lastSaved = signal(0);
 
   // ─── Kanban queue signals ──────────────────
@@ -62,7 +56,7 @@ export class GameStateService {
     mayhem: [],
   });
   private readonly _playerQueue = signal<Task[]>([]);
-  private readonly _influence = signal(0);
+  private readonly _quarterProgress = signal<QuarterProgress>(createInitialProgress());
 
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
@@ -73,20 +67,15 @@ export class GameStateService {
   readonly notifications = this._notifications.asReadonly();
   readonly departments = this._departments.asReadonly();
   readonly upgrades = this._upgrades.asReadonly();
-  readonly notoriety = this._notoriety.asReadonly();
-  readonly raidActive = this._raidActive.asReadonly();
-  readonly raidTimer = this._raidTimer.asReadonly();
-  readonly capturedMinions = this._capturedMinions.asReadonly();
   readonly lastSaved = this._lastSaved.asReadonly();
   readonly departmentQueues = this._departmentQueues.asReadonly();
   readonly playerQueue = this._playerQueue.asReadonly();
-  readonly influence = this._influence.asReadonly();
-
-  readonly threatLevel = computed(() => getThreatLevel(this._notoriety()));
-
-  readonly notorietyGoldPenaltyPercent = computed(() =>
-    Math.round(notorietyGoldPenalty(this._notoriety()) * 100)
-  );
+  readonly quarterProgress = this._quarterProgress.asReadonly();
+  readonly currentQuarterTarget = computed(() => {
+    const p = this._quarterProgress();
+    return getQuarterTarget(p.year, p.quarter);
+  });
+  readonly quarterGold = computed(() => this._quarterProgress().grossGoldEarned);
 
   // Backwards-compat: activeMissions merges all queues into a single flat list
   readonly activeMissions = computed(() => {
@@ -106,7 +95,7 @@ export class GameStateService {
   // ─── Villain level ─────────────────────────
   readonly villainLevel = computed(() => {
     const completed = this._completedCount();
-    return Math.min(20, Math.floor(Math.sqrt(completed / 2.5)) + 1);
+    return Math.min(20, Math.floor(Math.sqrt(completed / 5)) + 1);
   });
 
   readonly villainTitle = computed(() => {
@@ -130,7 +119,7 @@ export class GameStateService {
   );
 
   readonly nextMinionCost = computed(() => {
-    const base = Math.floor(50 * Math.pow(1.5, this._minions().length));
+    const base = Math.floor(75 * Math.pow(1.6, this._minions().length));
     const discount = this.getUpgradeEffect('hire-discount');
     return Math.floor(base * (1 - discount));
   });
@@ -206,10 +195,6 @@ export class GameStateService {
   private readonly BOARD_REFRESH_INTERVAL = 3_000;
   private readonly SPECIAL_OP_CHANCE = 0.15;
   private readonly SPECIAL_OP_DURATION = 30_000;
-  private readonly RAID_CHANCE_PER_TICK = 0.02; // 2% per tick when notoriety >= 60
-  private readonly RAID_DURATION = 10; // 10 seconds to defend
-  private readonly COVER_TRACKS_CHANCE = 0.12; // 12% chance a board mission is "Cover Your Tracks"
-
   /** XP earned per task tier */
   private readonly TIER_XP: Record<TaskTier, number> = {
     petty: 3,
@@ -220,7 +205,6 @@ export class GameStateService {
 
   private lastBoardRefresh = 0;
   private usedNameIndices = new Set<number>();
-  private notorietyDecayAccumulator = 0;
 
   // ─── Game lifecycle ────────────────────────
   initializeGame(): void {
@@ -238,19 +222,14 @@ export class GameStateService {
       mayhem: { category: 'mayhem', xp: 0, level: 1 },
     });
     this._upgrades.set(createDefaultUpgrades());
-    this._notoriety.set(0);
-    this._raidActive.set(false);
-    this._raidTimer.set(0);
-    this._capturedMinions.set([]);
     this._departmentQueues.set({
       schemes: [], heists: [], research: [], mayhem: [],
     });
     this._playerQueue.set([]);
-    this._influence.set(0);
+    this._quarterProgress.set(createInitialProgress());
     this._unlockedDepartments.set(new Set());
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
-    this.notorietyDecayAccumulator = 0;
 
     // Fill the board immediately
     this.fillBoard();
@@ -263,25 +242,21 @@ export class GameStateService {
   // ─── Snapshot (persistence) ─────────────────
   getSnapshot(): SaveData {
     return {
-      version: 4,
+      version: 6,
       savedAt: Date.now(),
       gold: this._gold(),
       completedCount: this._completedCount(),
       totalGoldEarned: this._totalGoldEarned(),
-      notoriety: this._notoriety(),
       minions: this._minions(),
       departments: this._departments(),
       upgradeLevels: this._upgrades().map(u => ({ id: u.id, currentLevel: u.currentLevel })),
       activeMissions: [], // kept empty for v3+; all tasks live in department/player queues
       missionBoard: this._missionBoard(),
-      raidActive: this._raidActive(),
-      raidTimer: this._raidTimer(),
       usedNameIndices: [...this.usedNameIndices],
       lastBoardRefresh: this.lastBoardRefresh,
-      capturedMinions: this._capturedMinions(),
       departmentQueues: this._departmentQueues(),
       playerQueue: this._playerQueue(),
-      influence: this._influence(),
+      quarterProgress: this._quarterProgress(),
       unlockedDepartments: [...this._unlockedDepartments()],
     };
   }
@@ -290,16 +265,12 @@ export class GameStateService {
     this._gold.set(data.gold);
     this._completedCount.set(data.completedCount);
     this._totalGoldEarned.set(data.totalGoldEarned);
-    this._notoriety.set(data.notoriety);
     this._minions.set(data.minions.map(m => ({
       ...m,
       assignedDepartment: m.assignedDepartment ?? m.specialty,
     })));
     this._departments.set(data.departments);
     this._missionBoard.set(data.missionBoard);
-    this._raidActive.set(data.raidActive);
-    this._raidTimer.set(data.raidTimer);
-    this._capturedMinions.set(data.capturedMinions ?? []);
     this._notifications.set([]);
 
     // Load kanban queues (v3+)
@@ -314,8 +285,12 @@ export class GameStateService {
       this._playerQueue.set([]);
     }
 
-    // Load influence (v4+)
-    this._influence.set(data.influence ?? 0);
+    // Load quarterly progress (v7+)
+    if (data.quarterProgress) {
+      this._quarterProgress.set(data.quarterProgress);
+    } else {
+      this._quarterProgress.set(createInitialProgress());
+    }
 
     // Legacy: migrate activeMissions into department queues
     if (data.activeMissions && data.activeMissions.length > 0) {
@@ -395,36 +370,6 @@ export class GameStateService {
   private getUpgradeEffect(id: string): number {
     const upgrade = this._upgrades().find(u => u.id === id);
     return upgrade ? upgradeEffect(upgrade) : 0;
-  }
-
-  // ─── Notoriety actions ──────────────────────
-  /** Pay gold to reduce notoriety by 10 */
-  payBribe(): void {
-    const baseCost = bribeCost(this._notoriety());
-    const discount = this.getUpgradeEffect('bribe-network');
-    const cost = Math.floor(baseCost * (1 - discount));
-    if (this._gold() < cost) return;
-    if (this._notoriety() <= 0) return;
-
-    const oldNotoriety = this._notoriety();
-    this._gold.update(g => g - cost);
-    this._notoriety.update(n => Math.max(0, n - 10));
-    this.addNotification(`Bribed officials (-10 notoriety, -${cost}g)`, 'task');
-    this.events.emit({ type: 'ThreatChanged', oldNotoriety, newNotoriety: this._notoriety() });
-  }
-
-  /** Click to defend during a hero raid */
-  defendRaid(): void {
-    if (!this._raidActive()) return;
-    this._raidTimer.update(t => t - 1);
-    if (this._raidTimer() <= 0) {
-      this._raidActive.set(false);
-      const oldNotoriety = this._notoriety();
-      this._notoriety.update(n => Math.max(0, n - 20));
-      this.addNotification('Hero raid repelled! (-20 notoriety)', 'task');
-      this.events.emit({ type: 'ThreatChanged', oldNotoriety, newNotoriety: this._notoriety() });
-      this.events.emit({ type: 'RaidEnded', defended: true });
-    }
   }
 
   // ─── Mission Board actions ─────────────────
@@ -570,14 +515,8 @@ export class GameStateService {
 
           const newClicks = task.clicksRemaining - power;
           if (newClicks <= 0) {
-            if (task.isBreakoutOp) {
-              this.completeBreakout(task);
-            } else if (task.isCoverOp) {
-              this.completeCoverOp(task.template.name, task.tier);
-            } else {
-              const bonusGold = Math.round(task.goldReward * clickGoldBonus);
-              this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
-            }
+            const bonusGold = Math.round(task.goldReward * clickGoldBonus);
+            this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
             return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
           }
           return {
@@ -609,14 +548,8 @@ export class GameStateService {
 
             const newClicks = task.clicksRemaining - power;
             if (newClicks <= 0) {
-              if (task.isBreakoutOp) {
-                this.completeBreakout(task);
-              } else if (task.isCoverOp) {
-                this.completeCoverOp(task.template.name, task.tier);
-              } else {
-                const bonusGold = Math.round(task.goldReward * clickGoldBonus);
-                this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
-              }
+              const bonusGold = Math.round(task.goldReward * clickGoldBonus);
+              this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
               return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
             }
             return {
@@ -717,16 +650,10 @@ export class GameStateService {
 
     const minionId = task.assignedMinionId;
 
-    if (task.isBreakoutOp) {
-      this.completeBreakout(task);
-    } else if (task.isCoverOp) {
-      this.completeCoverOp(task.template.name, task.tier);
-    } else {
-      const minion = minionId ? this._minions().find(m => m.id === minionId) : null;
-      const effMult = minion ? this.getMinionEfficiencyMultiplier(minion, task.template.category) : 1;
-      const bonusGold = Math.round(task.goldReward * effMult);
-      this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
-    }
+    const minion = minionId ? this._minions().find(m => m.id === minionId) : null;
+    const effMult = minion ? this.getMinionEfficiencyMultiplier(minion, task.template.category) : 1;
+    const bonusGold = Math.round(task.goldReward * effMult);
+    this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
 
     if (minionId) {
       this.freeMinionFromTask(minionId, task.tier, task.template.category);
@@ -771,102 +698,7 @@ export class GameStateService {
     return this.BOARD_REFRESH_INTERVAL * Math.max(0.2, refreshSpeedMult * schemesRefreshBonus);
   }
 
-  /** Step 6: Hero raid trigger — chance per tick when notoriety >= 60 */
-  checkRaidTrigger(): void {
-    if (!this._raidActive() && this._notoriety() >= 60) {
-      if (Math.random() < this.RAID_CHANCE_PER_TICK) {
-        this._raidActive.set(true);
-        this._raidTimer.set(this.RAID_DURATION);
-        this.addNotification('HERO RAID! Click to defend or lose a minion!', 'task');
-        this.events.emit({ type: 'RaidStarted' });
-      }
-    }
-  }
-
-  /** Step 7: Raid countdown — if not defended in time, capture a minion */
-  processRaidCountdown(now: number): void {
-    if (!this._raidActive()) return;
-
-    this._raidTimer.update(t => t - 1);
-    if (this._raidTimer() > 0) return;
-
-    this._raidActive.set(false);
-    const minions = this._minions();
-    if (minions.length > 0) {
-      const idle = minions.filter(m => m.status === 'idle');
-      const target = idle.length > 0
-        ? idle[Math.floor(Math.random() * idle.length)]
-        : minions[Math.floor(Math.random() * minions.length)];
-
-      if (target.assignedTaskId) {
-        this.unassignMinionFromTask(target.id, target.assignedTaskId);
-      }
-
-      this._minions.update(list => list.filter(m => m.id !== target.id));
-      this._capturedMinions.update(list => [...list, {
-        minion: { ...target, status: 'idle' as const, assignedTaskId: null },
-        capturedAt: now,
-        expiresAt: now + PRISON_DURATION_MS,
-        rescueDifficulty: target.level,
-      }]);
-      this.addNotification(
-        `Heroes captured ${target.name}! Break them out before they're gone for good!`,
-        'minion'
-      );
-      this.events.emit({
-        type: 'MinionCaptured', minionId: target.id, minionName: target.name,
-      });
-    }
-    const oldNotoriety = this._notoriety();
-    this._notoriety.update(n => Math.max(0, n - 15));
-    this.events.emit({ type: 'ThreatChanged', oldNotoriety, newNotoriety: this._notoriety() });
-    this.events.emit({ type: 'RaidEnded', defended: false });
-  }
-
-  /** Step 8: Prison expiry — permanently lose minion whose time ran out */
-  processPrisonExpiry(now: number): void {
-    const expired = this._capturedMinions().filter(c => now >= c.expiresAt);
-    if (expired.length === 0) return;
-
-    for (const c of expired) {
-      this.addNotification(
-        `${c.minion.name} has been transferred to maximum security — gone for good.`,
-        'minion'
-      );
-    }
-    const expiredIds = new Set(expired.map(c => c.minion.id));
-    this._capturedMinions.update(list => list.filter(c => !expiredIds.has(c.minion.id)));
-    this._missionBoard.update(board =>
-      board.filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId))
-    );
-    for (const cat of ALL_CATEGORIES) {
-      this._departmentQueues.update(queues => ({
-        ...queues,
-        [cat]: queues[cat].filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId)),
-      }));
-    }
-    this._playerQueue.update(q =>
-      q.filter(m => !m.breakoutTargetId || !expiredIds.has(m.breakoutTargetId))
-    );
-  }
-
-  /** Step 9: Passive notoriety decay (when not raided) */
-  processNotorietyDecay(): void {
-    if (this._notoriety() <= 0 || this._raidActive()) return;
-    const layLowBonus = this.getUpgradeEffect('lay-low');
-    this.notorietyDecayAccumulator += BASE_NOTORIETY_DECAY + layLowBonus;
-    if (this.notorietyDecayAccumulator >= 1.0) {
-      const oldNotoriety = this._notoriety();
-      const intDecay = Math.floor(this.notorietyDecayAccumulator);
-      this.notorietyDecayAccumulator -= intDecay;
-      this._notoriety.update(n => Math.max(0, n - intDecay));
-      if (this._notoriety() !== oldNotoriety) {
-        this.events.emit({ type: 'ThreatChanged', oldNotoriety, newNotoriety: this._notoriety() });
-      }
-    }
-  }
-
-  /** Step 10: Clean old notifications */
+  /** Clean old notifications */
   cleanNotifications(now: number): void {
     this._notifications.update(list =>
       list.filter(n => now - n.timestamp < 4000)
@@ -922,23 +754,13 @@ export class GameStateService {
   }
 
   private createBoardMission(): Task {
-    // Chance to spawn breakout mission when minions are captured
-    if (this._capturedMinions().length > 0 && Math.random() < 0.20) {
-      const mission = this.tryCreateBreakoutMission();
-      if (mission) return mission;
-    }
-
-    // Chance to spawn "Cover Your Tracks" mission when notoriety > 20
-    const coverSpawnBonus = this.getUpgradeEffect('cover-spawn');
-    if (this._notoriety() > 20 && Math.random() < this.COVER_TRACKS_CHANCE + coverSpawnBonus) {
-      return this.createCoverTracksMission();
-    }
-
     const template = this.pickRandomTemplate();
     const config = TIER_CONFIG[template.tier];
 
-    const levelBonus = 1 + (this.villainLevel() - 1) * GOLD_SCALE_PER_LEVEL;
+    const levelBonus = 1 + (this.villainLevel() - 1) * VILLAIN_SCALE_PER_LEVEL;
     let scaledGold = Math.round(config.gold * levelBonus);
+    const scaledTime = Math.round(config.time * levelBonus);
+    const scaledClicks = Math.round(config.clicks * levelBonus);
 
     // Mayhem passive: increased Special Op appearance rate
     const mayhemBonus = getPassiveBonus('mayhem', this._departments().mayhem.level);
@@ -954,10 +776,10 @@ export class GameStateService {
       status: 'queued',
       tier: template.tier,
       goldReward: scaledGold,
-      timeToComplete: config.time,
-      timeRemaining: config.time,
-      clicksRequired: config.clicks,
-      clicksRemaining: config.clicks,
+      timeToComplete: scaledTime,
+      timeRemaining: scaledTime,
+      clicksRequired: scaledClicks,
+      clicksRemaining: scaledClicks,
       assignedMinionId: null,
       queuedAt: Date.now(),
       isSpecialOp,
@@ -970,45 +792,6 @@ export class GameStateService {
     }
 
     return mission;
-  }
-
-  private createCoverTracksMission(): Task {
-    const coverTracksTemplates: TaskTemplate[] = [
-      { name: 'Bribe the Witnesses', description: 'Pay off everyone who saw anything. Reduces notoriety.', category: 'schemes', tier: 'petty' },
-      { name: 'Destroy the Evidence', description: 'Shred documents and wipe security footage. Reduces notoriety.', category: 'mayhem', tier: 'petty' },
-      { name: 'Forge Alibis', description: 'Create airtight cover stories for your minions. Reduces notoriety.', category: 'schemes', tier: 'sinister' },
-      { name: 'Hack Police Database', description: 'Delete your criminal records digitally. Reduces notoriety.', category: 'research', tier: 'sinister' },
-      { name: 'Witness Protection Purge', description: 'Eliminate all protected witnesses. Reduces notoriety.', category: 'heists', tier: 'diabolical' },
-      { name: 'Deepfake the Evidence', description: 'Replace all incriminating footage with AI fakes. Reduces notoriety.', category: 'research', tier: 'diabolical' },
-      { name: 'Rewrite the History Books', description: 'Erase your entire criminal history from all records. Reduces notoriety.', category: 'schemes', tier: 'legendary' },
-      { name: 'Memory Wipe Protocol', description: 'Deploy mass amnesia gas across the city. Reduces notoriety.', category: 'mayhem', tier: 'legendary' },
-    ];
-    // Filter by unlocked department tiers
-    const depts = this._departments();
-    const available = coverTracksTemplates.filter(t => {
-      const deptLevel = depts[t.category as TaskCategory]?.level ?? 1;
-      const unlockedTiers = availableTiersForDeptLevel(deptLevel);
-      return unlockedTiers.includes(t.tier as TaskTier);
-    });
-    const pool = available.length > 0 ? available : coverTracksTemplates.slice(0, 2); // fallback to petty
-    const template = pool[Math.floor(Math.random() * pool.length)];
-    const config = TIER_CONFIG[template.tier];
-
-    return {
-      id: crypto.randomUUID(),
-      template,
-      status: 'queued',
-      tier: template.tier,
-      goldReward: 0, // No gold, but reduces notoriety
-      timeToComplete: Math.floor(config.time * 0.6), // Faster than normal
-      timeRemaining: Math.floor(config.time * 0.6),
-      clicksRequired: Math.floor(config.clicks * 0.5),
-      clicksRemaining: Math.floor(config.clicks * 0.5),
-      assignedMinionId: null,
-      queuedAt: Date.now(),
-      isCoverOp: true,
-      assignedQueue: null,
-    };
   }
 
   private pickRandomTemplate(): TaskTemplate {
@@ -1127,20 +910,6 @@ export class GameStateService {
     }
   }
 
-  /** Unassign a minion from a task (e.g., when captured during a raid) */
-  private unassignMinionFromTask(minionId: string, taskId: string): void {
-    for (const cat of ALL_CATEGORIES) {
-      this._departmentQueues.update(queues => ({
-        ...queues,
-        [cat]: queues[cat].map(t =>
-          t.id === taskId
-            ? { ...t, status: 'queued' as TaskStatus, assignedMinionId: null, assignedAt: null, completesAt: null }
-            : t
-        ),
-      }));
-    }
-  }
-
   private freeMinionFromTask(minionId: string, taskTier: TaskTier, taskCategory: TaskCategory): void {
     const baseXp = this.TIER_XP[taskTier];
     const xpBonus = 1 + this.getUpgradeEffect('minion-xp');
@@ -1175,101 +944,10 @@ export class GameStateService {
     });
   }
 
-  /** Call when a cover-op mission completes */
-  private completeCoverOp(taskName: string, tier: TaskTier): void {
-    const reduction = COVER_TRACKS_REDUCTION[tier] ?? COVER_TRACKS_REDUCTION.petty;
-    const oldNotoriety = this._notoriety();
-    this._notoriety.update(n => Math.max(0, n - reduction));
-    this._completedCount.update(c => c + 1);
-    this.addNotification(`"${taskName}" — notoriety reduced by ${reduction}!`, 'task');
-    this.events.emit({
-      type: 'ThreatChanged', oldNotoriety, newNotoriety: this._notoriety(),
-    });
-  }
-
-  // ─── Breakout missions ──────────────────────
-  private tryCreateBreakoutMission(): Task | null {
-    // Find a captured minion that doesn't already have a breakout mission
-    const allTasks = this.activeMissions();
-    const existingTargetIds = new Set([
-      ...this._missionBoard().filter(m => m.isBreakoutOp).map(m => m.breakoutTargetId),
-      ...allTasks.filter(m => m.isBreakoutOp).map(m => m.breakoutTargetId),
-    ]);
-
-    const eligible = this._capturedMinions().filter(c => !existingTargetIds.has(c.minion.id));
-    if (eligible.length === 0) return null;
-
-    const target = eligible[Math.floor(Math.random() * eligible.length)];
-    const tier = this.breakoutTierFromLevel(target.rescueDifficulty);
-    const config = TIER_CONFIG[tier];
-
-    return {
-      id: crypto.randomUUID(),
-      template: {
-        name: `Prison Break: ${target.minion.name}`,
-        description: `Break ${target.minion.name} out of hero custody before it's too late!`,
-        category: 'mayhem',
-        tier,
-      },
-      status: 'queued',
-      tier,
-      goldReward: 0,
-      timeToComplete: config.time,
-      timeRemaining: config.time,
-      clicksRequired: config.clicks,
-      clicksRemaining: config.clicks,
-      assignedMinionId: null,
-      queuedAt: Date.now(),
-      isBreakoutOp: true,
-      breakoutTargetId: target.minion.id,
-      assignedQueue: null,
-    };
-  }
-
-  private breakoutTierFromLevel(level: number): TaskTier {
-    if (level <= 2) return 'petty';
-    if (level <= 4) return 'sinister';
-    if (level <= 7) return 'diabolical';
-    return 'legendary';
-  }
-
-  private completeBreakout(task: Task): void {
-    const targetId = task.breakoutTargetId;
-    if (!targetId) return;
-
-    const captured = this._capturedMinions().find(c => c.minion.id === targetId);
-    if (!captured) return;
-
-    const restoredDept = captured.minion.assignedDepartment ?? captured.minion.specialty;
-
-    // Restore minion with their original department assignment
-    this._minions.update(list => [...list, {
-      ...captured.minion,
-      status: 'idle' as const,
-      assignedTaskId: null,
-      assignedDepartment: restoredDept,
-    }]);
-    this._capturedMinions.update(list => list.filter(c => c.minion.id !== targetId));
-    this._completedCount.update(c => c + 1);
-
-    // Jailbreaks are loud: +5 bonus notoriety on top of tier notoriety
-    const oldNotoriety = this._notoriety();
-    const tierNotoriety = NOTORIETY_PER_TIER[task.tier];
-    this._notoriety.update(n => Math.min(MAX_NOTORIETY, n + tierNotoriety + 5));
-
-    this.addNotification(`${captured.minion.name} has been broken out! They're back in action!`, 'minion');
-    this.events.emit({ type: 'ThreatChanged', oldNotoriety, newNotoriety: this._notoriety() });
-    this.events.emit({ type: 'BreakoutCompleted', minionId: targetId, department: restoredDept });
-  }
-
   private awardGold(amount: number, taskName: string, taskTier?: TaskTier, taskCategory?: TaskCategory): void {
     // Apply Heists passive: +gold from all tasks
     const heistsBonus = getPassiveBonus('heists', this._departments().heists.level);
-    const boostedAmount = Math.round(amount * (1 + heistsBonus * 0.01));
-
-    // Apply notoriety gold penalty
-    const penalty = notorietyGoldPenalty(this._notoriety());
-    const finalAmount = Math.round(boostedAmount * (1 - penalty));
+    const finalAmount = Math.round(amount * (1 + heistsBonus * 0.01));
 
     this._gold.update(g => g + finalAmount);
     this._totalGoldEarned.update(g => g + finalAmount);
@@ -1280,35 +958,19 @@ export class GameStateService {
       this.events.emit({ type: 'LevelUp', target: 'villain', targetId: 'player', newLevel: newVillainLevel });
     }
 
-    const penaltyNote = penalty > 0 ? ` (${Math.round(penalty * 100)}% heat penalty)` : '';
-    this.addNotification(`+${finalAmount}g from "${taskName}"${penaltyNote}`, 'gold');
+    this.addNotification(`+${finalAmount}g from "${taskName}"`, 'gold');
 
     // Award department XP
     if (taskTier && taskCategory) {
       this.awardDeptXp(taskCategory, taskTier);
     }
 
-    // Increase notoriety
-    if (taskTier) {
-      const oldNotoriety = this._notoriety();
-      const notGain = NOTORIETY_PER_TIER[taskTier];
-      // Research dept reduces notoriety gain: -5% per dept level above 1
-      const researchLevel = this._departments().research.level;
-      const researchReduction = Math.max(0, (researchLevel - 1) * 0.05);
-      // Shadow-ops upgrade reduces notoriety gain
-      const shadowOpsReduction = this.getUpgradeEffect('shadow-ops');
-      const reducedGain = Math.max(1, Math.round(notGain * (1 - researchReduction) * (1 - shadowOpsReduction)));
-      this._notoriety.update(n => Math.min(MAX_NOTORIETY, n + reducedGain));
-      this.events.emit({
-        type: 'ThreatChanged', oldNotoriety, newNotoriety: this._notoriety(),
-      });
-    }
-
-    // Award influence from all task completions
-    if (taskTier) {
-      const influenceGain = INFLUENCE_PER_TIER[taskTier] ?? 0;
-      this._influence.update(i => i + influenceGain);
-    }
+    // Track quarterly progress
+    this._quarterProgress.update(p => ({
+      ...p,
+      grossGoldEarned: p.grossGoldEarned + finalAmount,
+      tasksCompleted: p.tasksCompleted + 1,
+    }));
 
     // Emit task completed event
     if (taskTier && taskCategory) {
@@ -1316,9 +978,11 @@ export class GameStateService {
         type: 'TaskCompleted',
         taskName, tier: taskTier, category: taskCategory,
         goldEarned: finalAmount, minionId: null,
-        isCoverOp: false, isBreakoutOp: false,
       });
     }
+
+    // Check if the quarter's task budget is exhausted
+    this.checkQuarterCompletion();
   }
 
   private awardDeptXp(category: TaskCategory, tier: TaskTier): void {
@@ -1409,5 +1073,60 @@ export class GameStateService {
       timestamp: Date.now(),
     };
     this._notifications.update(list => [...list, notification]);
+  }
+
+  // ─── Quarterly tracking ──────────────────
+
+  private checkQuarterCompletion(): void {
+    const progress = this._quarterProgress();
+    if (progress.isComplete) return;
+    if (!isQuarterBudgetExhausted(progress)) return;
+
+    // Quarter's task budget exhausted — evaluate results
+    const result = evaluateQuarter(progress);
+    const passed = result.passed;
+
+    this._quarterProgress.update(p => ({
+      ...p,
+      isComplete: true,
+      missedQuarters: passed ? p.missedQuarters : p.missedQuarters + 1,
+      quarterResults: [...p.quarterResults, result],
+    }));
+
+    this.events.emit({
+      type: 'QuarterCompleted',
+      year: result.year,
+      quarter: result.quarter,
+      passed,
+      goldEarned: result.goldEarned,
+      target: result.target,
+    });
+
+    const statusText = passed ? 'TARGET MET' : 'TARGET MISSED';
+    this.addNotification(
+      `Q${result.quarter} Year ${result.year} Review: ${statusText} (${result.goldEarned}g / ${result.target}g)`,
+      'task'
+    );
+  }
+
+  /** Advance to the next quarter (called after player acknowledges quarter results) */
+  advanceQuarter(): void {
+    const progress = this._quarterProgress();
+    if (!progress.isComplete) return;
+
+    const nextQuarter = progress.quarter === 3 ? 4 as const :
+      progress.quarter === 4 ? 1 as const :
+      (progress.quarter + 1) as 1 | 2 | 3 | 4;
+    const nextYear = progress.quarter === 4 ? progress.year + 1 : progress.year;
+
+    this._quarterProgress.set({
+      year: nextYear,
+      quarter: nextQuarter,
+      grossGoldEarned: 0,
+      tasksCompleted: 0,
+      isComplete: false,
+      missedQuarters: nextQuarter === 1 ? 0 : progress.missedQuarters,
+      quarterResults: progress.quarterResults,
+    });
   }
 }

@@ -84,7 +84,6 @@ export class UpgradeShopComponent {
     { key: 'minion' as UpgradeCategory, label: 'Minion Training' },
     { key: 'war-room' as UpgradeCategory, label: 'War Room' },
     { key: 'department' as UpgradeCategory, label: 'Departments' },
-    { key: 'notoriety' as UpgradeCategory, label: 'Notoriety' },
   ];
 
   filteredUpgrades = computed(() => {
@@ -134,14 +133,6 @@ export class UpgradeShopComponent {
         return `+${Math.round(effect * 100)}% dept XP`;
       case 'hire-discount':
         return `-${Math.round(effect * 100)}% hire cost`;
-      case 'bribe-network':
-        return `-${Math.round(effect * 100)}% bribe cost`;
-      case 'shadow-ops':
-        return `-${Math.round(effect * 100)}% notoriety gain`;
-      case 'cover-spawn':
-        return `+${Math.round(effect * 100)}% cover spawn rate`;
-      case 'lay-low':
-        return `-${effect.toFixed(2)}/tick notoriety decay`;
       default:
         return `Level ${level}`;
     }

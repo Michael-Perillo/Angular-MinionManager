@@ -112,22 +112,30 @@ describe('KanbanBoardComponent', () => {
     expect(movedSpy).toHaveBeenCalledWith({ taskId: task.id, from: 'schemes', to: 'heists' });
   });
 
-  it('onTaskDropped does nothing when source equals target', () => {
-    setInputs();
-    const task = makeTask();
+  it('onTaskDropped emits taskReordered when source equals target', () => {
+    const task1 = makeTask({ id: 'q1', status: 'queued' });
+    const task2 = makeTask({ id: 'q2', status: 'queued' });
+    setInputs({
+      departmentQueues: { ...emptyQueues, schemes: [task1, task2] },
+    });
+    const reorderedSpy = jasmine.createSpy('taskReordered');
     const movedSpy = jasmine.createSpy('taskMoved');
     const routedSpy = jasmine.createSpy('taskRouted');
+    component.taskReordered.subscribe(reorderedSpy);
     component.taskMoved.subscribe(movedSpy);
     component.taskRouted.subscribe(routedSpy);
 
     const fakeEvent = {
-      item: { data: task },
+      item: { data: task1 },
       previousContainer: { data: 'schemes' },
       container: { data: 'schemes' },
+      previousIndex: 0,
+      currentIndex: 1,
     } as any;
 
     component.onTaskDropped(fakeEvent, 'schemes');
 
+    expect(reorderedSpy).toHaveBeenCalledWith({ queue: 'schemes', taskIds: ['q2', 'q1'] });
     expect(movedSpy).not.toHaveBeenCalled();
     expect(routedSpy).not.toHaveBeenCalled();
   });

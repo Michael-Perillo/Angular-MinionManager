@@ -10,8 +10,6 @@ export interface TaskCompletedEvent {
   category: TaskCategory;
   goldEarned: number;
   minionId: string | null;
-  isCoverOp: boolean;
-  isBreakoutOp: boolean;
 }
 
 export interface MinionIdleEvent {
@@ -20,21 +18,9 @@ export interface MinionIdleEvent {
   department: TaskCategory;
 }
 
-export interface ThreatChangedEvent {
-  type: 'ThreatChanged';
-  oldNotoriety: number;
-  newNotoriety: number;
-}
-
 export interface BoardRefreshedEvent {
   type: 'BoardRefreshed';
   missionCount: number;
-}
-
-export interface MinionCapturedEvent {
-  type: 'MinionCaptured';
-  minionId: string;
-  minionName: string;
 }
 
 export interface LevelUpEvent {
@@ -48,15 +34,6 @@ export interface SpecialOpSpawnedEvent {
   type: 'SpecialOpSpawned';
   missionId: string;
   tier: TaskTier;
-}
-
-export interface RaidStartedEvent {
-  type: 'RaidStarted';
-}
-
-export interface RaidEndedEvent {
-  type: 'RaidEnded';
-  defended: boolean;
 }
 
 export interface TaskQueuedEvent {
@@ -92,28 +69,27 @@ export interface UpgradePurchasedEvent {
   newLevel: number;
 }
 
-export interface BreakoutCompletedEvent {
-  type: 'BreakoutCompleted';
-  minionId: string;
-  department: TaskCategory;
+export interface QuarterCompletedEvent {
+  type: 'QuarterCompleted';
+  year: number;
+  quarter: 1 | 2 | 3 | 4;
+  passed: boolean;
+  goldEarned: number;
+  target: number;
 }
 
 export type GameEvent =
   | TaskCompletedEvent
   | MinionIdleEvent
-  | ThreatChangedEvent
   | BoardRefreshedEvent
-  | MinionCapturedEvent
   | LevelUpEvent
   | SpecialOpSpawnedEvent
-  | RaidStartedEvent
-  | RaidEndedEvent
   | TaskQueuedEvent
   | TaskAssignedEvent
   | MinionHiredEvent
   | MinionReassignedEvent
   | UpgradePurchasedEvent
-  | BreakoutCompletedEvent;
+  | QuarterCompletedEvent;
 
 @Injectable({ providedIn: 'root' })
 export class GameEventService {

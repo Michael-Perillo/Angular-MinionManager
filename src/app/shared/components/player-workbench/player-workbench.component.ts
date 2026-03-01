@@ -92,8 +92,24 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
                 <span class="text-xs text-gold font-bold shrink-0">{{ task.goldReward }}g</span>
               }
             </div>
-            <div class="text-xs text-text-secondary mt-0.5">
-              {{ task.clicksRequired }} clicks
+            <div class="flex items-center justify-between mt-0.5">
+              <span class="text-xs text-text-secondary">
+                {{ task.clicksRequired }} clicks
+              </span>
+              @if (dragDisabled()) {
+                <div class="flex items-center gap-1">
+                  <button
+                    [disabled]="$index === 0"
+                    (click)="onMoveUp(task.id); $event.stopPropagation()"
+                    class="text-xs text-text-muted hover:text-text-primary cursor-pointer px-1 py-0.5 disabled:opacity-30 disabled:cursor-default"
+                    aria-label="Move up">&#x25B2;</button>
+                  <button
+                    [disabled]="$last"
+                    (click)="onMoveDown(task.id); $event.stopPropagation()"
+                    class="text-xs text-text-muted hover:text-text-primary cursor-pointer px-1 py-0.5 disabled:opacity-30 disabled:cursor-default"
+                    aria-label="Move down">&#x25BC;</button>
+                </div>
+              }
             </div>
 
             <div *cdkDragPreview class="game-card p-2 w-[200px] opacity-90 shadow-lg shadow-gold/20">
@@ -135,6 +151,7 @@ export class PlayerWorkbenchComponent {
 
   taskClicked = output<string>();
   taskDropped = output<CdkDragDrop<any>>();
+  taskReordered = output<string[]>();
 
   activeTask = computed(() => {
     const t = this.tasks();
@@ -145,6 +162,28 @@ export class PlayerWorkbenchComponent {
     const t = this.tasks();
     return t.length > 1 ? t.slice(1) : [];
   });
+
+  onMoveUp(taskId: string): void {
+    const remaining = this.remainingTasks();
+    const idx = remaining.findIndex(t => t.id === taskId);
+    if (idx < 0) return;
+    const allTasks = [...this.tasks()];
+    // remaining tasks start at index 1 in the full array
+    const fullIdx = idx + 1;
+    if (fullIdx <= 1) return; // can't move above the active task
+    [allTasks[fullIdx - 1], allTasks[fullIdx]] = [allTasks[fullIdx], allTasks[fullIdx - 1]];
+    this.taskReordered.emit(allTasks.map(t => t.id));
+  }
+
+  onMoveDown(taskId: string): void {
+    const remaining = this.remainingTasks();
+    const idx = remaining.findIndex(t => t.id === taskId);
+    if (idx < 0 || idx >= remaining.length - 1) return;
+    const allTasks = [...this.tasks()];
+    const fullIdx = idx + 1;
+    [allTasks[fullIdx], allTasks[fullIdx + 1]] = [allTasks[fullIdx + 1], allTasks[fullIdx]];
+    this.taskReordered.emit(allTasks.map(t => t.id));
+  }
 
   onDrop(event: CdkDragDrop<any>): void {
     this.taskDropped.emit(event);

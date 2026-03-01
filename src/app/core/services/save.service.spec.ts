@@ -56,7 +56,7 @@ describe('SaveService', () => {
 
     it('should restore completedCount', () => {
       // Complete a task to increment completedCount
-      const mission = gameState.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const mission = gameState.missionBoard()[0];
       gameState.acceptMission(mission.id);
       const task = gameState.activeMissions().find(t => t.id === mission.id)!;
       for (let i = 0; i < task.clicksRequired; i++) {
@@ -72,7 +72,7 @@ describe('SaveService', () => {
     });
 
     it('should restore minions', () => {
-      gameState.addGold(50);
+      gameState.addGold(75);
       gameState.hireMinion();
       expect(gameState.minions().length).toBe(1);
 
@@ -97,7 +97,7 @@ describe('SaveService', () => {
   });
 
   describe('migration', () => {
-    it('should migrate v3 data (resources → influence) to v4', () => {
+    it('should migrate v3 data through to v6', () => {
       const v3Data: any = {
         version: 3,
         savedAt: Date.now(),
@@ -130,22 +130,21 @@ describe('SaveService', () => {
       expect(loaded).toBe(true);
       expect(gameState.gold()).toBe(200);
 
-      // Verify influence is sum of supplies + intel
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.influence).toBe(15);
-      expect(snapshot.version).toBe(4);
-      // resources field should not exist in the migrated snapshot
+      expect(snapshot.version).toBe(6);
+      // Influence and resources should be stripped
+      expect((snapshot as any).influence).toBeUndefined();
       expect((snapshot as any).resources).toBeUndefined();
     });
 
-    it('should migrate v1 data (missing capturedMinions) to v2', () => {
-      const v1Data: any = {
-        version: 1,
+    it('should migrate v4 data (remove notoriety/raids/influence) to v6', () => {
+      const v4Data: any = {
+        version: 4,
         savedAt: Date.now(),
-        gold: 100,
-        completedCount: 5,
-        totalGoldEarned: 200,
-        notoriety: 10,
+        gold: 300,
+        completedCount: 15,
+        totalGoldEarned: 800,
+        notoriety: 45,
         minions: [],
         departments: {
           schemes: { category: 'schemes', xp: 0, level: 1 },
@@ -153,21 +152,51 @@ describe('SaveService', () => {
           research: { category: 'research', xp: 0, level: 1 },
           mayhem: { category: 'mayhem', xp: 0, level: 1 },
         },
-        upgradeLevels: [],
+        upgradeLevels: [
+          { id: 'click-power', currentLevel: 2 },
+          { id: 'bribe-network', currentLevel: 3 },
+          { id: 'shadow-ops', currentLevel: 1 },
+        ],
         activeMissions: [],
-        missionBoard: [],
-        raidActive: false,
-        raidTimer: 0,
+        missionBoard: [
+          { id: 't1', isCoverOp: true, template: { name: 'Cover', description: '', category: 'schemes', tier: 'petty' }, status: 'queued', tier: 'petty', goldReward: 0, timeToComplete: 10, timeRemaining: 10, clicksRequired: 10, clicksRemaining: 10, assignedMinionId: null, queuedAt: 0, assignedQueue: null },
+          { id: 't2', template: { name: 'Normal', description: '', category: 'heists', tier: 'petty' }, status: 'queued', tier: 'petty', goldReward: 5, timeToComplete: 10, timeRemaining: 10, clicksRequired: 10, clicksRemaining: 10, assignedMinionId: null, queuedAt: 0, assignedQueue: null },
+        ],
+        raidActive: true,
+        raidTimer: 15,
         usedNameIndices: [],
         lastBoardRefresh: 0,
-        // Note: no capturedMinions field
+        capturedMinions: [],
+        departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
+        playerQueue: [],
+        influence: 20,
       };
 
-      store[STORAGE_KEY] = JSON.stringify(v1Data);
+      store[STORAGE_KEY] = JSON.stringify(v4Data);
       const loaded = saveService.load();
       expect(loaded).toBe(true);
-      expect(gameState.capturedMinions()).toEqual([]);
-      expect(gameState.gold()).toBe(100);
+      expect(gameState.gold()).toBe(300);
+
+      const snapshot = gameState.getSnapshot();
+      expect(snapshot.version).toBe(6);
+      // Notoriety and influence fields should be stripped
+      expect((snapshot as any).notoriety).toBeUndefined();
+      expect((snapshot as any).raidActive).toBeUndefined();
+      expect((snapshot as any).raidTimer).toBeUndefined();
+      expect((snapshot as any).capturedMinions).toBeUndefined();
+      expect((snapshot as any).influence).toBeUndefined();
+      // Cover-op missions should be stripped
+      expect(snapshot.missionBoard.length).toBe(1);
+      expect(snapshot.missionBoard[0].id).toBe('t2');
+      // Notoriety upgrades should be stripped (loadSnapshot merges with defaults, so all 10 remain)
+      const upgradeIds = snapshot.upgradeLevels.map(u => u.id);
+      expect(upgradeIds).not.toContain('bribe-network');
+      expect(upgradeIds).not.toContain('shadow-ops');
+      expect(upgradeIds).not.toContain('cover-spawn');
+      expect(upgradeIds).not.toContain('lay-low');
+      // click-power should retain its saved level
+      const clickPower = snapshot.upgradeLevels.find(u => u.id === 'click-power');
+      expect(clickPower?.currentLevel).toBe(2);
     });
   });
 

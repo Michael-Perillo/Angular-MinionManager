@@ -26,18 +26,18 @@ export interface Task {
   completesAt?: number | null;
   isSpecialOp?: boolean;
   specialOpExpiry?: number;
-  isCoverOp?: boolean;
-  isBreakoutOp?: boolean;
-  breakoutTargetId?: string;
   assignedQueue: QueueTarget | null;
 }
 
 export const TIER_CONFIG: Record<TaskTier, { gold: number; time: number; clicks: number }> = {
-  petty: { gold: 5, time: 8, clicks: 10 },
-  sinister: { gold: 15, time: 20, clicks: 20 },
-  diabolical: { gold: 40, time: 45, clicks: 35 },
-  legendary: { gold: 100, time: 75, clicks: 50 },
+  petty: { gold: 5, time: 10, clicks: 12 },
+  sinister: { gold: 15, time: 25, clicks: 25 },
+  diabolical: { gold: 40, time: 55, clicks: 40 },
+  legendary: { gold: 100, time: 90, clicks: 55 },
 };
 
-/** How much gold reward scales per villain level (compounding) */
-export const GOLD_SCALE_PER_LEVEL = 0.10; // +10% per villain level
+/** How much gold/time/clicks scale per villain level (compounding) */
+export const VILLAIN_SCALE_PER_LEVEL = 0.07; // +7% per villain level
+
+/** @deprecated Use VILLAIN_SCALE_PER_LEVEL instead */
+export const GOLD_SCALE_PER_LEVEL = VILLAIN_SCALE_PER_LEVEL;

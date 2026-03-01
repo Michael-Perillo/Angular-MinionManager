@@ -2,8 +2,6 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MissionBoardComponent } from './mission-board.component';
 import {
   makeTask,
-  makeCoverOpTask,
-  makeBreakoutTask,
   makeSpecialOpTask,
 } from '../../../../testing/factories/task.factory';
 
@@ -124,16 +122,11 @@ describe('MissionBoardComponent', () => {
   });
 
   it('getMissionCardClass returns correct classes', () => {
-    const breakout = makeBreakoutTask('m1');
     const special = makeSpecialOpTask();
-    const cover = makeCoverOpTask();
     const normal = makeTask();
 
-    expect(component.getMissionCardClass(breakout)).toContain('border-orange');
-    expect(component.getMissionCardClass(breakout)).toContain('animate-card-glow');
     expect(component.getMissionCardClass(special)).toContain('border-gold');
     expect(component.getMissionCardClass(special)).toContain('animate-card-glow');
-    expect(component.getMissionCardClass(cover)).toContain('border-green');
     expect(component.getMissionCardClass(normal)).toBe('');
   });
 

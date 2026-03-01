@@ -8,21 +8,19 @@ export interface NavigationPage {
   goToDepartments(): Promise<void>;
   goToHirePanel(): Promise<void>;
   goToUpgradeShop(): Promise<void>;
-  goToNotoriety(): Promise<void>;
   goToDepartmentPanel(): Promise<void>;
   readonly isMobile: boolean;
 }
 
-/** Minimal valid SaveData (version 3) that loadSnapshot accepts. */
+/** Minimal valid SaveData (version 5) that loadSnapshot accepts. */
 function baseSaveData(): Record<string, unknown> {
   const defaultDept = (category: string) => ({ category, xp: 0, level: 1 });
   return {
-    version: 4,
+    version: 6,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,
     totalGoldEarned: 0,
-    notoriety: 0,
     minions: [],
     departments: {
       schemes: defaultDept('schemes'),
@@ -33,14 +31,10 @@ function baseSaveData(): Record<string, unknown> {
     upgradeLevels: [],
     activeMissions: [],
     missionBoard: [],
-    raidActive: false,
-    raidTimer: 0,
     usedNameIndices: [],
     lastBoardRefresh: 0,
-    capturedMinions: [],
     departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
     playerQueue: [],
-    influence: 0,
     unlockedDepartments: [],
   };
 }
@@ -58,7 +52,7 @@ export class DesktopNavigation implements NavigationPage {
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
-    const save = { ...baseSaveData(), ...overrides, version: 4, savedAt: Date.now() };
+    const save = { ...baseSaveData(), ...overrides, version: 5, savedAt: Date.now() };
     const json = JSON.stringify(save);
     // Use addInitScript so seeded data is written before the Angular app boots.
     // This avoids the beforeunload auto-save race (app saves empty state over seed on reload).
@@ -105,16 +99,6 @@ export class DesktopNavigation implements NavigationPage {
     await upgradesTab.click();
   }
 
-  async goToNotoriety(): Promise<void> {
-    const drawer = this.page.locator('app-drawer-panel');
-    const isOpen = await drawer.isVisible().catch(() => false);
-    if (!isOpen) {
-      await this.page.locator('app-header button').filter({ hasText: '⚙️' }).click();
-      await drawer.waitFor({ state: 'visible', timeout: 3_000 });
-    }
-    // Notoriety is the default tab in the drawer
-  }
-
   async goToDepartmentPanel(): Promise<void> {
     const drawer = this.page.locator('app-drawer-panel');
     const isOpen = await drawer.isVisible().catch(() => false);
@@ -141,7 +125,7 @@ export class MobileNavigation implements NavigationPage {
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
-    const save = { ...baseSaveData(), ...overrides, version: 4, savedAt: Date.now() };
+    const save = { ...baseSaveData(), ...overrides, version: 5, savedAt: Date.now() };
     await this.page.evaluate((data) => {
       localStorage.setItem('minion-manager-save', JSON.stringify(data));
     }, save);
@@ -174,12 +158,6 @@ export class MobileNavigation implements NavigationPage {
     await this.page.locator('app-mobile-bottom-nav button').filter({ hasText: 'More' }).click();
     await this.page.waitForTimeout(100);
     await this.page.getByText('Lair Upgrades').click();
-  }
-
-  async goToNotoriety(): Promise<void> {
-    await this.page.locator('app-mobile-bottom-nav button').filter({ hasText: 'More' }).click();
-    await this.page.waitForTimeout(100);
-    await this.page.getByText('Notoriety & Raids').click();
   }
 
   async goToDepartmentPanel(): Promise<void> {

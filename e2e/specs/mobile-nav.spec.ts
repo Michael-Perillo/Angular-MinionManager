@@ -32,8 +32,8 @@ test('Tab switching shows correct content', async ({ page, nav }) => {
 
   // More tab — settings/more menu visible
   await page.locator('app-mobile-bottom-nav button').filter({ hasText: 'More' }).click();
-  await expect(page.getByText('Notoriety & Raids')).toBeVisible();
   await expect(page.getByText('Hire Minions')).toBeVisible();
+  await expect(page.getByText('Lair Upgrades')).toBeVisible();
 });
 
 test('Touch scrolling works without CDK drag ghost', async ({ page, nav }) => {

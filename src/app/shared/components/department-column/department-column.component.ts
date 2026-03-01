@@ -111,10 +111,6 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
               </div>
               @if (task.goldReward) {
                 <span class="text-xs text-gold font-bold shrink-0">{{ task.goldReward }}g</span>
-              } @else if (task.isCoverOp) {
-                <span class="text-xs text-green-400 shrink-0">-Heat</span>
-              } @else if (task.isBreakoutOp) {
-                <span class="text-xs text-orange-400 shrink-0">Rescue</span>
               }
             </div>
             <div class="flex items-center justify-between mt-0.5">
@@ -122,12 +118,24 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
                 {{ task.timeToComplete }}s / {{ task.clicksRequired }} clicks
               </span>
               @if (dragDisabled()) {
-                <button
-                  (click)="onMoveRequest(task.id); $event.stopPropagation()"
-                  class="text-xs text-accent hover:text-gold cursor-pointer px-1.5 py-0.5 rounded
-                         border border-accent/20 hover:border-accent/40 transition-colors">
-                  Move...
-                </button>
+                <div class="flex items-center gap-1">
+                  <button
+                    [disabled]="$index === 0"
+                    (click)="onMoveUp(task.id); $event.stopPropagation()"
+                    class="text-xs text-text-muted hover:text-text-primary cursor-pointer px-1 py-0.5 disabled:opacity-30 disabled:cursor-default"
+                    aria-label="Move up">&#x25B2;</button>
+                  <button
+                    [disabled]="$last"
+                    (click)="onMoveDown(task.id); $event.stopPropagation()"
+                    class="text-xs text-text-muted hover:text-text-primary cursor-pointer px-1 py-0.5 disabled:opacity-30 disabled:cursor-default"
+                    aria-label="Move down">&#x25BC;</button>
+                  <button
+                    (click)="onMoveRequest(task.id); $event.stopPropagation()"
+                    class="text-xs text-accent hover:text-gold cursor-pointer px-1.5 py-0.5 rounded
+                           border border-accent/20 hover:border-accent/40 transition-colors">
+                    Move...
+                  </button>
+                </div>
               }
             </div>
 
@@ -236,6 +244,26 @@ export class DepartmentColumnComponent {
     }
     if (task.timeToComplete <= 0) return 0;
     return Math.round((1 - this.getTimeRemaining(task) / task.timeToComplete) * 100);
+  }
+
+  onMoveUp(taskId: string): void {
+    const queued = this.queuedTasks();
+    const idx = queued.findIndex(t => t.id === taskId);
+    if (idx <= 0) return;
+    const reordered = [...queued];
+    [reordered[idx - 1], reordered[idx]] = [reordered[idx], reordered[idx - 1]];
+    const inProgress = this.tasks().filter(t => t.status === 'in-progress' && t.assignedMinionId);
+    this.taskReordered.emit([...inProgress, ...reordered].map(t => t.id));
+  }
+
+  onMoveDown(taskId: string): void {
+    const queued = this.queuedTasks();
+    const idx = queued.findIndex(t => t.id === taskId);
+    if (idx < 0 || idx >= queued.length - 1) return;
+    const reordered = [...queued];
+    [reordered[idx], reordered[idx + 1]] = [reordered[idx + 1], reordered[idx]];
+    const inProgress = this.tasks().filter(t => t.status === 'in-progress' && t.assignedMinionId);
+    this.taskReordered.emit([...inProgress, ...reordered].map(t => t.id));
   }
 
   onMoveRequest(taskId: string): void {

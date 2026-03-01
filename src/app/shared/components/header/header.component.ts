@@ -1,5 +1,5 @@
 import { Component, ChangeDetectionStrategy, input, output, computed } from '@angular/core';
-import { ThreatLevel } from '../../../core/models/notoriety.model';
+import { QuarterProgress } from '../../../core/models/quarter.model';
 
 @Component({
   selector: 'app-header',
@@ -33,12 +33,6 @@ import { ThreatLevel } from '../../../core/models/notoriety.model';
           <span class="font-bold text-gold tabular-nums text-sm">{{ gold() }}</span>
         </div>
 
-        <!-- Notoriety badge -->
-        <div class="flex items-center gap-1">
-          <span>🔥</span>
-          <span class="tabular-nums text-sm" [class]="notorietyClasses()">{{ notoriety() }}/100</span>
-        </div>
-
         <!-- Completed -->
         <div class="flex items-center gap-1">
           <span>✅</span>
@@ -51,23 +45,26 @@ import { ThreatLevel } from '../../../core/models/notoriety.model';
           <span class="font-bold text-text-primary tabular-nums text-sm">{{ minionCount() }}</span>
         </div>
 
-        <!-- Influence -->
-        <div class="flex items-center gap-1">
-          <span>📊</span>
-          <span class="font-bold text-text-primary tabular-nums text-sm">{{ influence() }}</span>
-        </div>
+        <!-- Quarter progress -->
+        @if (quarterProgress(); as qp) {
+          <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-lg border"
+               [class]="quarterStatusClass()">
+            <span class="text-xs font-bold">Y{{ qp.year }}Q{{ qp.quarter }}</span>
+            <span class="text-[10px] tabular-nums">{{ qp.tasksCompleted }}/{{ taskBudget() }}</span>
+            <span class="text-[10px] tabular-nums"
+                  [class]="quarterGold() >= goldTarget() ? 'text-green-400' : 'text-text-muted'">
+              {{ quarterGold() }}g/{{ goldTarget() }}g
+            </span>
+          </div>
+        }
       </div>
 
       <!-- Right: Drawer toggle -->
       <div class="flex items-center gap-2 shrink-0">
-        @if (raidActive()) {
-          <span class="text-xs font-bold text-red-400 animate-pulse">🔴 RAID!</span>
-        }
         <button
           (click)="drawerToggle.emit()"
           class="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-card
-                 transition-all cursor-pointer border border-transparent hover:border-border"
-          [class]="hasUrgentAlert() ? 'animate-subtle-pulse text-red-400' : ''">
+                 transition-all cursor-pointer border border-transparent hover:border-border">
           ⚙️
         </button>
       </div>
@@ -94,10 +91,10 @@ export class HeaderComponent {
   minionCount = input.required<number>();
   villainLevel = input.required<number>();
   villainTitle = input.required<string>();
-  notoriety = input<number>(0);
-  influence = input<number>(0);
-  raidActive = input<boolean>(false);
-  capturedCount = input<number>(0);
+  quarterProgress = input<QuarterProgress | null>(null);
+  quarterGold = input<number>(0);
+  taskBudget = input<number>(0);
+  goldTarget = input<number>(0);
   lastSaved = input<number>(0);
 
   reset = output<void>();
@@ -109,15 +106,12 @@ export class HeaderComponent {
     return Date.now() - saved < 2000;
   });
 
-  hasUrgentAlert = computed(() =>
-    this.raidActive() || this.capturedCount() > 0
-  );
-
-  notorietyClasses = computed(() => {
-    const n = this.notoriety();
-    if (n < 35) return 'text-green-400';
-    if (n < 60) return 'text-yellow-400';
-    if (n < 85) return 'text-orange-400';
-    return 'text-red-400 font-bold';
+  quarterStatusClass = computed(() => {
+    const qp = this.quarterProgress();
+    if (!qp) return 'border-border';
+    if (qp.isComplete) return 'border-accent/30 bg-accent/10';
+    return this.quarterGold() >= this.goldTarget()
+      ? 'border-green-500/30 bg-green-500/10'
+      : 'border-border bg-bg-card/50';
   });
 }

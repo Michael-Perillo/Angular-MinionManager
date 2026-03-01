@@ -1,4 +1,4 @@
-import { TIER_CONFIG, GOLD_SCALE_PER_LEVEL, TaskTier } from './task.model';
+import { TIER_CONFIG, VILLAIN_SCALE_PER_LEVEL, GOLD_SCALE_PER_LEVEL, TaskTier } from './task.model';
 
 describe('Task Model', () => {
 
@@ -29,25 +29,29 @@ describe('Task Model', () => {
     });
 
     it('should have specific petty values', () => {
-      expect(TIER_CONFIG.petty).toEqual({ gold: 5, time: 8, clicks: 10 });
+      expect(TIER_CONFIG.petty).toEqual({ gold: 5, time: 10, clicks: 12 });
     });
 
     it('should have specific sinister values', () => {
-      expect(TIER_CONFIG.sinister).toEqual({ gold: 15, time: 20, clicks: 20 });
+      expect(TIER_CONFIG.sinister).toEqual({ gold: 15, time: 25, clicks: 25 });
     });
 
     it('should have specific diabolical values', () => {
-      expect(TIER_CONFIG.diabolical).toEqual({ gold: 40, time: 45, clicks: 35 });
+      expect(TIER_CONFIG.diabolical).toEqual({ gold: 40, time: 55, clicks: 40 });
     });
 
     it('should have specific legendary values', () => {
-      expect(TIER_CONFIG.legendary).toEqual({ gold: 100, time: 75, clicks: 50 });
+      expect(TIER_CONFIG.legendary).toEqual({ gold: 100, time: 90, clicks: 55 });
     });
   });
 
-  describe('GOLD_SCALE_PER_LEVEL', () => {
-    it('should be 0.10', () => {
-      expect(GOLD_SCALE_PER_LEVEL).toBe(0.10);
+  describe('VILLAIN_SCALE_PER_LEVEL', () => {
+    it('should be 0.07', () => {
+      expect(VILLAIN_SCALE_PER_LEVEL).toBe(0.07);
+    });
+
+    it('should be aliased as GOLD_SCALE_PER_LEVEL for backwards compat', () => {
+      expect(GOLD_SCALE_PER_LEVEL).toBe(VILLAIN_SCALE_PER_LEVEL);
     });
   });
 });
