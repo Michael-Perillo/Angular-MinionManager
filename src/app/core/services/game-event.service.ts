@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
 import { TaskTier, TaskCategory } from '../models/task.model';
+import { Modifier, Reviewer } from '../models/reviewer.model';
 
 // ─── Event types ──────────────────────────
 export interface TaskCompletedEvent {
@@ -78,6 +79,19 @@ export interface QuarterCompletedEvent {
   target: number;
 }
 
+export interface ReviewStartedEvent {
+  type: 'ReviewStarted';
+  reviewer: Reviewer;
+  modifiers: Modifier[];
+  year: number;
+}
+
+export interface RunEndedEvent {
+  type: 'RunEnded';
+  year: number;
+  quarterResults: { quarter: number; passed: boolean }[];
+}
+
 export type GameEvent =
   | TaskCompletedEvent
   | MinionIdleEvent
@@ -89,7 +103,9 @@ export type GameEvent =
   | MinionHiredEvent
   | MinionReassignedEvent
   | UpgradePurchasedEvent
-  | QuarterCompletedEvent;
+  | QuarterCompletedEvent
+  | ReviewStartedEvent
+  | RunEndedEvent;
 
 @Injectable({ providedIn: 'root' })
 export class GameEventService {

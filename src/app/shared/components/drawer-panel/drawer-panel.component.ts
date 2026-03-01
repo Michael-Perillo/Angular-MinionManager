@@ -58,6 +58,7 @@ type DrawerTab = 'hire' | 'upgrades' | 'departments';
                 [minionCount]="minions().length"
                 [canHire]="canHireMinion()"
                 [unlockedDepartments]="unlockedDepartments()"
+                [hiringDisabled]="hiringDisabled()"
                 (recruit)="recruitClicked.emit()"
                 (hireChosen)="hireChosenClicked.emit($event)" />
               <div class="mt-3">
@@ -69,6 +70,7 @@ type DrawerTab = 'hire' | 'upgrades' | 'departments';
               <app-upgrade-shop
                 [upgrades]="upgrades()"
                 [gold]="gold()"
+                [upgradesDisabled]="upgradesDisabled()"
                 (purchaseClicked)="upgradeClicked.emit($event)" />
             }
             @case ('departments') {
@@ -97,6 +99,8 @@ export class DrawerPanelComponent implements OnInit {
   canHireMinion = input.required<boolean>();
 
   unlockedDepartments = input<Set<TaskCategory>>(new Set());
+  hiringDisabled = input<boolean>(false);
+  upgradesDisabled = input<boolean>(false);
 
   // Outputs
   hireClicked = output<void>();

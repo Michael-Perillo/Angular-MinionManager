@@ -18,6 +18,8 @@ import { MinionRosterComponent } from '../../shared/components/minion-roster/min
 import { PlayerWorkbenchComponent } from '../../shared/components/player-workbench/player-workbench.component';
 import { DepartmentColumnComponent } from '../../shared/components/department-column/department-column.component';
 import { QuarterReviewComponent } from '../../shared/components/quarter-review/quarter-review.component';
+import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/reviewer-intro.component';
+import { RunOverComponent } from '../../shared/components/run-over/run-over.component';
 
 @Component({
   selector: 'app-game-container',
@@ -37,6 +39,8 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
     PlayerWorkbenchComponent,
     DepartmentColumnComponent,
     QuarterReviewComponent,
+    ReviewerIntroComponent,
+    RunOverComponent,
   ],
   template: `
     <div class="h-screen flex flex-col overflow-hidden">
@@ -50,8 +54,9 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
         [quarterProgress]="gameState.quarterProgress()"
         [quarterGold]="gameState.quarterGold()"
         [taskBudget]="gameState.currentQuarterTarget().taskBudget"
-        [goldTarget]="gameState.currentQuarterTarget().goldTarget"
+        [goldTarget]="gameState.isInReview() ? gameState.reviewGoldTarget() : gameState.currentQuarterTarget().goldTarget"
         [lastSaved]="gameState.lastSaved()"
+        [activeModifiers]="gameState.activeModifiers()"
         (drawerToggle)="onDrawerToggle()"
         (reset)="onReset()" />
 
@@ -67,6 +72,7 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
               [connectedDropLists]="kanbanDropListIds"
               [unlockedDepartments]="gameState.unlockedDepartmentList()"
               [departments]="gameState.departments()"
+              [boardFrozen]="gameState.boardFrozen()"
               (missionAccepted)="onAcceptMission($event)"
               (missionRouteRequested)="onMissionRouteRequested($event)" />
           </div>
@@ -96,6 +102,8 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
             [nextMinionCost]="gameState.nextMinionCost()"
             [canHireMinion]="gameState.canHireMinion()"
             [unlockedDepartments]="gameState.unlockedDepartments()"
+            [hiringDisabled]="gameState.hiringDisabled()"
+            [upgradesDisabled]="gameState.upgradesDisabled()"
             (recruitClicked)="onRecruitMinion()"
             (hireChosenClicked)="onHireChosenMinion($event)"
             (upgradeClicked)="onPurchaseUpgrade($event)" />
@@ -114,6 +122,7 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
                 [dragDisabled]="true"
                 [unlockedDepartments]="gameState.unlockedDepartmentList()"
                 [departments]="gameState.departments()"
+                [boardFrozen]="gameState.boardFrozen()"
                 (missionAccepted)="onAcceptMission($event)"
                 (missionRouteRequested)="onMissionRouteRequested($event)" />
             }
@@ -235,6 +244,7 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
                         [minionCount]="gameState.minions().length"
                         [canHire]="gameState.canHireMinion()"
                         [unlockedDepartments]="gameState.unlockedDepartments()"
+                        [hiringDisabled]="gameState.hiringDisabled()"
                         (recruit)="onRecruitMinion('mobile')"
                         (hireChosen)="onHireChosenMinion($event)" />
                       <div class="mt-3">
@@ -245,6 +255,7 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
                       <app-upgrade-shop
                         [upgrades]="gameState.upgrades()"
                         [gold]="gameState.gold()"
+                        [upgradesDisabled]="gameState.upgradesDisabled()"
                         (purchaseClicked)="onPurchaseUpgrade($event)" />
                     }
                     @case ('departments') {
@@ -281,6 +292,24 @@ import { QuarterReviewComponent } from '../../shared/components/quarter-review/q
           (advance)="onQuarterAdvance()" />
       }
 
+      <!-- Run Over Screen -->
+      @if (gameState.isRunOver()) {
+        <app-run-over
+          [quarterResults]="gameState.quarterProgress().quarterResults"
+          [totalGold]="gameState.totalGoldEarned()"
+          [totalTasks]="gameState.completedCount()"
+          (newRun)="onNewRun()" />
+      }
+
+      <!-- Reviewer Intro Modal (shown at Q4 start) -->
+      @if (gameState.showReviewerIntro() && gameState.currentReviewer(); as reviewer) {
+        <app-reviewer-intro
+          [reviewer]="reviewer"
+          [modifiers]="gameState.activeModifiers()"
+          [goldTarget]="gameState.reviewGoldTarget()"
+          (beginReview)="onBeginReview()" />
+      }
+
       <!-- Notifications -->
       <div class="fixed bottom-4 right-4 flex flex-col gap-2 z-50 max-w-sm pointer-events-none"
            [class]="isMobile() ? 'bottom-20' : 'bottom-4'">
@@ -313,6 +342,7 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly pendingMove = signal<{ taskId: string; fromQueue: string } | null>(null);
 
   private currentTimeInterval: ReturnType<typeof setInterval> | null = null;
+  private pausedAt: number | null = null;
 
   readonly allCategories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
   readonly kanbanDropListIds = ['schemes', 'heists', 'research', 'mayhem', 'player'];
@@ -339,6 +369,11 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     effect(() => {
       if (this.gameState.quarterProgress().isComplete) {
         this.gameTimer.stop();
+        if (this.currentTimeInterval) {
+          clearInterval(this.currentTimeInterval);
+          this.currentTimeInterval = null;
+        }
+        this.pausedAt = Date.now();
       }
     });
   }
@@ -446,7 +481,33 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   }
 
   onQuarterAdvance(): void {
+    // Shift task timing to account for time spent in the modal
+    if (this.pausedAt) {
+      const pauseDuration = Date.now() - this.pausedAt;
+      this.gameState.shiftTaskTiming(pauseDuration);
+      this.pausedAt = null;
+    }
+
+    // Restart the currentTime interval for progress bars
+    if (!this.currentTimeInterval) {
+      this.currentTimeInterval = setInterval(() => this.currentTime.set(Date.now()), 250);
+    }
+
     this.gameState.advanceQuarter();
+    // Don't restart timers if the reviewer intro is showing (Q3→Q4 transition)
+    if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver()) {
+      this.gameTimer.restartTimers();
+    }
+  }
+
+  onBeginReview(): void {
+    this.gameState.dismissReviewerIntro();
+    this.gameTimer.restartTimers();
+  }
+
+  onNewRun(): void {
+    this.gameState.startNewRun();
+    this.saveService.clearSave();
     this.gameTimer.restartTimers();
   }
 

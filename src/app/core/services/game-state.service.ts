@@ -18,6 +18,9 @@ import {
   QuarterProgress, createInitialProgress, getQuarterTarget,
   isQuarterBudgetExhausted, evaluateQuarter,
 } from '../models/quarter.model';
+import {
+  Reviewer, Modifier, selectReviewer, getReviewModifiers, getReviewerGoldTarget,
+} from '../models/reviewer.model';
 import { SaveData } from '../models/save-data.model';
 import { GameEventService } from './game-event.service';
 
@@ -58,6 +61,21 @@ export class GameStateService {
   private readonly _playerQueue = signal<Task[]>([]);
   private readonly _quarterProgress = signal<QuarterProgress>(createInitialProgress());
 
+  // ─── Reviewer signals ───────────────────────
+  private readonly _currentReviewer = signal<Reviewer | null>(null);
+  private readonly _activeModifiers = signal<Modifier[]>([]);
+  private readonly _isRunOver = signal(false);
+  private readonly _showReviewerIntro = signal(false);
+
+  // ─── Modifier constraint signals ────────────
+  private readonly _hiringDisabled = signal(false);
+  private readonly _upgradesDisabled = signal(false);
+  private readonly _boardFrozen = signal(false);
+  private readonly _boardLimited = signal(false);
+  private readonly _goldDrainPerTask = signal(0);
+  private readonly _goldRewardMultiplier = signal(1);
+  private readonly _lockedCategory = signal<TaskCategory | null>(null);
+
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
   readonly minions = this._minions.asReadonly();
@@ -71,6 +89,21 @@ export class GameStateService {
   readonly departmentQueues = this._departmentQueues.asReadonly();
   readonly playerQueue = this._playerQueue.asReadonly();
   readonly quarterProgress = this._quarterProgress.asReadonly();
+  readonly currentReviewer = this._currentReviewer.asReadonly();
+  readonly activeModifiers = this._activeModifiers.asReadonly();
+  readonly isRunOver = this._isRunOver.asReadonly();
+  readonly showReviewerIntro = this._showReviewerIntro.asReadonly();
+  readonly isInReview = computed(() => this._currentReviewer() !== null);
+  readonly reviewGoldTarget = computed(() => {
+    const reviewer = this._currentReviewer();
+    if (!reviewer) return 0;
+    return getReviewerGoldTarget(reviewer, this._quarterProgress().year);
+  });
+  readonly hiringDisabled = this._hiringDisabled.asReadonly();
+  readonly upgradesDisabled = this._upgradesDisabled.asReadonly();
+  readonly boardFrozen = this._boardFrozen.asReadonly();
+  readonly boardLimited = this._boardLimited.asReadonly();
+  readonly lockedCategory = this._lockedCategory.asReadonly();
   readonly currentQuarterTarget = computed(() => {
     const p = this._quarterProgress();
     return getQuarterTarget(p.year, p.quarter);
@@ -136,8 +169,9 @@ export class GameStateService {
     this.activeMissions().filter(t => t.status === 'in-progress')
   );
 
-  /** Mission board capacity: base 12, scales with minions + upgrades */
+  /** Mission board capacity: base 12, scales with minions + upgrades. Clamped to 2 by board-limited modifier. */
   readonly boardCapacity = computed(() => {
+    if (this._boardLimited()) return 2;
     const base = 12;
     const minionBonus = Math.min(8, this._minions().length * 2);
     const upgradeBonus = this.getUpgradeEffect('board-slots');
@@ -227,6 +261,17 @@ export class GameStateService {
     });
     this._playerQueue.set([]);
     this._quarterProgress.set(createInitialProgress());
+    this._currentReviewer.set(null);
+    this._activeModifiers.set([]);
+    this._isRunOver.set(false);
+    this._showReviewerIntro.set(false);
+    this._hiringDisabled.set(false);
+    this._upgradesDisabled.set(false);
+    this._boardFrozen.set(false);
+    this._boardLimited.set(false);
+    this._goldDrainPerTask.set(0);
+    this._goldRewardMultiplier.set(1);
+    this._lockedCategory.set(null);
     this._unlockedDepartments.set(new Set());
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
@@ -242,7 +287,7 @@ export class GameStateService {
   // ─── Snapshot (persistence) ─────────────────
   getSnapshot(): SaveData {
     return {
-      version: 6,
+      version: 8,
       savedAt: Date.now(),
       gold: this._gold(),
       completedCount: this._completedCount(),
@@ -258,6 +303,9 @@ export class GameStateService {
       playerQueue: this._playerQueue(),
       quarterProgress: this._quarterProgress(),
       unlockedDepartments: [...this._unlockedDepartments()],
+      currentReviewer: this._currentReviewer(),
+      activeModifiers: this._activeModifiers(),
+      isRunOver: this._isRunOver(),
     };
   }
 
@@ -290,6 +338,18 @@ export class GameStateService {
       this._quarterProgress.set(data.quarterProgress);
     } else {
       this._quarterProgress.set(createInitialProgress());
+    }
+
+    // Load reviewer state (v8+)
+    this._currentReviewer.set(data.currentReviewer ?? null);
+    this._activeModifiers.set(data.activeModifiers ?? []);
+    this._isRunOver.set(data.isRunOver ?? false);
+    this._showReviewerIntro.set(false);
+
+    // Re-apply modifier constraints if in review
+    this.revertModifiers();
+    if (data.activeModifiers && data.activeModifiers.length > 0) {
+      this.applyModifiers(data.activeModifiers);
     }
 
     // Legacy: migrate activeMissions into department queues
@@ -343,6 +403,7 @@ export class GameStateService {
 
   // ─── Upgrades ──────────────────────────────
   purchaseUpgrade(upgradeId: string): void {
+    if (this._upgradesDisabled()) return;
     const upgrade = this._upgrades().find(u => u.id === upgradeId);
     if (!upgrade) return;
     const cost = upgradeCost(upgrade);
@@ -399,8 +460,9 @@ export class GameStateService {
     const totalActive = this.activeMissions().length;
     if (totalActive >= this.activeSlots()) return;
 
-    // Prevent routing to a locked department
+    // Prevent routing to a locked department (unlocking or modifier-locked)
     if (target !== 'player' && !this._unlockedDepartments().has(target as TaskCategory)) return;
+    if (target !== 'player' && this._lockedCategory() === target) return;
 
     this._missionBoard.update(board => board.filter(m => m.id !== missionId));
 
@@ -571,6 +633,7 @@ export class GameStateService {
 
   // ─── Hire minion ───────────────────────────
   hireMinion(): void {
+    if (this._hiringDisabled()) return;
     const cost = this.nextMinionCost();
     if (this._gold() < cost) return;
 
@@ -591,6 +654,7 @@ export class GameStateService {
 
   /** Hire a specific pre-generated minion (from the pick-one-of-two choice) */
   hireChosenMinion(minion: Minion): void {
+    if (this._hiringDisabled()) return;
     const cost = this.nextMinionCost();
     if (this._gold() < cost) return;
 
@@ -674,6 +738,22 @@ export class GameStateService {
     }));
   }
 
+  /** Shift assignedAt/completesAt forward on all in-progress tasks (preserves progress bar ratio after a pause) */
+  shiftTaskTiming(pauseDuration: number): void {
+    this._departmentQueues.update(queues => {
+      const updated: Record<string, any[]> = {};
+      for (const dept of ALL_CATEGORIES) {
+        updated[dept] = queues[dept].map(t => {
+          if (t.status === 'in-progress' && t.assignedAt != null && t.completesAt != null) {
+            return { ...t, assignedAt: t.assignedAt + pauseDuration, completesAt: t.completesAt + pauseDuration };
+          }
+          return t;
+        });
+      }
+      return updated as typeof queues;
+    });
+  }
+
   // ─── Tick step methods ────────────────
 
   /** Step 3: Remove a specific expired special op from the board */
@@ -683,6 +763,7 @@ export class GameStateService {
 
   /** Step 4: Refill mission board and emit BoardRefreshed */
   refreshBoard(): void {
+    if (this._boardFrozen()) return;
     this.fillBoard();
     this.lastBoardRefresh = Date.now();
     this.events.emit({
@@ -947,7 +1028,11 @@ export class GameStateService {
   private awardGold(amount: number, taskName: string, taskTier?: TaskTier, taskCategory?: TaskCategory): void {
     // Apply Heists passive: +gold from all tasks
     const heistsBonus = getPassiveBonus('heists', this._departments().heists.level);
-    const finalAmount = Math.round(amount * (1 + heistsBonus * 0.01));
+    let finalAmount = Math.round(amount * (1 + heistsBonus * 0.01));
+
+    // Apply modifier effects
+    finalAmount = Math.round(finalAmount * this._goldRewardMultiplier());
+    finalAmount = Math.max(0, finalAmount - this._goldDrainPerTask());
 
     this._gold.update(g => g + finalAmount);
     this._totalGoldEarned.update(g => g + finalAmount);
@@ -1083,7 +1168,18 @@ export class GameStateService {
     if (!isQuarterBudgetExhausted(progress)) return;
 
     // Quarter's task budget exhausted — evaluate results
-    const result = evaluateQuarter(progress);
+    let result = evaluateQuarter(progress);
+
+    // For Q4, override the gold target with the reviewer's target
+    if (progress.quarter === 4) {
+      const reviewTarget = this.reviewGoldTarget();
+      result = {
+        ...result,
+        target: reviewTarget,
+        passed: progress.grossGoldEarned >= reviewTarget,
+      };
+    }
+
     const passed = result.passed;
 
     this._quarterProgress.update(p => ({
@@ -1119,6 +1215,27 @@ export class GameStateService {
       (progress.quarter + 1) as 1 | 2 | 3 | 4;
     const nextYear = progress.quarter === 4 ? progress.year + 1 : progress.year;
 
+    // Q3→Q4: Start Year-End review — select reviewer and apply modifiers
+    if (nextQuarter === 4) {
+      this.startReview(progress);
+    }
+
+    // Q4 done: check pass/fail
+    if (progress.quarter === 4) {
+      if (!progress.quarterResults[progress.quarterResults.length - 1]?.passed) {
+        // Run over — Q4 failed
+        this._isRunOver.set(true);
+        this.events.emit({
+          type: 'RunEnded',
+          year: progress.year,
+          quarterResults: progress.quarterResults.map(r => ({ quarter: r.quarter, passed: r.passed })),
+        });
+        return; // Don't advance — game is over
+      }
+      // Q4 passed — revert modifiers and move to next year
+      this.revertReview();
+    }
+
     this._quarterProgress.set({
       year: nextYear,
       quarter: nextQuarter,
@@ -1128,5 +1245,95 @@ export class GameStateService {
       missedQuarters: nextQuarter === 1 ? 0 : progress.missedQuarters,
       quarterResults: progress.quarterResults,
     });
+  }
+
+  /** Dismiss the reviewer intro modal (called when player clicks "Begin Review") */
+  dismissReviewerIntro(): void {
+    this._showReviewerIntro.set(false);
+  }
+
+  /** Start a new run (after run-over) */
+  startNewRun(): void {
+    this.initializeGame();
+  }
+
+  // ─── Review lifecycle ──────────────────────
+
+  private startReview(progress: QuarterProgress): void {
+    const year = progress.year;
+    const reviewer = selectReviewer(year);
+    const modifiers = getReviewModifiers(reviewer, progress.missedQuarters);
+
+    this._currentReviewer.set(reviewer);
+    this._activeModifiers.set(modifiers);
+    this._showReviewerIntro.set(true);
+    this.applyModifiers(modifiers);
+
+    this.events.emit({
+      type: 'ReviewStarted',
+      reviewer,
+      modifiers,
+      year,
+    });
+  }
+
+  private applyModifiers(modifiers: Modifier[]): void {
+    for (const mod of modifiers) {
+      switch (mod.id) {
+        case 'no-hiring':
+          this._hiringDisabled.set(true);
+          break;
+        case 'upgrades-disabled':
+          this._upgradesDisabled.set(true);
+          break;
+        case 'board-frozen':
+          this._boardFrozen.set(true);
+          break;
+        case 'board-limited':
+          this._boardLimited.set(true);
+          break;
+        case 'gold-drain':
+          this._goldDrainPerTask.set(5);
+          break;
+        case 'gold-halved':
+          this._goldRewardMultiplier.set(this._goldRewardMultiplier() * 0.5);
+          break;
+        case 'gold-reduced-30':
+          this._goldRewardMultiplier.set(this._goldRewardMultiplier() * 0.7);
+          break;
+        case 'starting-gold-zero':
+          this._gold.set(0);
+          break;
+        case 'lock-schemes':
+          this._lockedCategory.set('schemes');
+          break;
+        case 'lock-heists':
+          this._lockedCategory.set('heists');
+          break;
+        case 'lock-research':
+          this._lockedCategory.set('research');
+          break;
+        case 'lock-mayhem':
+          this._lockedCategory.set('mayhem');
+          break;
+      }
+    }
+  }
+
+  private revertModifiers(): void {
+    this._hiringDisabled.set(false);
+    this._upgradesDisabled.set(false);
+    this._boardFrozen.set(false);
+    this._boardLimited.set(false);
+    this._goldDrainPerTask.set(0);
+    this._goldRewardMultiplier.set(1);
+    this._lockedCategory.set(null);
+  }
+
+  private revertReview(): void {
+    this._currentReviewer.set(null);
+    this._activeModifiers.set([]);
+    this._showReviewerIntro.set(false);
+    this.revertModifiers();
   }
 }

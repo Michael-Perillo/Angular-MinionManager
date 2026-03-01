@@ -173,15 +173,22 @@ export class GameTimerService implements OnDestroy {
 
   private scheduleExistingTaskTimers(): void {
     const queues = this.gameState.departmentQueues();
+    const now = Date.now();
     for (const dept of ALL_CATEGORIES) {
       for (const task of queues[dept]) {
         if (task.status === 'in-progress' && task.assignedMinionId) {
           const minion = this.gameState.minions().find(m => m.id === task.assignedMinionId);
           if (minion) {
-            const durationMs = Math.max(100, Math.round(task.timeRemaining * 1000));
-            const now = Date.now();
-            this.gameState.setTaskTimingInfo(task.id, dept, now, now + durationMs);
-            this.scheduleTaskCompletion(task.id, dept, durationMs);
+            if (task.completesAt != null && task.assignedAt != null) {
+              // Resume from shifted timing (e.g. after quarter pause)
+              const remaining = Math.max(100, task.completesAt - now);
+              this.scheduleTaskCompletion(task.id, dept, remaining);
+            } else {
+              // Fresh schedule from timeRemaining (e.g. loading a save)
+              const durationMs = Math.max(100, Math.round(task.timeRemaining * 1000));
+              this.gameState.setTaskTimingInfo(task.id, dept, now, now + durationMs);
+              this.scheduleTaskCompletion(task.id, dept, durationMs);
+            }
           }
         }
       }

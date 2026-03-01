@@ -68,6 +68,7 @@ import { QuarterResult } from '../../../core/models/quarter.model';
 export class QuarterReviewComponent {
   result = input.required<QuarterResult>();
   missedQuarters = input<number>(0);
+  isQ4Failed = input<boolean>(false);
 
   advance = output<void>();
 
@@ -86,6 +87,9 @@ export class QuarterReviewComponent {
 
   continueLabel = computed(() => {
     const r = this.result();
+    if (r.quarter === 4 && !r.passed) {
+      return 'View Results';
+    }
     if (r.quarter === 4) {
       return `Continue to Year ${r.year + 1}`;
     }

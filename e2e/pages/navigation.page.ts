@@ -16,7 +16,7 @@ export interface NavigationPage {
 function baseSaveData(): Record<string, unknown> {
   const defaultDept = (category: string) => ({ category, xp: 0, level: 1 });
   return {
-    version: 6,
+    version: 8,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,

@@ -24,7 +24,12 @@ import { TaskCategory } from '../../../core/models/task.model';
         </div>
       </div>
 
-      @if (candidates() === null) {
+      @if (hiringDisabled()) {
+        <div class="w-full py-2.5 px-4 rounded-lg text-sm font-bold uppercase tracking-wider text-center
+                    bg-red-500/10 text-red-400 border border-red-500/20">
+          🚫 Hiring Frozen
+        </div>
+      } @else if (candidates() === null) {
         <!-- Show "Recruit" button to generate candidates -->
         <button
           (click)="onRecruit()"
@@ -107,6 +112,7 @@ export class HireMinionPanelComponent {
   minionCount = input.required<number>();
   canHire = input.required<boolean>();
   unlockedDepartments = input<Set<TaskCategory>>(new Set());
+  hiringDisabled = input<boolean>(false);
 
   recruit = output<void>();
   hireChosen = output<Minion>();

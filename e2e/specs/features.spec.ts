@@ -150,3 +150,154 @@ test.describe('Mission Router guards', () => {
     await expect(missionBoard.routerButtons.first()).toContainText('My Workbench');
   });
 });
+
+// ─── Year-End Boss Review ──────────
+
+test.describe('Year-End Boss Review', () => {
+  test('Reviewer intro appears after Q3 completion', async ({ page, nav }) => {
+    // Seed at end of Q3: 59/60 tasks done, with a 1-click task in player queue
+    const taskId = 'e2e-q3-final';
+    await nav.seedState({
+      gold: 1500,
+      completedCount: 59,
+      totalGoldEarned: 1500,
+      unlockedDepartments: ['schemes'],
+      missionBoard: [],
+      playerQueue: [
+        {
+          id: taskId,
+          template: { name: 'Q3 Final', description: 'Complete this.', category: 'schemes', tier: 'petty' },
+          status: 'queued',
+          tier: 'petty',
+          goldReward: 5,
+          timeToComplete: 999,
+          timeRemaining: 999,
+          clicksRequired: 1,
+          clicksRemaining: 1,
+          assignedMinionId: null,
+          queuedAt: Date.now(),
+          assignedQueue: 'player',
+        },
+      ],
+      quarterProgress: {
+        year: 1,
+        quarter: 3,
+        grossGoldEarned: 1500,
+        tasksCompleted: 59,
+        isComplete: false,
+        missedQuarters: 0,
+        quarterResults: [
+          { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
+          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 400, tasksCompleted: 40 },
+        ],
+      },
+    });
+
+    // Complete the final Q3 task
+    await nav.goToWorkbench();
+    const clickBtn = page.locator('app-player-workbench button').filter({ hasText: /CLICK/ }).first();
+    await clickBtn.waitFor({ state: 'visible', timeout: 5_000 });
+    await clickBtn.click();
+
+    // Q3 review modal should appear
+    const quarterReview = page.locator('app-quarter-review');
+    await quarterReview.waitFor({ state: 'visible', timeout: 5_000 });
+    await expect(quarterReview.getByText('TARGET MET')).toBeVisible();
+
+    // Dismiss Q3 review → advance to Q4
+    await page.getByRole('button', { name: /Continue to Q4/i }).click();
+
+    // Reviewer intro modal should appear
+    const reviewerIntro = page.locator('app-reviewer-intro');
+    await reviewerIntro.waitFor({ state: 'visible', timeout: 5_000 });
+    await expect(reviewerIntro.getByText('Year-End Review')).toBeVisible();
+    await expect(reviewerIntro.getByRole('button', { name: 'Begin Review' })).toBeVisible();
+  });
+
+  test('Hiring Frozen constraint visible during Q4 review', async ({ page, nav }) => {
+    // Seed directly in Q4 with Grimes (base: no-hiring) as reviewer
+    await nav.seedState({
+      gold: 200,
+      completedCount: 130,
+      totalGoldEarned: 2100,
+      unlockedDepartments: ['schemes', 'heists'],
+      missionBoard: [],
+      currentReviewer: {
+        id: 'grimes',
+        name: 'Viktor Grimes',
+        title: 'Head of Internal Affairs',
+        personality: 'mixed',
+        baseModifier: 'no-hiring',
+        modifierPool: ['board-frozen', 'gold-drain', 'lock-heists'],
+        yearMinimum: 1,
+        goldTarget: 150,
+      },
+      activeModifiers: [
+        { id: 'no-hiring', name: 'Hiring Freeze', description: 'No new hires during review', category: 'operational-constraint' },
+      ],
+      isRunOver: false,
+      quarterProgress: {
+        year: 1,
+        quarter: 4,
+        grossGoldEarned: 0,
+        tasksCompleted: 0,
+        isComplete: false,
+        missedQuarters: 0,
+        quarterResults: [
+          { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
+          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 400, tasksCompleted: 40 },
+          { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 },
+        ],
+      },
+    });
+
+    // Open hire panel and verify the constraint is shown
+    await nav.goToHirePanel();
+    await expect(page.getByText('Hiring Frozen')).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('Run-over screen appears when game is over', async ({ page, nav }) => {
+    // Seed with isRunOver: true
+    await nav.seedState({
+      gold: 50,
+      completedCount: 160,
+      totalGoldEarned: 2200,
+      unlockedDepartments: ['schemes'],
+      missionBoard: [],
+      currentReviewer: {
+        id: 'thornton',
+        name: 'Margaret Thornton',
+        title: 'VP of Compliance',
+        personality: 'strict',
+        baseModifier: 'sinister-only',
+        modifierPool: ['no-hiring', 'gold-reduced-30', 'lock-research'],
+        yearMinimum: 1,
+        goldTarget: 200,
+      },
+      activeModifiers: [
+        { id: 'sinister-only', name: 'High Standards', description: 'Only Sinister+ tasks count toward gold target', category: 'task-constraint' },
+      ],
+      isRunOver: true,
+      quarterProgress: {
+        year: 1,
+        quarter: 4,
+        grossGoldEarned: 100,
+        tasksCompleted: 30,
+        isComplete: true,
+        missedQuarters: 1,
+        quarterResults: [
+          { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
+          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 400, tasksCompleted: 40 },
+          { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 },
+          { year: 1, quarter: 4, passed: false, goldEarned: 100, target: 200, tasksCompleted: 30 },
+        ],
+      },
+    });
+
+    // Run-over screen should be visible immediately
+    const runOver = page.locator('app-run-over');
+    await runOver.waitFor({ state: 'visible', timeout: 5_000 });
+    await expect(runOver.getByText('Performance Review Failed')).toBeVisible();
+    await expect(runOver.getByRole('button', { name: 'New Run' })).toBeVisible();
+  });
+});

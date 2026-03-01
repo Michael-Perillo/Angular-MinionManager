@@ -29,6 +29,13 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
         </div>
       </div>
 
+      @if (boardFrozen()) {
+        <div class="w-full py-2 px-4 rounded-lg text-sm font-bold uppercase tracking-wider text-center
+                    bg-red-500/10 text-red-400 border border-red-500/20">
+          🚫 Board Frozen
+        </div>
+      }
+
       @if (missions().length === 0) {
         <div class="game-card p-6 text-center">
           <p class="text-text-muted text-xs">No missions available...</p>
@@ -151,6 +158,7 @@ export class MissionBoardComponent {
   activeSlots = input.required<number>();
   connectedDropLists = input<string[]>([]);
   dragDisabled = input<boolean>(false);
+  boardFrozen = input<boolean>(false);
   missionAccepted = output<string>();
   missionRouteRequested = output<Task>();
   unlockedDepartments = input<TaskCategory[]>([]);

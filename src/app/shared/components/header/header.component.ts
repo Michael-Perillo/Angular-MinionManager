@@ -1,9 +1,12 @@
 import { Component, ChangeDetectionStrategy, input, output, computed } from '@angular/core';
 import { QuarterProgress } from '../../../core/models/quarter.model';
+import { Modifier } from '../../../core/models/reviewer.model';
+import { ModifierBadgeComponent } from '../modifier-badge/modifier-badge.component';
 
 @Component({
   selector: 'app-header',
   standalone: true,
+  imports: [ModifierBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="flex items-center justify-between gap-3 px-4 py-2
@@ -59,6 +62,15 @@ import { QuarterProgress } from '../../../core/models/quarter.model';
         }
       </div>
 
+      <!-- Active modifiers (Q4 review) -->
+      @if (activeModifiers().length > 0) {
+        <div class="flex items-center gap-1 flex-wrap">
+          @for (mod of activeModifiers(); track mod.id) {
+            <app-modifier-badge [modifier]="mod" />
+          }
+        </div>
+      }
+
       <!-- Right: Drawer toggle -->
       <div class="flex items-center gap-2 shrink-0">
         <button
@@ -96,6 +108,7 @@ export class HeaderComponent {
   taskBudget = input<number>(0);
   goldTarget = input<number>(0);
   lastSaved = input<number>(0);
+  activeModifiers = input<Modifier[]>([]);
 
   reset = output<void>();
   drawerToggle = output<void>();
