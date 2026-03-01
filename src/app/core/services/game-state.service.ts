@@ -18,6 +18,9 @@ import {
   QuarterProgress, createInitialProgress, getQuarterTarget,
   isQuarterBudgetExhausted, evaluateQuarter,
 } from '../models/quarter.model';
+import {
+  Reviewer, Modifier, selectReviewer, getReviewModifiers, getReviewerGoldTarget,
+} from '../models/reviewer.model';
 import { SaveData } from '../models/save-data.model';
 import { GameEventService } from './game-event.service';
 
@@ -58,6 +61,12 @@ export class GameStateService {
   private readonly _playerQueue = signal<Task[]>([]);
   private readonly _quarterProgress = signal<QuarterProgress>(createInitialProgress());
 
+  // ─── Reviewer signals ───────────────────────
+  private readonly _currentReviewer = signal<Reviewer | null>(null);
+  private readonly _activeModifiers = signal<Modifier[]>([]);
+  private readonly _isRunOver = signal(false);
+  private readonly _showReviewerIntro = signal(false);
+
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
   readonly minions = this._minions.asReadonly();
@@ -71,6 +80,16 @@ export class GameStateService {
   readonly departmentQueues = this._departmentQueues.asReadonly();
   readonly playerQueue = this._playerQueue.asReadonly();
   readonly quarterProgress = this._quarterProgress.asReadonly();
+  readonly currentReviewer = this._currentReviewer.asReadonly();
+  readonly activeModifiers = this._activeModifiers.asReadonly();
+  readonly isRunOver = this._isRunOver.asReadonly();
+  readonly showReviewerIntro = this._showReviewerIntro.asReadonly();
+  readonly isInReview = computed(() => this._currentReviewer() !== null);
+  readonly reviewGoldTarget = computed(() => {
+    const reviewer = this._currentReviewer();
+    if (!reviewer) return 0;
+    return getReviewerGoldTarget(reviewer, this._quarterProgress().year);
+  });
   readonly currentQuarterTarget = computed(() => {
     const p = this._quarterProgress();
     return getQuarterTarget(p.year, p.quarter);
@@ -227,6 +246,10 @@ export class GameStateService {
     });
     this._playerQueue.set([]);
     this._quarterProgress.set(createInitialProgress());
+    this._currentReviewer.set(null);
+    this._activeModifiers.set([]);
+    this._isRunOver.set(false);
+    this._showReviewerIntro.set(false);
     this._unlockedDepartments.set(new Set());
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
@@ -1083,7 +1106,18 @@ export class GameStateService {
     if (!isQuarterBudgetExhausted(progress)) return;
 
     // Quarter's task budget exhausted — evaluate results
-    const result = evaluateQuarter(progress);
+    let result = evaluateQuarter(progress);
+
+    // For Q4, override the gold target with the reviewer's target
+    if (progress.quarter === 4) {
+      const reviewTarget = this.reviewGoldTarget();
+      result = {
+        ...result,
+        target: reviewTarget,
+        passed: progress.grossGoldEarned >= reviewTarget,
+      };
+    }
+
     const passed = result.passed;
 
     this._quarterProgress.update(p => ({
@@ -1119,6 +1153,27 @@ export class GameStateService {
       (progress.quarter + 1) as 1 | 2 | 3 | 4;
     const nextYear = progress.quarter === 4 ? progress.year + 1 : progress.year;
 
+    // Q3→Q4: Start Year-End review — select reviewer and apply modifiers
+    if (nextQuarter === 4) {
+      this.startReview(progress);
+    }
+
+    // Q4 done: check pass/fail
+    if (progress.quarter === 4) {
+      if (!progress.quarterResults[progress.quarterResults.length - 1]?.passed) {
+        // Run over — Q4 failed
+        this._isRunOver.set(true);
+        this.events.emit({
+          type: 'RunEnded',
+          year: progress.year,
+          quarterResults: progress.quarterResults.map(r => ({ quarter: r.quarter, passed: r.passed })),
+        });
+        return; // Don't advance — game is over
+      }
+      // Q4 passed — revert modifiers and move to next year
+      this.revertReview();
+    }
+
     this._quarterProgress.set({
       year: nextYear,
       quarter: nextQuarter,
@@ -1128,5 +1183,40 @@ export class GameStateService {
       missedQuarters: nextQuarter === 1 ? 0 : progress.missedQuarters,
       quarterResults: progress.quarterResults,
     });
+  }
+
+  /** Dismiss the reviewer intro modal (called when player clicks "Begin Review") */
+  dismissReviewerIntro(): void {
+    this._showReviewerIntro.set(false);
+  }
+
+  /** Start a new run (after run-over) */
+  startNewRun(): void {
+    this.initializeGame();
+  }
+
+  // ─── Review lifecycle ──────────────────────
+
+  private startReview(progress: QuarterProgress): void {
+    const year = progress.year;
+    const reviewer = selectReviewer(year);
+    const modifiers = getReviewModifiers(reviewer, progress.missedQuarters);
+
+    this._currentReviewer.set(reviewer);
+    this._activeModifiers.set(modifiers);
+    this._showReviewerIntro.set(true);
+
+    this.events.emit({
+      type: 'ReviewStarted',
+      reviewer,
+      modifiers,
+      year,
+    });
+  }
+
+  private revertReview(): void {
+    this._currentReviewer.set(null);
+    this._activeModifiers.set([]);
+    this._showReviewerIntro.set(false);
   }
 }

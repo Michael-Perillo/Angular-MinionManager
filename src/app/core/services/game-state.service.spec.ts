@@ -1282,4 +1282,206 @@ describe('GameStateService', () => {
       }
     });
   });
+
+  // ─── Phase B: Year-End Boss Reviews ──────────
+
+  describe('reviewer system', () => {
+    it('should start with no reviewer and run-over false', () => {
+      expect(service.currentReviewer()).toBeNull();
+      expect(service.activeModifiers()).toEqual([]);
+      expect(service.isRunOver()).toBe(false);
+      expect(service.isInReview()).toBe(false);
+    });
+
+    it('should select a reviewer when advancing from Q3 to Q4', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 3,
+          grossGoldEarned: 1500,
+          tasksCompleted: 60,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      expect(service.currentReviewer()).not.toBeNull();
+      expect(service.isInReview()).toBe(true);
+      expect(service.activeModifiers().length).toBeGreaterThanOrEqual(1); // at least base modifier
+      expect(service.showReviewerIntro()).toBe(true);
+    });
+
+    it('should draw extra modifiers based on missed quarters', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 3,
+          grossGoldEarned: 1500,
+          tasksCompleted: 60,
+          isComplete: true,
+          missedQuarters: 2,
+          quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      // Should have base + up to 2 extras
+      expect(service.activeModifiers().length).toBeGreaterThanOrEqual(1);
+      expect(service.activeModifiers().length).toBeLessThanOrEqual(3);
+    });
+
+    it('should show reviewer intro that can be dismissed', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 3,
+          grossGoldEarned: 1500,
+          tasksCompleted: 60,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      expect(service.showReviewerIntro()).toBe(true);
+      service.dismissReviewerIntro();
+      expect(service.showReviewerIntro()).toBe(false);
+    });
+
+    it('should have a reviewer gold target for Q4', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 3,
+          grossGoldEarned: 1500,
+          tasksCompleted: 60,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      expect(service.reviewGoldTarget()).toBeGreaterThan(0);
+    });
+
+    it('should revert reviewer on Q4 pass and advance to next year', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 4,
+          grossGoldEarned: 500,
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 1,
+          quarterResults: [{ year: 1, quarter: 4, passed: true, goldEarned: 500, target: 200, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      expect(service.currentReviewer()).toBeNull();
+      expect(service.activeModifiers()).toEqual([]);
+      expect(service.isRunOver()).toBe(false);
+      expect(service.quarterProgress().year).toBe(2);
+      expect(service.quarterProgress().quarter).toBe(1);
+    });
+
+    it('should set run-over when Q4 is failed', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 4,
+          grossGoldEarned: 10,
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 2,
+          quarterResults: [{ year: 1, quarter: 4, passed: false, goldEarned: 10, target: 200, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      expect(service.isRunOver()).toBe(true);
+      // Should NOT advance to next year
+      expect(service.quarterProgress().quarter).toBe(4);
+      expect(service.quarterProgress().year).toBe(1);
+    });
+
+    it('should emit RunEnded event when Q4 fails', () => {
+      const events = TestBed.inject(GameEventService);
+      const emitted: GameEvent[] = [];
+      events.events$.subscribe(e => emitted.push(e));
+
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 4,
+          grossGoldEarned: 10,
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 2,
+          quarterResults: [{ year: 1, quarter: 4, passed: false, goldEarned: 10, target: 200, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      const runEnded = emitted.filter(e => e.type === 'RunEnded');
+      expect(runEnded.length).toBe(1);
+    });
+
+    it('should emit ReviewStarted event when Q3 advances to Q4', () => {
+      const events = TestBed.inject(GameEventService);
+      const emitted: GameEvent[] = [];
+      events.events$.subscribe(e => emitted.push(e));
+
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 3,
+          grossGoldEarned: 1500,
+          tasksCompleted: 60,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      const reviewStarted = emitted.filter(e => e.type === 'ReviewStarted');
+      expect(reviewStarted.length).toBe(1);
+    });
+
+    it('should reset all state on startNewRun', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 4,
+          grossGoldEarned: 10,
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 2,
+          quarterResults: [{ year: 1, quarter: 4, passed: false, goldEarned: 10, target: 200, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+      expect(service.isRunOver()).toBe(true);
+
+      service.startNewRun();
+      expect(service.isRunOver()).toBe(false);
+      expect(service.currentReviewer()).toBeNull();
+      expect(service.quarterProgress().year).toBe(1);
+      expect(service.quarterProgress().quarter).toBe(1);
+    });
+  });
 });
