@@ -131,7 +131,7 @@ describe('SaveService', () => {
       expect(gameState.gold()).toBe(200);
 
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.version).toBe(6);
+      expect(snapshot.version).toBe(8);
       // Influence and resources should be stripped
       expect((snapshot as any).influence).toBeUndefined();
       expect((snapshot as any).resources).toBeUndefined();
@@ -178,7 +178,7 @@ describe('SaveService', () => {
       expect(gameState.gold()).toBe(300);
 
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.version).toBe(6);
+      expect(snapshot.version).toBe(8);
       // Notoriety and influence fields should be stripped
       expect((snapshot as any).notoriety).toBeUndefined();
       expect((snapshot as any).raidActive).toBeUndefined();
@@ -197,6 +197,45 @@ describe('SaveService', () => {
       // click-power should retain its saved level
       const clickPower = snapshot.upgradeLevels.find(u => u.id === 'click-power');
       expect(clickPower?.currentLevel).toBe(2);
+    });
+
+    it('should migrate v7 data (add reviewer defaults) to v8', () => {
+      const v7Data: any = {
+        version: 7,
+        savedAt: Date.now(),
+        gold: 500,
+        completedCount: 30,
+        totalGoldEarned: 1000,
+        minions: [],
+        departments: {
+          schemes: { category: 'schemes', xp: 0, level: 1 },
+          heists: { category: 'heists', xp: 0, level: 1 },
+          research: { category: 'research', xp: 0, level: 1 },
+          mayhem: { category: 'mayhem', xp: 0, level: 1 },
+        },
+        upgradeLevels: [],
+        activeMissions: [],
+        missionBoard: [],
+        usedNameIndices: [],
+        lastBoardRefresh: 0,
+        departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
+        playerQueue: [],
+        quarterProgress: {
+          year: 1, quarter: 2, grossGoldEarned: 200,
+          tasksCompleted: 15, isComplete: false, missedQuarters: 0, quarterResults: [],
+        },
+      };
+
+      store[STORAGE_KEY] = JSON.stringify(v7Data);
+      const loaded = saveService.load();
+      expect(loaded).toBe(true);
+      expect(gameState.gold()).toBe(500);
+
+      const snapshot = gameState.getSnapshot();
+      expect(snapshot.version).toBe(8);
+      expect(snapshot.currentReviewer).toBeNull();
+      expect(snapshot.activeModifiers).toEqual([]);
+      expect(snapshot.isRunOver).toBe(false);
     });
   });
 

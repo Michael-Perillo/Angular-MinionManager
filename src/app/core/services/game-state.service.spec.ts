@@ -631,9 +631,9 @@ describe('GameStateService', () => {
       }
     });
 
-    it('should include version 5 in snapshot', () => {
+    it('should include current version in snapshot', () => {
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(6);
+      expect(snapshot.version).toBe(8);
     });
   });
 
@@ -757,7 +757,7 @@ describe('GameStateService', () => {
       service.addGold(10_000);
       service.hireMinion();
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(6);
+      expect(snapshot.version).toBe(8);
       expect(snapshot.unlockedDepartments).toBeDefined();
       expect(snapshot.unlockedDepartments!.length).toBeGreaterThanOrEqual(1);
     });
@@ -1589,6 +1589,27 @@ describe('GameStateService', () => {
       service.routeMission(mission.id, 'schemes');
       // Should not have been routed
       expect(service.departmentQueues().schemes.length).toBe(0);
+    });
+
+    it('should persist reviewer state in snapshot', () => {
+      enterReview();
+      const snapshot = service.getSnapshot();
+      expect(snapshot.currentReviewer).not.toBeNull();
+      expect(snapshot.activeModifiers!.length).toBeGreaterThanOrEqual(1);
+      expect(snapshot.isRunOver).toBe(false);
+    });
+
+    it('should restore reviewer state from snapshot', () => {
+      enterReview();
+      const snapshot = service.getSnapshot();
+
+      // Reset and reload
+      service.initializeGame();
+      expect(service.currentReviewer()).toBeNull();
+
+      service.loadSnapshot(snapshot);
+      expect(service.currentReviewer()).not.toBeNull();
+      expect(service.activeModifiers().length).toBeGreaterThanOrEqual(1);
     });
 
     it('should revert all constraints when Q4 passes', () => {

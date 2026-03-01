@@ -287,7 +287,7 @@ export class GameStateService {
   // ─── Snapshot (persistence) ─────────────────
   getSnapshot(): SaveData {
     return {
-      version: 6,
+      version: 8,
       savedAt: Date.now(),
       gold: this._gold(),
       completedCount: this._completedCount(),
@@ -303,6 +303,9 @@ export class GameStateService {
       playerQueue: this._playerQueue(),
       quarterProgress: this._quarterProgress(),
       unlockedDepartments: [...this._unlockedDepartments()],
+      currentReviewer: this._currentReviewer(),
+      activeModifiers: this._activeModifiers(),
+      isRunOver: this._isRunOver(),
     };
   }
 
@@ -335,6 +338,18 @@ export class GameStateService {
       this._quarterProgress.set(data.quarterProgress);
     } else {
       this._quarterProgress.set(createInitialProgress());
+    }
+
+    // Load reviewer state (v8+)
+    this._currentReviewer.set(data.currentReviewer ?? null);
+    this._activeModifiers.set(data.activeModifiers ?? []);
+    this._isRunOver.set(data.isRunOver ?? false);
+    this._showReviewerIntro.set(false);
+
+    // Re-apply modifier constraints if in review
+    this.revertModifiers();
+    if (data.activeModifiers && data.activeModifiers.length > 0) {
+      this.applyModifiers(data.activeModifiers);
     }
 
     // Legacy: migrate activeMissions into department queues

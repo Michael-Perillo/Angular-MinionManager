@@ -4,7 +4,7 @@ import { SaveData } from '../models/save-data.model';
 import { STORAGE_BACKEND } from './storage-backend';
 
 const STORAGE_KEY = 'minion-manager-save';
-const CURRENT_VERSION = 6;
+const CURRENT_VERSION = 8;
 
 @Injectable({ providedIn: 'root' })
 export class SaveService {
@@ -112,6 +112,17 @@ export class SaveService {
       // v5 → v6: Remove influence currency
       delete (data as any).influence;
       data.version = 6;
+    }
+    if (data.version < 7) {
+      // v6 → v7: Quarterly progress added (handled by loadSnapshot defaults)
+      data.version = 7;
+    }
+    if (data.version < 8) {
+      // v7 → v8: Year-End reviewer/modifier state added
+      data.currentReviewer = data.currentReviewer ?? null;
+      data.activeModifiers = data.activeModifiers ?? [];
+      data.isRunOver = data.isRunOver ?? false;
+      data.version = 8;
     }
     return data;
   }
