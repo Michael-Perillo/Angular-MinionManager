@@ -63,7 +63,7 @@ export interface DepartmentPassive {
 export const DEPARTMENT_PASSIVES: Record<TaskCategory, DepartmentPassive> = {
   research: {
     name: 'Covert Ops',
-    description: 'Reduces notoriety gain',
+    description: 'Increases stealth effectiveness',
     scalingPerLevel: 5,
     unit: '%',
   },

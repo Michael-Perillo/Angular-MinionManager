@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   GameEventService, GameEvent, TaskCompletedEvent, MinionIdleEvent,
   TaskQueuedEvent, TaskAssignedEvent, MinionHiredEvent, MinionReassignedEvent,
-  UpgradePurchasedEvent, BreakoutCompletedEvent, SpecialOpSpawnedEvent, LevelUpEvent,
+  UpgradePurchasedEvent, SpecialOpSpawnedEvent, LevelUpEvent,
 } from './game-event.service';
 
 describe('GameEventService', () => {
@@ -21,9 +21,16 @@ describe('GameEventService', () => {
     const received: GameEvent[] = [];
     service.events$.subscribe(e => received.push(e));
 
-    service.emit({ type: 'RaidStarted' });
+    service.emit({
+      type: 'TaskCompleted',
+      taskName: 'Test',
+      tier: 'petty',
+      category: 'schemes',
+      goldEarned: 5,
+      minionId: null,
+    });
     expect(received.length).toBe(1);
-    expect(received[0].type).toBe('RaidStarted');
+    expect(received[0].type).toBe('TaskCompleted');
   });
 
   it('should filter events by type with on()', () => {
@@ -40,8 +47,6 @@ describe('GameEventService', () => {
       category: 'heists',
       goldEarned: 10,
       minionId: null,
-      isCoverOp: false,
-      isBreakoutOp: false,
     });
 
     service.emit({
@@ -49,8 +54,6 @@ describe('GameEventService', () => {
       minionId: 'm1',
       department: 'schemes',
     });
-
-    service.emit({ type: 'RaidStarted' });
 
     expect(taskEvents.length).toBe(1);
     expect(minionEvents.length).toBe(1);
@@ -62,15 +65,29 @@ describe('GameEventService', () => {
     const received: GameEvent[] = [];
     const sub = service.events$.subscribe(e => received.push(e));
 
-    service.emit({ type: 'RaidStarted' });
+    service.emit({
+      type: 'TaskCompleted',
+      taskName: 'Test',
+      tier: 'petty',
+      category: 'schemes',
+      goldEarned: 5,
+      minionId: null,
+    });
     expect(received.length).toBe(1);
 
     sub.unsubscribe();
-    service.emit({ type: 'RaidStarted' });
+    service.emit({
+      type: 'TaskCompleted',
+      taskName: 'Test2',
+      tier: 'petty',
+      category: 'schemes',
+      goldEarned: 5,
+      minionId: null,
+    });
     expect(received.length).toBe(1);
   });
 
-  describe('new event types', () => {
+  describe('event types', () => {
     it('should emit and filter TaskQueued events', () => {
       const received: TaskQueuedEvent[] = [];
       service.on('TaskQueued').subscribe(e => received.push(e));
@@ -113,18 +130,9 @@ describe('GameEventService', () => {
       const received: UpgradePurchasedEvent[] = [];
       service.on('UpgradePurchased').subscribe(e => received.push(e));
 
-      service.emit({ type: 'UpgradePurchased', upgradeId: 'bribe-network', newLevel: 2 });
+      service.emit({ type: 'UpgradePurchased', upgradeId: 'click-power', newLevel: 2 });
       expect(received.length).toBe(1);
-      expect(received[0].upgradeId).toBe('bribe-network');
-    });
-
-    it('should emit and filter BreakoutCompleted events', () => {
-      const received: BreakoutCompletedEvent[] = [];
-      service.on('BreakoutCompleted').subscribe(e => received.push(e));
-
-      service.emit({ type: 'BreakoutCompleted', minionId: 'm1', department: 'mayhem' });
-      expect(received.length).toBe(1);
-      expect(received[0].department).toBe('mayhem');
+      expect(received[0].upgradeId).toBe('click-power');
     });
 
     it('should emit and filter SpecialOpSpawned events', () => {

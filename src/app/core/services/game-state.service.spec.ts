@@ -1,14 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { GameStateService } from './game-state.service';
 import { GameEventService, GameEvent } from './game-event.service';
-import { completeTaskByClicking, setupGameWithMinions, acceptFirstMission, tickUntilComplete } from '../../../testing/helpers/game-test-helpers';
+import { completeTaskByClicking, setupGameWithMinions } from '../../../testing/helpers/game-test-helpers';
 import { makeSaveData } from '../../../testing/factories/game-state.factory';
-import { makeMinion, makeCapturedMinion } from '../../../testing/factories/minion.factory';
-import { makeTask, makeCoverOpTask, makeBreakoutTask } from '../../../testing/factories/task.factory';
-import { NOTORIETY_PER_TIER, COVER_TRACKS_REDUCTION, bribeCost, BASE_NOTORIETY_DECAY } from '../models/notoriety.model';
-import { INFLUENCE_PER_TIER } from '../models/resource.model';
-import { TIER_CONFIG } from '../models/task.model';
-import { upgradeEffect } from '../models/upgrade.model';
+import { makeMinion } from '../../../testing/factories/minion.factory';
 
 describe('GameStateService', () => {
   let service: GameStateService;
@@ -39,10 +34,6 @@ describe('GameStateService', () => {
 
     it('should start with no active missions', () => {
       expect(service.activeMissions().length).toBe(0);
-    });
-
-    it('should start with 0 notoriety', () => {
-      expect(service.notoriety()).toBe(0);
     });
 
     it('should start at villain level 1', () => {
@@ -116,7 +107,6 @@ describe('GameStateService', () => {
         service.clickTask(task.id);
       }
 
-      // Gold should be awarded (may be modified by notoriety penalty but at 0 it's exact)
       expect(service.gold()).toBeGreaterThanOrEqual(reward);
       expect(service.completedCount()).toBe(1);
       expect(service.activeMissions().find(t => t.id === task.id)).toBeUndefined();
@@ -130,19 +120,19 @@ describe('GameStateService', () => {
     });
 
     it('should hire when gold is sufficient', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       expect(service.minions().length).toBe(1);
     });
 
     it('should deduct the cost from gold', () => {
-      service.addGold(60);
-      service.hireMinion(); // costs 50
-      expect(service.gold()).toBe(10);
+      service.addGold(100);
+      service.hireMinion(); // costs 75
+      expect(service.gold()).toBe(25);
     });
 
     it('should give minion stats, specialty, and level', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       const minion = service.minions()[0];
       expect(minion.stats).toBeTruthy();
@@ -154,7 +144,7 @@ describe('GameStateService', () => {
     });
 
     it('should give minion a name and set to idle', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       const minion = service.minions()[0];
       expect(minion).toBeTruthy();
@@ -164,7 +154,7 @@ describe('GameStateService', () => {
     });
 
     it('should give minion an appearance', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       const minion = service.minions()[0];
       expect(minion.appearance).toBeTruthy();
@@ -194,47 +184,9 @@ describe('GameStateService', () => {
     });
   });
 
-  describe('notoriety', () => {
-    it('should start at 0', () => {
-      expect(service.notoriety()).toBe(0);
-    });
-
-    it('should increase when tasks are completed', () => {
-      const mission = service.missionBoard()[0];
-      service.acceptMission(mission.id);
-      const task = service.activeMissions()[0];
-
-      for (let i = 0; i < task.clicksRequired; i++) {
-        service.clickTask(task.id);
-      }
-
-      expect(service.notoriety()).toBeGreaterThan(0);
-    });
-
-    it('should decrease when bribe is paid', () => {
-      // Manually set notoriety high
-      service.addGold(1000);
-      // Complete many tasks to build notoriety
-      for (let i = 0; i < 5; i++) {
-        const mission = service.missionBoard()[0];
-        service.acceptMission(mission.id);
-        const task = service.activeMissions().find(t => t.status === 'queued')!;
-        for (let j = 0; j < task.clicksRequired; j++) {
-          service.clickTask(task.id);
-        }
-      }
-
-      const notBefore = service.notoriety();
-      expect(notBefore).toBeGreaterThan(0);
-
-      service.payBribe();
-      expect(service.notoriety()).toBeLessThan(notBefore);
-    });
-  });
-
   describe('computed signals', () => {
-    it('nextMinionCost should be 50 for first minion', () => {
-      expect(service.nextMinionCost()).toBe(50);
+    it('nextMinionCost should be 75 for first minion', () => {
+      expect(service.nextMinionCost()).toBe(75);
     });
 
     it('canHireMinion should be false with 0 gold', () => {
@@ -242,12 +194,12 @@ describe('GameStateService', () => {
     });
 
     it('canHireMinion should be true with enough gold', () => {
-      service.addGold(50);
+      service.addGold(75);
       expect(service.canHireMinion()).toBe(true);
     });
 
     it('idleMinions should track idle minions', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       expect(service.idleMinions().length).toBe(1);
       expect(service.workingMinions().length).toBe(0);
@@ -267,7 +219,7 @@ describe('GameStateService', () => {
       // Accept a mission, then hire a minion and assign to matching department
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
 
       // Reassign minion to the task's department so auto-assign can work
@@ -282,7 +234,7 @@ describe('GameStateService', () => {
     it('should complete task and free minion via completeTaskByTimer', () => {
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
 
       // Reassign minion to matching department
@@ -335,7 +287,6 @@ describe('GameStateService', () => {
       expect(service.gold()).toBe(0);
       expect(service.minions().length).toBe(0);
       expect(service.completedCount()).toBe(0);
-      expect(service.notoriety()).toBe(0);
       expect(service.missionBoard().length).toBeGreaterThan(0);
       expect(service.activeMissions().length).toBe(0);
     });
@@ -354,14 +305,14 @@ describe('GameStateService', () => {
     });
 
     it('should add notification when minion is hired', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       const minionNotif = service.notifications().find(n => n.type === 'minion');
       expect(minionNotif).toBeTruthy();
     });
 
     it('should dismiss notification by id', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       const notif = service.notifications()[0];
       service.dismissNotification(notif.id);
@@ -372,52 +323,25 @@ describe('GameStateService', () => {
   // ─── Phase 2: Expanded tests ──────────────────
 
   describe('awardGold (via clickTask completion)', () => {
-    it('should award full gold at 0 notoriety', () => {
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+    it('should award full gold at baseline', () => {
+      const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
       const reward = task.goldReward;
 
       completeTaskByClicking(service, task.id);
-      // At 0 notoriety, gold awarded equals reward (possibly + click-gold bonus at level 0 = 1x)
+      // At baseline, gold awarded equals reward (possibly + click-gold bonus at level 0 = 1x)
       expect(service.gold()).toBe(reward);
     });
 
-    it('should apply notoriety gold penalty at high notoriety', () => {
-      // Grab board missions from the already-initialized game, then reload
-      // with high notoriety so we have both missions and penalty in place.
-      const board = service.missionBoard();
-      service.loadSnapshot(makeSaveData({ notoriety: 80, missionBoard: board }));
-
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp && m.goldReward > 0)!;
-      service.acceptMission(mission.id);
-      const task = service.activeMissions().find(t => t.id === mission.id)!;
-      const reward = task.goldReward;
-
-      completeTaskByClicking(service, task.id);
-
-      // penalty at 80 = (80-35)/65*0.30 ≈ 20.7%, so gold < full reward
-      expect(service.gold()).toBeLessThan(reward);
-      expect(service.gold()).toBeGreaterThan(0);
-    });
-
     it('should increase department XP on task completion', () => {
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const mission = service.missionBoard()[0];
       const category = mission.template.category;
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
 
       completeTaskByClicking(service, task.id);
       expect(service.departments()[category].xp).toBeGreaterThan(0);
-    });
-
-    it('should increase notoriety on task completion', () => {
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
-      service.acceptMission(mission.id);
-      const task = service.activeMissions().find(t => t.id === mission.id)!;
-
-      completeTaskByClicking(service, task.id);
-      expect(service.notoriety()).toBeGreaterThan(0);
     });
   });
 
@@ -428,7 +352,7 @@ describe('GameStateService', () => {
       const power = service.clickPower();
       expect(power).toBeGreaterThan(1);
 
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
       const clicksBefore = task.clicksRemaining;
@@ -441,7 +365,7 @@ describe('GameStateService', () => {
     });
 
     it('should not click a task that is already complete', () => {
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
 
@@ -454,7 +378,7 @@ describe('GameStateService', () => {
 
     it('should not click a minion-assigned task', () => {
       setupGameWithMinions(service, 1);
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
 
       // Reassign minion to matching department
@@ -475,7 +399,7 @@ describe('GameStateService', () => {
       service.addGold(10_000);
       service.purchaseUpgrade('click-gold'); // +15% gold
 
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp && m.goldReward > 0)!;
+      const mission = service.missionBoard().find(m => m.goldReward > 0)!;
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
       const baseReward = task.goldReward;
@@ -484,33 +408,6 @@ describe('GameStateService', () => {
       // With click-gold level 1, bonus = 1 + 0.15 = 1.15x, so gold >= round(reward * 1.15)
       const expectedMin = Math.round(baseReward * 1.15);
       expect(service.gold()).toBeGreaterThanOrEqual(expectedMin - service.nextMinionCost());
-    });
-  });
-
-  describe('cover op completion', () => {
-    it('should reduce notoriety and award no gold when completing a cover op by clicking', () => {
-      // First build some notoriety
-      for (let i = 0; i < 5; i++) {
-        const m = service.missionBoard().find(t => !t.isCoverOp && !t.isBreakoutOp);
-        if (!m) break;
-        service.acceptMission(m.id);
-        completeTaskByClicking(service, m.id);
-      }
-      const notorietyBefore = service.notoriety();
-      expect(notorietyBefore).toBeGreaterThan(0);
-
-      // Now find or force a cover op
-      const coverMission = service.missionBoard().find(m => m.isCoverOp);
-      if (coverMission) {
-        const goldBefore = service.gold();
-        service.acceptMission(coverMission.id);
-        completeTaskByClicking(service, coverMission.id);
-
-        // Cover ops don't award gold (goldReward = 0)
-        expect(service.gold()).toBe(goldBefore);
-        // Notoriety should decrease
-        expect(service.notoriety()).toBeLessThan(notorietyBefore);
-      }
     });
   });
 
@@ -589,7 +486,7 @@ describe('GameStateService', () => {
     it('should increase with completedCount', () => {
       // Complete several tasks
       for (let i = 0; i < 10; i++) {
-        const m = service.missionBoard().find(t => !t.isCoverOp && !t.isBreakoutOp);
+        const m = service.missionBoard()[0];
         if (!m) break;
         service.acceptMission(m.id);
         completeTaskByClicking(service, m.id);
@@ -598,12 +495,10 @@ describe('GameStateService', () => {
     });
 
     it('should cap at 20', () => {
-      // Formula: min(20, floor(sqrt(completed/2.5)) + 1)
-      // To reach 20: sqrt(c/2.5) + 1 >= 20 → c >= 2.5 * 19^2 = 902.5
-      // We can test the formula directly
-      // At completed = 1000, floor(sqrt(1000/2.5)) + 1 = floor(20) + 1 = 21, capped at 20
-      // We test via snapshot
-      const saveData = makeSaveData({ completedCount: 1000 });
+      // Formula: min(20, floor(sqrt(completed/5)) + 1)
+      // To reach 20: sqrt(c/5) >= 19 → c >= 5 * 19^2 = 1805
+      // At completed = 2000, floor(sqrt(2000/5)) + 1 = floor(20) + 1 = 21, capped at 20
+      const saveData = makeSaveData({ completedCount: 2000 });
       service.loadSnapshot(saveData);
       expect(service.villainLevel()).toBe(20);
     });
@@ -612,13 +507,13 @@ describe('GameStateService', () => {
       // completedCount=0 → level 1
       expect(service.villainLevel()).toBe(1);
 
-      // completedCount=3 → floor(sqrt(3/2.5)) + 1 = floor(1.095) + 1 = 2
-      let data = makeSaveData({ completedCount: 3 });
+      // completedCount=5 → floor(sqrt(5/5)) + 1 = floor(1) + 1 = 2
+      let data = makeSaveData({ completedCount: 5 });
       service.loadSnapshot(data);
       expect(service.villainLevel()).toBe(2);
 
-      // completedCount=10 → floor(sqrt(10/2.5)) + 1 = floor(2) + 1 = 3
-      data = makeSaveData({ completedCount: 10 });
+      // completedCount=20 → floor(sqrt(20/5)) + 1 = floor(2) + 1 = 3
+      data = makeSaveData({ completedCount: 20 });
       service.loadSnapshot(data);
       expect(service.villainLevel()).toBe(3);
     });
@@ -636,114 +531,10 @@ describe('GameStateService', () => {
     });
   });
 
-  describe('raid mechanics', () => {
-    it('should not trigger raid when notoriety < 60', () => {
-      spyOn(Math, 'random').and.returnValue(0.001);
-      service.checkRaidTrigger();
-      expect(service.raidActive()).toBe(false);
-    });
-
-    it('should trigger raid when notoriety >= 60 and random < 0.02', () => {
-      const data = makeSaveData({ notoriety: 70 });
-      service.loadSnapshot(data);
-      spyOn(Math, 'random').and.returnValue(0.01);
-      service.checkRaidTrigger();
-      expect(service.raidActive()).toBe(true);
-      expect(service.raidTimer()).toBeGreaterThan(0);
-    });
-
-    it('should not trigger raid when random >= 0.02', () => {
-      const data = makeSaveData({ notoriety: 70 });
-      service.loadSnapshot(data);
-      spyOn(Math, 'random').and.returnValue(0.5);
-      service.checkRaidTrigger();
-      expect(service.raidActive()).toBe(false);
-    });
-
-    it('should decrement raid timer each tick', () => {
-      const data = makeSaveData({ notoriety: 70 });
-      service.loadSnapshot(data);
-      spyOn(Math, 'random').and.returnValue(0.01);
-      service.checkRaidTrigger();
-
-      const timerAfterTrigger = service.raidTimer();
-      (Math.random as jasmine.Spy).and.returnValue(0.99);
-      service.processRaidCountdown(Date.now());
-      expect(service.raidTimer()).toBeLessThan(timerAfterTrigger);
-    });
-
-    it('should reduce notoriety by 20 when raid is repelled via defendRaid', () => {
-      const data = makeSaveData({ notoriety: 70 });
-      service.loadSnapshot(data);
-      spyOn(Math, 'random').and.returnValue(0.01);
-      service.checkRaidTrigger();
-
-      while (service.raidActive()) {
-        service.defendRaid();
-      }
-      expect(service.notoriety()).toBe(50);
-    });
-
-    it('should capture a minion when raid timer expires', () => {
-      const minion = makeMinion();
-      const data = makeSaveData({
-        notoriety: 70,
-        minions: [minion],
-        raidActive: true,
-        raidTimer: 1,
-      });
-      service.loadSnapshot(data);
-      expect(service.minions().length).toBe(1);
-
-      spyOn(Math, 'random').and.returnValue(0.99);
-      service.processRaidCountdown(Date.now());
-
-      expect(service.minions().length).toBe(0);
-      expect(service.capturedMinions().length).toBe(1);
-    });
-
-    it('should reduce notoriety by 15 when raid captures a minion', () => {
-      const minion = makeMinion();
-      const data = makeSaveData({
-        notoriety: 70,
-        minions: [minion],
-        raidActive: true,
-        raidTimer: 1,
-      });
-      service.loadSnapshot(data);
-
-      spyOn(Math, 'random').and.returnValue(0.99);
-      service.processRaidCountdown(Date.now());
-
-      expect(service.notoriety()).toBe(55);
-    });
-  });
-
-  describe('breakout missions', () => {
-    it('should generate breakout mission for captured minion', () => {
-      const minion = makeMinion();
-      const captured = makeCapturedMinion({ minion });
-      const data = makeSaveData({
-        capturedMinions: [captured],
-      });
-      service.loadSnapshot(data);
-
-      // Board may contain breakout missions after refill
-      spyOn(Math, 'random').and.returnValue(0.1); // 0.1 < 0.20 → breakout mission chance
-      service.refreshBoard();
-
-      const breakoutMission = service.missionBoard().find(m => m.isBreakoutOp);
-      if (breakoutMission) {
-        expect(breakoutMission.breakoutTargetId).toBe(minion.id);
-        expect(breakoutMission.goldReward).toBe(0);
-      }
-    });
-  });
-
   describe('minion XP & leveling', () => {
     it('should award minion XP after completing a task via minion', () => {
       setupGameWithMinions(service, 1);
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const mission = service.missionBoard()[0];
       const dept = mission.template.category;
       service.acceptMission(mission.id);
 
@@ -771,7 +562,7 @@ describe('GameStateService', () => {
       service.hireMinion();
       service.purchaseUpgrade('minion-xp'); // +20% XP
 
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+      const mission = service.missionBoard()[0];
       const dept = mission.template.category;
       service.acceptMission(mission.id);
 
@@ -805,7 +596,6 @@ describe('GameStateService', () => {
       expect(service.gold()).toBe(snapshot.gold);
       expect(service.minions().length).toBe(snapshot.minions.length);
       expect(service.completedCount()).toBe(snapshot.completedCount);
-      expect(service.notoriety()).toBe(snapshot.notoriety);
     });
 
     it('should preserve upgrade levels through snapshot', () => {
@@ -841,16 +631,9 @@ describe('GameStateService', () => {
       }
     });
 
-    it('should handle capturedMinions defaulting to [] on load', () => {
-      const data = makeSaveData();
-      delete (data as any).capturedMinions;
-      service.loadSnapshot(data);
-      expect(service.capturedMinions().length).toBe(0);
-    });
-
-    it('should include version 4 in snapshot', () => {
+    it('should include version 5 in snapshot', () => {
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(4);
+      expect(snapshot.version).toBe(6);
     });
   });
 
@@ -868,39 +651,6 @@ describe('GameStateService', () => {
       const goldBefore = service.gold();
       service.purchaseUpgrade('nonexistent');
       expect(service.gold()).toBe(goldBefore);
-    });
-  });
-
-  describe('payBribe edge cases', () => {
-    it('should not bribe when notoriety is 0', () => {
-      service.addGold(1000);
-      const goldBefore = service.gold();
-      service.payBribe();
-      expect(service.gold()).toBe(goldBefore);
-    });
-
-    it('should not bribe when gold is insufficient', () => {
-      const data = makeSaveData({ notoriety: 50 });
-      service.loadSnapshot(data);
-      // bribeCost(50) = 20 + 50*2 = 120
-      service.addGold(10);
-      service.payBribe();
-      expect(service.notoriety()).toBe(50);
-    });
-
-    it('should not reduce notoriety below 0', () => {
-      const data = makeSaveData({ notoriety: 5, gold: 1000 });
-      service.loadSnapshot(data);
-      service.payBribe();
-      expect(service.notoriety()).toBeGreaterThanOrEqual(0);
-    });
-  });
-
-  describe('defendRaid', () => {
-    it('should do nothing when no raid is active', () => {
-      expect(service.raidActive()).toBe(false);
-      service.defendRaid();
-      expect(service.raidActive()).toBe(false);
     });
   });
 
@@ -969,7 +719,7 @@ describe('GameStateService', () => {
     });
 
     it('should unlock department when hireMinion is called', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       const minion = service.minions()[0];
       expect(service.unlockedDepartments().has(minion.assignedDepartment)).toBe(true);
@@ -978,7 +728,7 @@ describe('GameStateService', () => {
 
     it('should unlock department when hireChosenMinion is called', () => {
       const candidates = service.generateHiringCandidates();
-      service.addGold(50);
+      service.addGold(75);
       service.hireChosenMinion(candidates[0]);
       expect(service.unlockedDepartments().has(candidates[0].assignedDepartment)).toBe(true);
     });
@@ -996,23 +746,23 @@ describe('GameStateService', () => {
     });
 
     it('should emit notification when a new department is unlocked', () => {
-      service.addGold(50);
+      service.addGold(75);
       const notifsBefore = service.notifications().length;
       service.hireMinion();
       const deptNotif = service.notifications().find(n => n.message.includes('Department opened'));
       expect(deptNotif).toBeTruthy();
     });
 
-    it('should persist unlockedDepartments in snapshot (version 4)', () => {
+    it('should persist unlockedDepartments in snapshot', () => {
       service.addGold(10_000);
       service.hireMinion();
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(4);
+      expect(snapshot.version).toBe(6);
       expect(snapshot.unlockedDepartments).toBeDefined();
       expect(snapshot.unlockedDepartments!.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('should restore unlockedDepartments from v4 save data', () => {
+    it('should restore unlockedDepartments from save data', () => {
       const data = makeSaveData({
         unlockedDepartments: ['schemes', 'heists'],
       });
@@ -1034,7 +784,7 @@ describe('GameStateService', () => {
     });
 
     it('should reset unlockedDepartments on initializeGame', () => {
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       expect(service.unlockedDepartments().size).toBeGreaterThan(0);
 
@@ -1044,7 +794,7 @@ describe('GameStateService', () => {
 
     it('should only generate new missions from unlocked departments', () => {
       // Start a fresh game, hire a minion to unlock one department
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       const unlocked = service.unlockedDepartments();
 
@@ -1057,8 +807,8 @@ describe('GameStateService', () => {
       // Trigger board refill directly (migrated from tickTime to GameTimerService)
       service.refreshBoard();
 
-      // All newly generated non-special missions should be from unlocked depts
-      const boardMissions = service.missionBoard().filter(m => !m.isCoverOp && !m.isBreakoutOp);
+      // All newly generated missions should be from unlocked depts
+      const boardMissions = service.missionBoard();
       expect(boardMissions.length).toBeGreaterThan(0);
       for (const m of boardMissions) {
         expect(unlocked.has(m.template.category)).toBe(true);
@@ -1090,7 +840,7 @@ describe('GameStateService', () => {
 
     it('should include at least one candidate from a locked department when locked depts exist', () => {
       // At start, no departments are unlocked. Unlock one via hire.
-      service.addGold(50);
+      service.addGold(75);
       service.hireMinion();
       const unlockedDept = service.minions()[0].assignedDepartment;
 
@@ -1178,7 +928,7 @@ describe('GameStateService', () => {
       service.loadSnapshot(data);
 
       // Complete a task via clicking and compare gold to base reward
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp && m.goldReward > 0)!;
+      const mission = service.missionBoard().find(m => m.goldReward > 0)!;
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
       const baseReward = task.goldReward;
@@ -1186,50 +936,19 @@ describe('GameStateService', () => {
       completeTaskByClicking(service, task.id);
 
       // With 8% heists bonus, gold = round(baseReward * 1.08)
-      // At 0 notoriety, no penalty
       const expected = Math.round(baseReward * 1.08);
       expect(service.gold()).toBe(expected);
     });
 
     it('should not apply Heists loot bonus at level 1', () => {
       // Departments start at level 1, so no bonus
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp && m.goldReward > 0)!;
+      const mission = service.missionBoard().find(m => m.goldReward > 0)!;
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
       const baseReward = task.goldReward;
 
       completeTaskByClicking(service, task.id);
       expect(service.gold()).toBe(baseReward);
-    });
-
-    it('should reduce notoriety gain with Research passive', () => {
-      // Set research dept to level 3 → -5% * (3-1) = -10% notoriety gain
-      const board = service.missionBoard();
-      const data = makeSaveData({
-        departments: {
-          schemes: { category: 'schemes', xp: 0, level: 1 },
-          heists: { category: 'heists', xp: 0, level: 1 },
-          research: { category: 'research', xp: 100, level: 3 },
-          mayhem: { category: 'mayhem', xp: 0, level: 1 },
-        },
-        missionBoard: board,
-      });
-      service.loadSnapshot(data);
-
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
-      service.acceptMission(mission.id);
-      completeTaskByClicking(service, mission.id);
-      const notorietyWithBonus = service.notoriety();
-
-      // Reset and do same without bonus
-      service.initializeGame();
-      const mission2 = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp && m.tier === mission.tier)!;
-      service.acceptMission(mission2.id);
-      completeTaskByClicking(service, mission2.id);
-      const notorietyWithout = service.notoriety();
-
-      // With research passive, notoriety gain should be less or equal
-      expect(notorietyWithBonus).toBeLessThanOrEqual(notorietyWithout);
     });
   });
 
@@ -1253,190 +972,207 @@ describe('GameStateService', () => {
     });
   });
 
-  // ─── Phase 0: Influence System ──────────
+  // ─── Quarterly tracking ───────────────────
 
-  describe('influence system', () => {
-    it('should start with 0 influence', () => {
-      expect(service.influence()).toBe(0);
+  describe('quarterly tracking', () => {
+    it('should start at Year 1 Q1 with all zeros', () => {
+      const progress = service.quarterProgress();
+      expect(progress.year).toBe(1);
+      expect(progress.quarter).toBe(1);
+      expect(progress.grossGoldEarned).toBe(0);
+
+      expect(progress.tasksCompleted).toBe(0);
     });
 
-    it('should earn influence from task completion scaled by tier', () => {
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
-      const tier = mission.tier;
+    it('should track gold earned and tasks completed when completing tasks', () => {
+      const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       completeTaskByClicking(service, mission.id);
 
-      const expectedInfluence = INFLUENCE_PER_TIER[tier];
-      expect(service.influence()).toBe(expectedInfluence);
+      const progress = service.quarterProgress();
+      expect(progress.grossGoldEarned).toBeGreaterThan(0);
+      expect(progress.tasksCompleted).toBe(1);
     });
 
-    it('should include influence in snapshot', () => {
-      // Set influence via task completion
-      const mission = service.missionBoard().find(m => !m.isCoverOp && !m.isBreakoutOp)!;
+    it('should include quarterProgress in snapshot', () => {
+      const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       completeTaskByClicking(service, mission.id);
-      expect(service.influence()).toBeGreaterThan(0);
 
       const snapshot = service.getSnapshot();
-      expect(snapshot.influence).toBe(service.influence());
+      expect(snapshot.quarterProgress).toBeDefined();
+      expect(snapshot.quarterProgress!.tasksCompleted).toBe(1);
     });
 
-    it('should restore influence from snapshot', () => {
-      const data = makeSaveData({ influence: 42 });
+    it('should restore quarterProgress from snapshot', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 2,
+          quarter: 3,
+          grossGoldEarned: 500,
+          tasksCompleted: 25,
+          isComplete: false,
+          missedQuarters: 1,
+          quarterResults: [],
+        },
+      });
       service.loadSnapshot(data);
-      expect(service.influence()).toBe(42);
-    });
-  });
 
-  // ─── Phase 0: Notoriety Upgrade Effects ──────────
-
-  describe('notoriety upgrade effects', () => {
-    it('bribe-network should reduce bribe cost', () => {
-      const board = service.missionBoard();
-      const data = makeSaveData({ notoriety: 50, gold: 10_000, missionBoard: board });
-      service.loadSnapshot(data);
-
-      // Calculate baseline bribe cost at notoriety=50
-      const baseCostAtN50 = bribeCost(50);
-
-      // Purchase bribe-network upgrade
-      service.purchaseUpgrade('bribe-network');
-      const goldBeforeBribe = service.gold();
-
-      service.payBribe();
-
-      const goldSpent = goldBeforeBribe - service.gold();
-      // With discount, should cost less than base
-      expect(goldSpent).toBeLessThan(baseCostAtN50);
-      expect(goldSpent).toBeGreaterThan(0);
+      const progress = service.quarterProgress();
+      expect(progress.year).toBe(2);
+      expect(progress.quarter).toBe(3);
+      expect(progress.grossGoldEarned).toBe(500);
     });
 
-    it('shadow-ops should reduce notoriety gain from tasks', () => {
-      const board = service.missionBoard();
-      // Complete a task WITHOUT shadow-ops to get baseline notoriety gain
-      const mission1 = board.find(m => !m.isCoverOp && !m.isBreakoutOp)!;
-      service.acceptMission(mission1.id);
-      completeTaskByClicking(service, mission1.id);
-      const baseNotorietyGain = service.notoriety();
-
-      // Reset and do it again WITH shadow-ops
-      service.initializeGame();
+    it('should reset quarterly progress on resetGame', () => {
       service.addGold(10_000);
-      service.purchaseUpgrade('shadow-ops');
+      service.purchaseUpgrade('click-power');
 
-      // Find a mission of the same tier
-      const mission2 = service.missionBoard().find(
-        m => !m.isCoverOp && !m.isBreakoutOp && m.tier === mission1.tier
-      )!;
-      service.acceptMission(mission2.id);
-      completeTaskByClicking(service, mission2.id);
-      const reducedNotorietyGain = service.notoriety();
+      service.resetGame();
 
-      expect(reducedNotorietyGain).toBeLessThanOrEqual(baseNotorietyGain);
+      const progress = service.quarterProgress();
+      expect(progress.year).toBe(1);
+      expect(progress.quarter).toBe(1);
+
     });
 
-    it('cover-spawn should increase cover-tracks mission probability', () => {
-      // Verify the upgrade effect is positive and would increase spawn chance
-      service.addGold(10_000);
-      service.purchaseUpgrade('cover-spawn');
-      const upgrade = service.upgrades().find(u => u.id === 'cover-spawn')!;
-      const effect = upgradeEffect(upgrade);
-      expect(effect).toBeGreaterThan(0);
-      expect(effect).toBeLessThanOrEqual(0.38); // effectMax
-    });
+    it('should advance quarter when called', () => {
+      // Manually set a completed quarter
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 1,
+          grossGoldEarned: 200,
 
-    it('lay-low should increase passive notoriety decay rate', () => {
-      // Set up with notoriety and lay-low upgrade
-      const board = service.missionBoard();
-      const data = makeSaveData({ notoriety: 30, gold: 10_000, missionBoard: board });
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 1, passed: true, goldEarned: 200, target: 75, tasksCompleted: 30 }],
+        },
+      });
       service.loadSnapshot(data);
-      service.purchaseUpgrade('lay-low');
+      service.advanceQuarter();
 
-      const notorietyBefore = service.notoriety();
+      const progress = service.quarterProgress();
+      expect(progress.quarter).toBe(2);
+      expect(progress.grossGoldEarned).toBe(0);
 
-      // Call processNotorietyDecay directly (migrated out of tickTime to GameTimerService)
-      // With lay-low level 1: effectRate=1.5, passive-decay formula = 1.5 * ln(2) ≈ 1.04
-      // Total per tick: BASE_NOTORIETY_DECAY (0.05) + 1.04 ≈ 1.09
-      for (let i = 0; i < 5; i++) {
-        service.processNotorietyDecay();
-      }
-
-      const notorietyAfter = service.notoriety();
-      expect(notorietyAfter).toBeLessThan(notorietyBefore);
-      const decay = notorietyBefore - notorietyAfter;
-      expect(decay).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  // ─── Phase 0: Passive Notoriety Decay ──────────
-
-  describe('passive notoriety decay', () => {
-    it('should passively decay notoriety over time (no upgrades)', () => {
-      const board = service.missionBoard();
-      const data = makeSaveData({ notoriety: 10, missionBoard: board });
-      service.loadSnapshot(data);
-
-      // BASE_NOTORIETY_DECAY = 0.05, so ~20 calls = 1 point
-      for (let i = 0; i < 22; i++) {
-        service.processNotorietyDecay();
-      }
-
-      expect(service.notoriety()).toBeLessThan(10);
-      expect(service.notoriety()).toBe(9);
+      expect(progress.tasksCompleted).toBe(0);
+      expect(progress.isComplete).toBe(false);
     });
 
-    it('should not decay notoriety below 0', () => {
-      const board = service.missionBoard();
-      const data = makeSaveData({ notoriety: 1, missionBoard: board });
+    it('should mark quarter complete when task budget is exhausted', () => {
+      // Load state with 29/30 tasks completed
+      const board = service.missionBoard().slice();
+      const data = makeSaveData({
+        missionBoard: board,
+        quarterProgress: {
+          year: 1,
+          quarter: 1,
+          grossGoldEarned: 100,
+
+          tasksCompleted: 29,
+          isComplete: false,
+          missedQuarters: 0,
+          quarterResults: [],
+        },
+      });
       service.loadSnapshot(data);
 
-      for (let i = 0; i < 50; i++) {
-        service.processNotorietyDecay();
-      }
+      // Complete one more task to hit 30/30
+      const mission = service.missionBoard()[0];
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
 
-      expect(service.notoriety()).toBe(0);
+      const progress = service.quarterProgress();
+      expect(progress.isComplete).toBe(true);
+      expect(progress.tasksCompleted).toBe(30);
+      expect(progress.quarterResults.length).toBe(1);
     });
 
-    it('should not decay notoriety during an active raid', () => {
-      const data = makeSaveData({ notoriety: 70, raidActive: true, raidTimer: 10 });
+    it('should advance Q3 to Q4', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 3,
+          grossGoldEarned: 1500,
+
+          tasksCompleted: 60,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      const progress = service.quarterProgress();
+      expect(progress.quarter).toBe(4);
+      expect(progress.year).toBe(1);
+      expect(progress.isComplete).toBe(false);
+    });
+
+    it('should advance Q4 to Year 2 Q1 and reset missedQuarters', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 4,
+          grossGoldEarned: 500,
+
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 2,
+          quarterResults: [{ year: 1, quarter: 4, passed: true, goldEarned: 500, target: 0, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+
+      const progress = service.quarterProgress();
+      expect(progress.quarter).toBe(1);
+      expect(progress.year).toBe(2);
+      expect(progress.missedQuarters).toBe(0);
+      expect(progress.isComplete).toBe(false);
+    });
+
+    it('should not advance quarter if not complete', () => {
+      service.advanceQuarter();
+      const progress = service.quarterProgress();
+      expect(progress.quarter).toBe(1);
+      expect(progress.year).toBe(1);
+    });
+
+    it('should increment missedQuarters when quarter target is missed', () => {
+      const board = service.missionBoard().slice();
+      const data = makeSaveData({
+        missionBoard: board,
+        quarterProgress: {
+          year: 1,
+          quarter: 1,
+          grossGoldEarned: 10,
+
+          tasksCompleted: 29,
+          isComplete: false,
+          missedQuarters: 0,
+          quarterResults: [],
+        },
+      });
       service.loadSnapshot(data);
 
-      const notorietyDuringRaid = service.notoriety();
-      for (let i = 0; i < 5; i++) {
-        service.processNotorietyDecay();
+      const mission = service.missionBoard()[0];
+      service.acceptMission(mission.id);
+      completeTaskByClicking(service, mission.id);
+
+      const progress = service.quarterProgress();
+      expect(progress.isComplete).toBe(true);
+      // Net gold (10 + mission reward) likely < 75 target, so should be missed
+      // unless the mission has a huge reward, in which case missedQuarters stays 0
+      const result = progress.quarterResults[0];
+      if (result.passed) {
+        expect(progress.missedQuarters).toBe(0);
+      } else {
+        expect(progress.missedQuarters).toBe(1);
       }
-      // processNotorietyDecay guards on raidActive — no decay
-      expect(service.notoriety()).toBe(notorietyDuringRaid);
-    });
-  });
-
-  // ─── Phase 0: Tier-scaled Cover-Op Reduction ──────────
-
-  describe('tier-scaled cover-op notoriety reduction', () => {
-    it('should reduce notoriety by 15 for a petty cover-op', () => {
-      // Build notoriety, then complete a petty cover op
-      for (let i = 0; i < 8; i++) {
-        const m = service.missionBoard().find(t => !t.isCoverOp && !t.isBreakoutOp);
-        if (!m) break;
-        service.acceptMission(m.id);
-        completeTaskByClicking(service, m.id);
-      }
-      const notorietyBefore = service.notoriety();
-      expect(notorietyBefore).toBeGreaterThan(15);
-
-      // Find or wait for a cover op
-      const coverMission = service.missionBoard().find(m => m.isCoverOp);
-      if (coverMission) {
-        service.acceptMission(coverMission.id);
-        completeTaskByClicking(service, coverMission.id);
-        // petty cover-ops reduce by COVER_TRACKS_REDUCTION.petty = 15
-        expect(service.notoriety()).toBe(Math.max(0, notorietyBefore - COVER_TRACKS_REDUCTION[coverMission.tier]));
-      }
-    });
-
-    it('should have higher reduction values for higher tiers', () => {
-      expect(COVER_TRACKS_REDUCTION.petty).toBeLessThan(COVER_TRACKS_REDUCTION.diabolical);
-      expect(COVER_TRACKS_REDUCTION.diabolical).toBeLessThan(COVER_TRACKS_REDUCTION.legendary);
     });
   });
 
@@ -1478,38 +1214,6 @@ describe('GameStateService', () => {
       if (purchased[0].type === 'UpgradePurchased') {
         expect(purchased[0].upgradeId).toBe(upgrade.id);
         expect(purchased[0].newLevel).toBe(1);
-      }
-    });
-
-    it('should emit ThreatChanged when completing a task that adds notoriety', () => {
-      const mission = service.missionBoard()[0];
-      service.acceptMission(mission.id);
-      completeTaskByClicking(service, mission.id);
-      const threat = emitted.filter(e => e.type === 'ThreatChanged');
-      expect(threat.length).toBeGreaterThanOrEqual(1);
-      if (threat[0].type === 'ThreatChanged') {
-        expect(threat[0].newNotoriety).toBeGreaterThan(threat[0].oldNotoriety);
-      }
-    });
-
-    it('should emit ThreatChanged when paying a bribe', () => {
-      // Build notoriety first
-      for (let i = 0; i < 5; i++) {
-        const m = service.missionBoard()[0];
-        if (!m) break;
-        service.acceptMission(m.id);
-        completeTaskByClicking(service, m.id);
-      }
-      const notBefore = service.notoriety();
-      if (notBefore === 0) return; // skip if no notoriety built
-
-      service.addGold(10000);
-      emitted = [];
-      service.payBribe();
-      const threat = emitted.filter(e => e.type === 'ThreatChanged');
-      expect(threat.length).toBe(1);
-      if (threat[0].type === 'ThreatChanged') {
-        expect(threat[0].newNotoriety).toBeLessThan(threat[0].oldNotoriety);
       }
     });
 
@@ -1558,54 +1262,13 @@ describe('GameStateService', () => {
       }
     });
 
-    it('should emit ThreatChanged when notoriety decays passively', () => {
-      // Set notoriety high enough that a single decay tick drops 1+ point
-      // BASE_NOTORIETY_DECAY = 0.05, so need 20 ticks to accumulate 1.0
-      for (let i = 0; i < 5; i++) {
-        const m = service.missionBoard()[0];
-        if (!m) break;
-        service.acceptMission(m.id);
-        completeTaskByClicking(service, m.id);
-      }
-      if (service.notoriety() === 0) return;
-
-      emitted = [];
-      // Tick enough times for decay accumulator to reach 1.0
-      for (let i = 0; i < 25; i++) {
-        service.processNotorietyDecay();
-      }
-      const threat = emitted.filter(e => e.type === 'ThreatChanged');
-      expect(threat.length).toBeGreaterThanOrEqual(1);
-      if (threat[0].type === 'ThreatChanged') {
-        expect(threat[0].newNotoriety).toBeLessThan(threat[0].oldNotoriety);
-      }
-    });
-
-    it('should emit ThreatChanged and RaidEnded when raid fails', () => {
-      setupGameWithMinions(service, 1);
-      service.loadSnapshot(makeSaveData({
-        notoriety: 50,
-        raidActive: true,
-        raidTimer: 1,
-      }));
-      emitted = [];
-      service.processRaidCountdown(Date.now()); // timer decrements to 0, raid fails
-
-      const threat = emitted.filter(e => e.type === 'ThreatChanged');
-      expect(threat.length).toBeGreaterThanOrEqual(1);
-      const raidEnded = emitted.filter(e => e.type === 'RaidEnded');
-      expect(raidEnded.length).toBe(1);
-    });
-
     it('should emit LevelUp for villain when completedCount crosses level threshold', () => {
-      // level = min(20, floor(sqrt(c/2.5)) + 1)
-      // Level 1: c < 2.5 → c in [0, 2]
-      // Level 2: sqrt(c/2.5) >= 1 → c >= 2.5 → c >= 3 (integer)
-      // Start at completedCount = 2 (still level 1), complete a task to cross to 3+
-      // Use initializeGame board (already populated), then set completedCount via loadSnapshot
-      // preserving board missions
+      // level = min(20, floor(sqrt(c/5)) + 1)
+      // Level 1: c < 5 → c in [0, 4]
+      // Level 2: sqrt(c/5) >= 1 → c >= 5
+      // Start at completedCount = 4 (still level 1), complete a task to cross to 5+
       const board = service.missionBoard().slice();
-      service.loadSnapshot(makeSaveData({ completedCount: 2, missionBoard: board }));
+      service.loadSnapshot(makeSaveData({ completedCount: 4, missionBoard: board }));
       emitted = [];
 
       const mission = service.missionBoard()[0];
@@ -1616,30 +1279,6 @@ describe('GameStateService', () => {
       expect(levelUps.length).toBe(1);
       if (levelUps[0].type === 'LevelUp') {
         expect(levelUps[0].newLevel).toBe(2);
-      }
-    });
-
-    it('should emit BreakoutCompleted when completing a breakout mission', () => {
-      const captured = makeCapturedMinion();
-      service.loadSnapshot(makeSaveData({
-        capturedMinions: [captured],
-      }));
-
-      // Find breakout mission on board (they spawn 20% of the time when minions captured)
-      // Since it's random, load a breakout directly into the player queue
-      const breakoutTask = makeBreakoutTask(captured.minion.id);
-      service.loadSnapshot(makeSaveData({
-        capturedMinions: [captured],
-        playerQueue: [breakoutTask],
-      }));
-      emitted = [];
-
-      completeTaskByClicking(service, breakoutTask.id);
-
-      const breakouts = emitted.filter(e => e.type === 'BreakoutCompleted');
-      expect(breakouts.length).toBe(1);
-      if (breakouts[0].type === 'BreakoutCompleted') {
-        expect(breakouts[0].minionId).toBe(captured.minion.id);
       }
     });
   });

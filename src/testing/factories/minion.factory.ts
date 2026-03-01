@@ -1,4 +1,4 @@
-import { Minion, CapturedMinion, MINION_NAMES } from '../../app/core/models/minion.model';
+import { Minion, MINION_NAMES } from '../../app/core/models/minion.model';
 import { TaskCategory } from '../../app/core/models/task.model';
 
 let _minionCounter = 0;
@@ -26,18 +26,6 @@ export function makeWorkingMinion(taskId: string, overrides: Partial<Minion> = {
     assignedTaskId: taskId,
     ...overrides,
   });
-}
-
-export function makeCapturedMinion(overrides: Partial<CapturedMinion> = {}): CapturedMinion {
-  const minion = makeMinion(overrides.minion ? overrides.minion : {});
-  const now = Date.now();
-  return {
-    minion,
-    capturedAt: now,
-    expiresAt: now + 300_000,
-    rescueDifficulty: minion.level,
-    ...overrides,
-  };
 }
 
 /** Reset factory counter (call in afterEach if needed) */

@@ -4,7 +4,7 @@ import { SaveData } from '../models/save-data.model';
 import { STORAGE_BACKEND } from './storage-backend';
 
 const STORAGE_KEY = 'minion-manager-save';
-const CURRENT_VERSION = 4;
+const CURRENT_VERSION = 6;
 
 @Injectable({ providedIn: 'root' })
 export class SaveService {
@@ -44,7 +44,7 @@ export class SaveService {
 
   private migrate(data: SaveData): SaveData {
     if (data.version < 2) {
-      data.capturedMinions = data.capturedMinions ?? [];
+      // v1 → v2: capturedMinions was added (now removed in v5)
       data.version = 2;
     }
     if (data.version < 3) {
@@ -75,11 +75,43 @@ export class SaveService {
       data.version = 3;
     }
     if (data.version < 4) {
-      // v3 → v4: Consolidate supplies + intel into influence
-      const resources = (data as any).resources;
-      data.influence = (resources?.supplies ?? 0) + (resources?.intel ?? 0);
+      // v3 → v4: Resources removed (influence removed in v6)
       delete (data as any).resources;
       data.version = 4;
+    }
+    if (data.version < 5) {
+      // v4 → v5: Remove notoriety system (notoriety, raids, captured minions, cover/breakout ops)
+      delete (data as any).notoriety;
+      delete (data as any).raidActive;
+      delete (data as any).raidTimer;
+      delete (data as any).capturedMinions;
+
+      // Strip cover-op and breakout-op tasks from queues and board
+      const stripOps = (tasks: any[]) =>
+        (tasks ?? []).filter((t: any) => !t.isCoverOp && !t.isBreakoutOp);
+      data.missionBoard = stripOps(data.missionBoard);
+      data.activeMissions = stripOps(data.activeMissions);
+      if (data.departmentQueues) {
+        for (const cat of ['schemes', 'heists', 'research', 'mayhem'] as const) {
+          data.departmentQueues[cat] = stripOps(data.departmentQueues[cat]);
+        }
+      }
+      data.playerQueue = stripOps(data.playerQueue);
+
+      // Remove notoriety upgrades from saved upgrade levels
+      const notorietyUpgradeIds = ['bribe-network', 'shadow-ops', 'cover-spawn', 'lay-low'];
+      if (data.upgradeLevels) {
+        data.upgradeLevels = data.upgradeLevels.filter(
+          u => !notorietyUpgradeIds.includes(u.id)
+        );
+      }
+
+      data.version = 5;
+    }
+    if (data.version < 6) {
+      // v5 → v6: Remove influence currency
+      delete (data as any).influence;
+      data.version = 6;
     }
     return data;
   }

@@ -3,9 +3,8 @@ import { expect, within, userEvent } from 'storybook/test';
 import { DrawerPanelComponent } from './drawer-panel.component';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
-import { Minion, CapturedMinion } from '../../../core/models/minion.model';
+import { Minion } from '../../../core/models/minion.model';
 import { createDefaultUpgrades } from '../../../core/models/upgrade.model';
-import { ThreatLevel } from '../../../core/models/notoriety.model';
 
 const makeDept = (cat: TaskCategory, level = 1, xp = 0): Department => ({
   category: cat,
@@ -51,29 +50,18 @@ type Story = StoryObj<DrawerPanelComponent>;
 export const Open: Story = {
   args: {
     initiallyOpen: true,
-    notoriety: 25,
-    threatLevel: 'suspicious' as ThreatLevel,
-    goldPenalty: 5,
-    raidActive: false,
-    raidTimer: 0,
     gold: 150,
     minions: defaultMinions(),
     departments: defaultDepts(),
     upgrades: createDefaultUpgrades(),
-    capturedMinions: [],
-    currentTime: Date.now(),
-    nextMinionCost: 50,
+    nextMinionCost: 75,
     canHireMinion: true,
     unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    // Default tab is Notoriety — verify it renders
-    expect(canvas.getByText('Notoriety')).toBeTruthy();
-
-    // Click "Minions" tab (hire panel)
-    await userEvent.click(canvas.getByText(/Minions/));
+    // Default tab is Minions — verify it renders
     expect(canvas.getByText('Hire Minion')).toBeTruthy();
 
     // Click "Upgrades" tab
@@ -89,31 +77,20 @@ export const Open: Story = {
 export const Closed: Story = {
   args: {
     initiallyOpen: false,
-    notoriety: 25,
-    threatLevel: 'suspicious' as ThreatLevel,
-    goldPenalty: 5,
-    raidActive: false,
-    raidTimer: 0,
     gold: 150,
     minions: defaultMinions(),
     departments: defaultDepts(),
     upgrades: createDefaultUpgrades(),
-    capturedMinions: [],
-    currentTime: Date.now(),
-    nextMinionCost: 50,
+    nextMinionCost: 75,
     canHireMinion: true,
     unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
   },
 };
 
-export const WithRaidAlert: Story = {
+export const WithUpgrades: Story = {
   args: {
     initiallyOpen: true,
-    notoriety: 85,
-    threatLevel: 'infamous' as ThreatLevel,
-    goldPenalty: 40,
-    raidActive: true,
-    raidTimer: 25,
+    initialTab: 'upgrades',
     gold: 800,
     minions: defaultMinions(),
     departments: {
@@ -123,46 +100,8 @@ export const WithRaidAlert: Story = {
       mayhem: makeDept('mayhem', 2, 20),
     },
     upgrades: createDefaultUpgrades().map((u, i) => i < 3 ? { ...u, currentLevel: 2 } : u),
-    capturedMinions: [],
-    currentTime: Date.now(),
     nextMinionCost: 120,
     canHireMinion: true,
     unlockedDepartments: new Set(['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[]),
-  },
-};
-
-export const WithPrisonTimer: Story = {
-  args: {
-    initiallyOpen: true,
-    initialTab: 'prison',
-    notoriety: 60,
-    threatLevel: 'hunted' as ThreatLevel,
-    goldPenalty: 20,
-    raidActive: false,
-    raidTimer: 0,
-    gold: 400,
-    minions: [
-      makeMinion({ name: 'Grim', specialty: 'schemes', assignedDepartment: 'schemes', level: 3 }),
-    ],
-    departments: defaultDepts(),
-    upgrades: createDefaultUpgrades(),
-    capturedMinions: [
-      {
-        minion: makeMinion({
-          name: 'Skulk',
-          appearance: { color: '#1a5276', accessory: 'helmet' },
-          specialty: 'heists',
-          assignedDepartment: 'heists',
-          level: 2,
-        }),
-        capturedAt: Date.now() - 120_000,
-        expiresAt: Date.now() + 180_000,
-        rescueDifficulty: 1,
-      } as CapturedMinion,
-    ],
-    currentTime: Date.now(),
-    nextMinionCost: 80,
-    canHireMinion: true,
-    unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
   },
 };

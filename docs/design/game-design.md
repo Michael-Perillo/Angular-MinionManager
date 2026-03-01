@@ -3,7 +3,7 @@
 > Sections marked **[CURRENT]** describe implemented mechanics with exact values from code.
 > Sections marked **[PROPOSED]** describe future designs — not yet built.
 >
-> **See also:** [game-design-vision.md](game-design-vision.md) for the high-level roguelike management sim vision, including multi-phase scaling, card-based automation, rival orgs, and run structure. This document covers current mechanics and near-term proposals; the vision doc covers the long-term strategic direction.
+> **See also:** [game-design-vision.md](game-design-vision.md) for the high-level roguelike vision, including the quarterly review structure, card-based automation, and meta-progression. This document covers current mechanics and near-term proposals; the vision doc covers the long-term strategic direction.
 
 ---
 
@@ -11,38 +11,35 @@
 
 ### Event-Driven Architecture
 
-The game uses an **event-driven architecture** powered by `GameEventService` (15 event types) and `GameTimerService` (replaces the old monolithic `TimerService`/`tickTime()`).
+The game uses an **event-driven architecture** powered by `GameEventService` (15 event types) and `GameTimerService`.
 
-Instead of a single tick function running 9 sequential steps, each game system runs on its own independent timer or event subscription:
+Instead of a single tick function, each game system runs on its own independent timer or event subscription:
 
-- **Task completion** — per-task timers scheduled on assignment, awards gold/XP/notoriety/Influence on completion
+- **Task completion** — per-task timers scheduled on assignment, awards gold/XP on completion
 - **Board refresh** — dynamic interval (~3s base, reduced by upgrades/passives), fills empty mission board slots
 - **Auto-assign** — debounced microtask triggered by `MinionIdle`, `TaskQueued`, `MinionHired`, and `MinionReassigned` events
-- **Notoriety decay** — 1s interval, applies passive decay (0.05/tick base, boosted by Lay Low Protocol upgrade)
-- **Raid checks** — 1s interval when notoriety >= 60, 2% chance per tick; separate countdown timer for active raids
-- **Prison expiry** — per-minion 5-minute timer scheduled on capture
 - **Special Op expiry** — per-task 30s timer scheduled on spawn
 - **Notification cleanup** — 1s interval, removes notifications older than 4s
 - **Auto-save** — 30s interval
 
-`GameEventService` emits typed events (`TaskCompleted`, `MinionIdle`, `ThreatChanged`, `BoardRefreshed`, `MinionCaptured`, `LevelUp`, `SpecialOpSpawned`, `RaidStarted`, `RaidEnded`, `TaskQueued`, `TaskAssigned`, `MinionHired`, `MinionReassigned`, `UpgradePurchased`, `BreakoutCompleted`) that any system can subscribe to. This architecture unblocks Phase 1 — rule triggers are event subscriptions, not tick polling.
+`GameEventService` emits typed events (`TaskCompleted`, `MinionIdle`, `BoardRefreshed`, `LevelUp`, `SpecialOpSpawned`, `TaskQueued`, `TaskAssigned`, `MinionHired`, `MinionReassigned`, `UpgradePurchased`) that any system can subscribe to. This architecture unblocks the rules engine — rule triggers are event subscriptions, not tick polling.
 
-### The Satisfactory Loop
-
-The core progression follows a "Satisfactory-style" automation escalation:
+### The Core Progression
 
 ```
 Click manually to complete tasks
   → Earn gold to hire minions
     → Minions automate task completion
       → Upgrade minions (speed, efficiency, XP)
-        → Unlock harder tiers (more gold, more notoriety)
+        → Unlock harder tiers (more gold per task)
           → Need more minions to handle volume
             → Expand departments for passive bonuses
-              → Repeat at higher scale
+              → Hit quarterly gold targets → earn card packs
+                → Build automation rules from cards
+                  → Survive Year-End boss reviews
 ```
 
-**Key tension:** Higher-tier tasks earn more gold but generate more notoriety, creating a risk/reward curve that forces the player to manage threat level alongside expansion.
+**Key tension:** Each quarter has a task budget and a gold target. Players must earn enough gross gold from tasks to meet the target. Spending on upgrades and hires doesn't count against the target — so the tension is purely about earning efficiency.
 
 ### Player Actions
 
@@ -50,9 +47,7 @@ Click manually to complete tasks
 - **Drag missions** from the mission board to department queues or player workbench
 - **Hire minions** (pick one of two candidates)
 - **Purchase upgrades** from the upgrade shop
-- **Bribe authorities** to reduce notoriety
-- **Defend against raids** (click-to-defend during 10s countdown)
-- **Rescue captured minions** via breakout missions
+- **Monitor quarterly progress** (tasks remaining, gold earned vs target)
 
 ---
 
@@ -60,158 +55,107 @@ Click manually to complete tasks
 
 ### Gold [CURRENT]
 
-The primary currency. Earned from completing tasks, spent on everything.
+The **only** currency. Earned from completing tasks, spent on everything.
 
 **Earning formula:**
 ```
 finalGold = floor(
-  floor(baseGold * (1 + (villainLevel - 1) * 0.10))  // +10% per villain level
+  floor(baseGold * (1 + (villainLevel - 1) * 0.07))  // +7% per villain level
   * minionEfficiencyMultiplier                         // minion stat bonus
   * (1 + (heistsLevel - 1) * 0.04)                    // Heists dept passive
-  * (1 - notorietyPenalty)                             // 0-30% penalty
 )
 ```
 
-**Base gold by tier:**
+**Base values by tier (all scale by +7%/villain level):**
 
 | Tier | Base Gold | Base Time (s) | Base Clicks |
 |------|-----------|---------------|-------------|
-| Petty | 5 | 8 | 10 |
-| Sinister | 15 | 20 | 20 |
-| Diabolical | 40 | 45 | 35 |
-| Legendary | 100 | 75 | 50 |
+| Petty | 5 | 10 | 12 |
+| Sinister | 15 | 25 | 25 |
+| Diabolical | 40 | 55 | 40 |
+| Legendary | 100 | 90 | 55 |
 
 Special Operations grant +50% bonus gold (1.5x multiplier).
 
 **Spending sinks:**
-- Hiring minions: `50 * 1.5^(numMinions)` base cost (reduced by Recruitment Agency upgrade)
-- Upgrades: 11 upgrades with scaling costs (`baseCost * costScale^currentLevel`)
-- Bribes: `20 + (notoriety * 2)` gold per 10-point notoriety reduction
+- Hiring minions: `75 * 1.6^(numMinions)` base cost (reduced by Recruitment Agency upgrade)
+- Upgrades: 10 operational upgrades with scaling costs (`baseCost * costScale^currentLevel`)
+- Card packs (when available — see Quarterly Rewards)
+- Strategic upgrades (gold-priced, see Card System)
 
-### Notoriety [CURRENT]
+### Quarterly Targets [PROPOSED]
 
-The core tension mechanic. Rises from completing tasks, causes gold penalties and hero raids.
+The game's run structure is built around **quarterly performance reviews**. Each quarter has:
 
-**Notoriety gain per task tier:**
+1. **Task budget** — the quarter ends after N task completions
+2. **Gold target** — gross gold earned from tasks must meet this threshold
 
-| Tier | Base Notoriety |
-|------|---------------|
-| Petty | +2 |
-| Sinister | +5 |
-| Diabolical | +12 |
-| Legendary | +25 |
+**Gold target = total gold earned from completed tasks this quarter.** Spending on upgrades/hires does NOT count against the target. The tension is purely about earning efficiency: can your build generate enough gold per task?
 
-**Reduction:** Research dept passive (-5% gain per level above 1), minimum 1 per task. Hard cap at 100.
+**Year 1 targets:**
 
-**Threat levels:**
+| Quarter | Task Budget | Gold Target | Pacing Notes |
+|---------|------------|-----------------|-------------|
+| Q1 | 30 tasks | 75g | Tutorial quarter. Mostly petty. First hire costs 75g. |
+| Q2 | 40 tasks | 400g | Sinister unlocking. 1-2 minions on sinister. |
+| Q3 | 60 tasks | 1,200g | Mid-game. VL scaling + efficiency needed. 3-4 minions. |
+| Q4 | Boss Review | — | Survive the reviewer's challenge. |
 
-| Level | Range | Effect |
-|-------|-------|--------|
-| Unknown | 0–14 | No penalty |
-| Suspicious | 15–34 | Warning zone |
-| Wanted | 35–59 | Gold penalty starts (linear 0–30%) |
-| Hunted | 60–84 | Raids active (2% per tick) |
-| Infamous | 85–100 | Maximum danger |
-
-**Gold penalty curve:** 0% below 35 notoriety, then linear from 0% to 30% at 100: `min(0.30, ((notoriety - 35) / 65) * 0.30)`
-
-**Passive decay:** 0.05 notoriety/tick base rate (boosted by Lay Low Protocol upgrade: 1.5x multiplier per level). Decay is continuous — notoriety slowly drops even without player action.
-
-**Notoriety reduction tools:**
-- **Passive decay:** 0.05/tick base (boosted by Lay Low Protocol)
-- **Bribe:** costs `20 + (notoriety * 2)` gold, removes 10 notoriety (reduced by Bribe Network: -10%/level)
-- **Cover Your Tracks missions:** tier-scaled reduction (petty/sinister -15, diabolical -25, legendary -40), spawn rate 12% base when notoriety > 20 (boosted by Deep Cover: +8%/level)
-- **Shadow Operations upgrade:** -6% notoriety gain from all tasks per level
-- **Raid defense success:** -20 notoriety
-
-**Hero raids:** 2% chance per tick when notoriety >= 60. 10-second defense countdown. Failure captures a random minion for 5 minutes (permanent loss if not rescued).
-
-### ~~Supplies~~ [CONSOLIDATED INTO INFLUENCE]
-
-> Supplies was a secondary resource produced by Research department tasks. It has been merged into the unified **Influence** currency. Save migration maps `{ supplies, intel }` → `{ influence: supplies + intel }`.
-
-### ~~Intel~~ [CONSOLIDATED INTO INFLUENCE]
-
-> Intel was a secondary resource produced by Schemes department tasks. It has been merged into the unified **Influence** currency. Save migration maps `{ supplies, intel }` → `{ influence: supplies + intel }`.
-
-### Influence [CURRENT — replaces Supplies, Intel, Loot, Chaos]
-
-Unified strategic currency earned from completing tasks in **any** department. Spent on card packs and automation investments.
-
-| Tier | Influence Earned |
-|------|-----------------|
-| Petty | 1 |
-| Sinister | 3 |
-| Diabolical | 5 |
-| Legendary | 8 |
-
-**Primary sink:** Card packs (Standard 15, Jumbo 40, Rare 75 Influence). See [game-design-vision.md](game-design-vision.md) for pack details.
-
-**Why unified:** Departments are differentiated by passives, tier gating, and specialty bonuses — not by which resource they produce. A single strategic currency is simpler to balance, easier to understand, and scales naturally across Phases 2 and 3.
-
-### ~~Loot~~ / ~~Chaos~~ [DROPPED]
-
-> **Design change:** Loot (Heists) and Chaos (Mayhem) were never implemented and have been dropped from the design. The 4-resource-per-department model was replaced by the Gold + Influence two-currency model. Equipment (old Loot sink) is replaced by the card system. World events and intimidation actions (old Chaos sinks) may be revisited as card effects or Influence-funded actions.
+**Year 2+ scaling:**
+- Task budgets: +10 tasks/quarter/year
+- Gold targets: ×1.8 per year
 
 ---
 
-## Automation Escalation [PROPOSED]
+## Quarterly Review System [PROPOSED]
 
-A structured progression from manual gameplay to empire management:
+### Year-End Boss Reviews
 
-### Tier 1 — Manual (Early Game)
-- Player clicks to complete tasks in their workbench
-- Earn gold to hire first minion
-- Learn the basic loop: accept mission → complete → earn gold → repeat
+Q4 is a **boss review** — a named corporate manager evaluates your operation under constraints.
 
-### Tier 2 — Departments (Early-Mid)
-- 2–3 minions auto-working in department queues
-- Player manages mission routing (drag tasks to the right department)
-- Unlock all 4 departments through hiring
-- Department passives begin to matter
+Each reviewer has:
+1. **A base challenge** (a target or survival condition active during the review)
+2. **A personality** (determines modifier types)
+3. **Extra modifiers** for each missed quarterly target (0-3 stacking)
 
-### Tier 3 — Upgrades (Mid Game)
-- Speed/efficiency upgrades accelerate minion output
-- Board slots and refresh rate upgrades increase mission throughput
-- Player focuses on queue optimization and specialty matching
-- Department levels unlock higher-tier missions
+**Example Reviewers:**
 
-### Tier 4 — Card-Based Automation [PROPOSED — replaces Tech Tree]
+| Reviewer | Title | Base Challenge | Missed-Q Modifier |
+|----------|-------|----------------|-------------------|
+| Margaret Thornton | VP of Compliance | "Only Sinister+ tasks count" | "Schemes dept under audit (locked)" |
+| Viktor Grimes | Head of Internal Affairs | "No new hires during review" | "Minion speed halved" |
+| Director Blackwell | Chief Risk Officer | "Raids every 30 seconds" | "Random minion quits each raid" |
+| Patricia Hale | SVP Strategic Oversight | "Board refresh frozen" | "Upgrade shop locked" |
+| The Auditor | ??? | "Gold drains at 5g/s. Earn 500g net." | "Only petty tasks available" |
 
-> **Design change:** The Supplies-funded tech tree has been replaced by the card-based rule building system. See [game-design-vision.md](game-design-vision.md) for full details.
+**Modifier categories:** Task constraints (restrict what works), Operational constraints (restrict how you work), Survival challenges (active threats during review).
 
-- Collect **universal logic cards** (Trigger, Condition, Action, Modifier) through milestones and Influence-purchased packs
-- Phase 1 card pool: **29 cards** (8 Triggers, 10 Conditions, 8 Actions, 5 Modifiers). Chain Reaction deferred pending event-driven architecture redesign.
-- Arrange cards into **automation rules** (WHEN → IF → THEN templates)
-- **Rule evaluation:** All-match + priority claiming. All rules evaluate every event cycle; higher-priority rules claim units first, lower-priority rules get the remainder.
-- **Default rule:** Built-in `WHEN Idle → Assign to Work` (equivalent to current auto-assign). Always active, always lowest priority, cannot be removed. Game plays identically before player builds any card rules.
-- Unlock **strategic upgrades** with Influence: rule slots, condition depth, Logic Gates (OR/NOT/nested boolean)
-- AND-clause multipliers reward stacking conditions: 1x → 1.5x → 2.5x → 5x (base), extending to 8x and 12x with Condition Depth upgrade
-- Modifier cards amplify rule output — stacking creates Balatro-style emergent power
-- Modifiers only affect the rule's **direct output** at its operating level (no cascading to child levels)
-- 12 deterministic milestone card drops ensure minimum viable card set by ~hour 1
-- Player-authored automation replaces purchased toggles — you build the rules, not buy them
+### Review Mechanics
 
-### Tier 5 — Multi-Phase Scaling [PROPOSED — replaces Empire/Prestige]
+- The review is a special quarter with its own task budget and gold target, played under the reviewer's modifiers
+- Miss the target → **run over**. This is the loss condition.
+- Survive → next year begins with escalated targets
+- Each missed Q1-Q3 target adds a modifier to the boss, stacking difficulty
 
-> **Design change:** Department managers and prestige system replaced by the roguelike run structure with Division/Region scaling and Infamy Points meta-progression. See [game-design-vision.md](game-design-vision.md).
+### Rewards
 
-- Your automated Phase 1 kanban board becomes a **Division** card at Phase 2 scale
-- The **same universal cards** work at division level — card logic stays the same, context changes (minion→division)
-- Divisions become **Region** units at Phase 3 — same cards again, operating on regions/imperatives
-- **Operational upgrades** (Gold) are per-unit — each new division needs its own investment
-- **Strategic upgrades** (Influence) are global — rule slots, logic gates apply everywhere
-- **Infamy Points** (meta-currency) replace the old prestige system — earned per run, spent on permanent unlocks
+| Event | Reward |
+|-------|--------|
+| Pass Q1 | Card pack (3 shown, pick 1) |
+| Pass Q2 | Card pack (4 shown, pick 1) + upgrade discount |
+| Pass Q3 | Card pack (5 shown, pick 2) |
+| Survive Year-End | Card pack (5 shown, pick 2) + next year |
+| Miss Q1/Q2/Q3 | No card pack, extra boss modifier |
 
 ---
 
-## Department System [CURRENT + PROPOSED]
+## Department System [CURRENT]
 
-### Departments [CURRENT]
+### Departments
 
 | Department | Icon | Passive | Scaling |
 |------------|------|---------|---------|
-| Research | 🧪 | Covert Ops — reduces notoriety gain | -5% per level above 1 |
+| Research | 🧪 | Covert Ops — reduced task time | -5% per level above 1 |
 | Schemes | 🗝️ | Intel Network — faster board refresh | -8% per level above 1 |
 | Heists | 💎 | Loot Bonus — bonus gold from all tasks | +4% per level above 1 |
 | Mayhem | 💥 | Intimidation — increased Special Op chance | +3% per level above 1 |
@@ -229,8 +173,8 @@ A structured progression from manual gameplay to empire management:
 
 **XP earned per task tier (base):**
 
-| Tier | Dept XP | Modified by Dept Funding upgrade (+15%/level) |
-|------|---------|-----------------------------------------------|
+| Tier | Dept XP | Modified by Dept Funding upgrade |
+|------|---------|--------------------------------|
 | Petty | 5 | Yes |
 | Sinister | 12 | Yes |
 | Diabolical | 25 | Yes |
@@ -240,26 +184,18 @@ A structured progression from manual gameplay to empire management:
 
 Departments use a **two-tier unlock system**:
 
-1. **Department unlock** (Tier 1) — Hire a minion with that department's specialty. The department appears on the kanban board, mobile carousel, and mission board. Persists even if the minion is later lost.
-2. **Filter unlock** (Tier 2) — Department reaches **level 2**. The mission board category filter tab changes from a 🔒 lock icon to the department's emoji icon and becomes clickable. Before level 2, the filter tab is visible but locked — nudging the player to level their departments.
-
-This creates a mini-progression within each department: first you see missions from that department on the board, but you can't filter for them until you've invested enough to reach level 2.
-
-### ~~Department Specialization Trees~~ [DROPPED]
-
-> **Design change:** Per-department resource trees were dropped alongside the 4-resource model. Department differentiation comes from passives, tier gating, and specialty bonuses. Automation comes from the card-based rule system, not resource-funded trees. See [game-design-vision.md](game-design-vision.md).
+1. **Department unlock** — Hire a minion with that department's specialty. Persists even if the minion is later lost.
+2. **Filter unlock** — Department reaches **level 2**. The mission board category filter becomes clickable.
 
 ---
 
-## Minion System [CURRENT + PROPOSED]
+## Minion System [CURRENT]
 
 ### Hiring [CURRENT]
 
-Pick-one-of-two choice system. `generateHiringCandidates()` creates 2 minions with random stats/specialties.
+Pick-one-of-two choice system. If any departments are still locked, at least one candidate will have a locked department's specialty.
 
-**Smart candidate generation:** If any departments are still locked, at least one candidate will have a locked department's specialty — nudging the player toward unlocking new departments.
-
-**Cost formula:** `50 * 1.5^(numMinions)`, reduced by Recruitment Agency upgrade (-8% per level, max 5 levels = -40%).
+**Cost formula:** `75 * 1.6^(numMinions)`, reduced by Recruitment Agency upgrade.
 
 ### Stats [CURRENT]
 
@@ -272,23 +208,7 @@ Pick-one-of-two choice system. `generateHiringCandidates()` creates 2 minions wi
 
 **Formula:** `xpForLevel(level) = 10 * (level - 1)^1.6`
 
-| Level | XP to Next |
-|-------|-----------|
-| 1→2 | 10 |
-| 2→3 | 25 |
-| 3→4 | 50 |
-| 5→6 | 130 |
-| 8→9 | 343 |
-| 9→10 | 450 |
-
-**XP per task tier (base):** Petty 3, Sinister 8, Diabolical 15, Legendary 25. Boosted by Fast Learner upgrade (+20%/level).
-
-### Appearances [CURRENT]
-
-- 25 evil names (Grim, Skulk, Mortis, Dread, Vex, Blight, etc.)
-- 15 color variants (purples, blues, reds, greens, golds)
-- 5 accessory types (goggles, helmet, cape, horns, none)
-- 4 specialty categories matching departments
+**XP per task tier (base):** Petty 3, Sinister 8, Diabolical 15, Legendary 25. Boosted by Fast Learner upgrade.
 
 ### Rank Titles [CURRENT]
 
@@ -301,27 +221,6 @@ Pick-one-of-two choice system. `generateHiringCandidates()` creates 2 minions wi
 | 9–10 | Elite | 5 |
 | 11+ | Mastermind | 6 |
 
-### Minion Traits [PROPOSED]
-
-Randomly assigned personality traits that affect behavior:
-- **Greedy** — +10% gold earned, -10% speed
-- **Zealous** — +15% speed, +5% notoriety gain
-- **Careful** — -20% notoriety gain, -10% efficiency
-- **Lucky** — small chance of double rewards
-
-### ~~Promotion to Manager~~ [DROPPED]
-
-> **Design change:** Department managers are superseded by the card-based automation system. Instead of promoting a minion to auto-assign, the player builds automation rules from logic cards that handle assignment. This makes automation a player-authored skill, not a purchased toggle. See [game-design-vision.md](game-design-vision.md).
-
-### Retirement & Legacy [PROPOSED — under review]
-
-> **Note:** Whether retirement fits within a roguelike run (where everything resets) is an open question. May become a within-run sacrifice mechanic or be dropped entirely.
-
-High-level minions can retire for a permanent passive bonus:
-- Small permanent stat boost to all future minions in that specialty
-- Unlocks the retired minion's name for a "Hall of Infamy" display
-- Scales with the minion's level at retirement
-
 ---
 
 ## Mission System [CURRENT]
@@ -330,111 +229,67 @@ High-level minions can retire for a permanent passive bonus:
 
 **60 mission templates** in `task-pool.ts` across 4 categories and 4 tiers:
 - Each category has 5 petty, 5 sinister, 3 diabolical, 2 legendary = 15 per category
-- Plus 4 inline "Cover Your Tracks" templates in `game-state.service.ts` (schemes/mayhem, petty/sinister)
 
-### Special Mission Types [CURRENT]
+### Special Operations [CURRENT]
 
-**Special Operations (Legendary):**
 - 15% base spawn rate (increased by Mayhem passive: +3% per level above 1)
 - 30-second expiry timer
 - +50% gold reward
 - Appear with gold glow animation
 
-**Cover Your Tracks:**
-- 12% spawn rate when notoriety > 20
-- 60% time reduction, 50% click reduction
-- Zero gold reward, -15 notoriety on completion
-
-**Breakout Operations:**
-- 20% spawn rate when minions are captured
-- Difficulty scales with captured minion's level
-- Success frees the captured minion
-
 ### Mission Board [CURRENT]
 
-- Base capacity: 12 slots (expandable via Expanded Intel upgrade: +3/level)
-- Refresh interval: ~3 seconds base
-- Reduced by Rapid Intel upgrade (-20%/level) and Schemes passive (-8%/level above 1)
-- Active mission limit: 3 base (expandable via Operations Desk upgrade: +1/level)
-
-### Proposed Mission Types [PROPOSED]
-
-**Chain Missions:** Multi-step heists spanning 2–3 tasks across departments. Completing the chain grants a large bonus reward. Failure at any step forfeits the chain.
-
-**Department Legendary Missions:** Unique per-department missions that unlock at department level 10. One-time completion for a major reward + permanent department buff.
-
-**Story Missions:** Narrative-driven missions tied to the campaign arc (see narrative.md). Milestone triggers, not random spawns.
+- Base capacity: 12 slots (expandable via Expanded Intel upgrade)
+- Refresh interval: ~3 seconds base (reduced by Rapid Intel upgrade and Schemes passive)
+- Active mission limit: 3 base (expandable via Operations Desk upgrade)
 
 ---
 
 ## Upgrade System [CURRENT + PROPOSED]
 
-Upgrades fall into two tracks. See [game-design-vision.md](game-design-vision.md) for the full dual track rationale.
-
-**Strategic Upgrades (Influence)** — Global, apply at all levels across the entire run:
-
-| Upgrade | Max Lv | Currency | Effect | L1 | L2 | L3 | L4 | L5 |
-|---------|--------|----------|--------|----|----|----|----|-----|
-| Rule Slots | 5 | Influence | +1 active automation rule per level | 25 | 60 | 120 | 200 | 350 |
-| Condition Depth | 3 | Influence | +1 max AND-clause per rule (higher multiplier ceiling) | 40 | 100 | 200 | — | — |
-| Logic Gates | 3 | Influence | Unlock OR (L1), NOT (L2), nested boolean logic (L3) | 50 | 125 | 250 | — | — |
-| Pack Insight | 3 | Influence | +1 card shown per pack opening | 30 | 75 | 150 | — | — |
-| Card Synergy | 3 | Influence | Modifier effects gain +10% per level | 35 | 90 | 180 | — | — |
-
-*Influence earns at ~15-30/min depending on tier mix. L1 affordable in 5-10 minutes. Max levels compete with pack purchases (15/40/75/100 Influence).*
-
-**Operational Upgrades (Gold)** — Local, scoped to specific unit. At Phase 2+, each new division starts without operational upgrades and must be invested in separately.
-
-### Current Operational Upgrades (14 total) [CURRENT]
+### Operational Upgrades (Gold) — 10 total [CURRENT]
 
 **Click Power:**
 
-| Upgrade | Max Lv | Base Cost | Scale | Effect |
-|---------|--------|-----------|-------|--------|
-| Iron Fingers | 10 | 30g | 1.8x | +1 click power/level |
-| Golden Touch | 8 | 50g | 2.0x | +15% gold from manual tasks/level |
+| Upgrade | Base Cost | Scale | Effect Type |
+|---------|-----------|-------|-------------|
+| Iron Fingers | 30g | 1.8x | Additive: +clicks per click |
+| Golden Touch | 50g | 2.0x | Percentage: +% gold from clicked tasks (max 150%) |
 
 **Minion Training:**
 
-| Upgrade | Max Lv | Base Cost | Scale | Effect |
-|---------|--------|-----------|-------|--------|
-| Speed Drills | 10 | 60g | 1.9x | +8% minion speed/level |
-| Profit Training | 10 | 60g | 1.9x | +8% minion efficiency/level |
-| Fast Learner | 5 | 100g | 2.2x | +20% minion XP gain/level |
-| Recruitment Agency | 5 | 75g | 2.2x | -8% hire cost/level |
+| Upgrade | Base Cost | Scale | Effect Type |
+|---------|-----------|-------|-------------|
+| Speed Drills | 60g | 1.9x | Percentage: +% minion speed (max 100%) |
+| Profit Training | 60g | 1.9x | Percentage: +% minion efficiency (max 100%) |
+| Fast Learner | 100g | 2.2x | Percentage: +% minion XP (max 200%) |
+| Recruitment Agency | 75g | 2.2x | Percentage: -% hire cost (max 60%) |
 
 **War Room:**
 
-| Upgrade | Max Lv | Base Cost | Scale | Effect |
-|---------|--------|-----------|-------|--------|
-| Expanded Intel | 5 | 80g | 2.0x | +3 board slots/level |
-| Operations Desk | 5 | 120g | 2.5x | +1 active mission slot/level |
-| Rapid Intel | 5 | 70g | 2.0x | -20% board refresh time/level |
+| Upgrade | Base Cost | Scale | Effect Type |
+|---------|-----------|-------|-------------|
+| Expanded Intel | 80g | 2.0x | Additive: +board slots |
+| Operations Desk | 120g | 2.5x | Additive: +active mission slots |
+| Rapid Intel | 70g | 2.0x | Refresh multiplier: reduces board refresh interval |
 
 **Department:**
 
-| Upgrade | Max Lv | Base Cost | Scale | Effect |
-|---------|--------|-----------|-------|--------|
-| Department Funding | 8 | 90g | 2.0x | +15% dept XP gain/level |
+| Upgrade | Base Cost | Scale | Effect Type |
+|---------|-----------|-------|-------------|
+| Department Funding | 90g | 2.0x | Percentage: +% dept XP (max 150%) |
 
 **Cost formula:** `floor(baseCost * costScale^currentLevel)`
 
-**Notoriety:**
+### Strategic Upgrades (Gold) [PROPOSED — Card System]
 
-| Upgrade | Max Lv | Base Cost | Scale | Effect |
-|---------|--------|-----------|-------|--------|
-| Bribe Network | 5 | 80g | 2.0x | -10% bribe cost/level |
-| Shadow Ops | 5 | 100g | 2.2x | -6% notoriety gain from all tasks/level |
-| Deep Cover | 5 | 90g | 2.1x | +8% cover-tracks spawn rate/level |
-| Lay Low Protocol | 5 | 120g | 2.4x | 1.5x passive decay multiplier/level |
-
-### ~~Tech Tree~~ [DROPPED]
-
-> **Design change:** The Supplies-funded tech tree has been replaced by the card-based rule building system. Auto-bribe, auto-route, and queue prioritization are now built by the player as card-based automation rules. See [game-design-vision.md](game-design-vision.md).
-
-### ~~Equipment System~~ [DROPPED]
-
-> **Design change:** The Loot-funded equipment system was dropped alongside the Loot resource. The card system fills the "make minions more effective" design space — Modifier cards provide bonuses like +20% Gold and -15% Time that previously would have come from equipped items.
+| Upgrade | Max Lv | Effect | Costs |
+|---------|--------|--------|-------|
+| Rule Slots | 5 | +1 active automation rule per level | 25/60/120/200/350 |
+| Condition Depth | 3 | +1 max AND-clause per rule | 40/100/200 |
+| Logic Gates | 3 | OR (L1), NOT (L2), nested boolean (L3) | 50/125/250 |
+| Pack Insight | 3 | +1 card shown per pack opening | 30/75/150 |
+| Card Synergy | 3 | +10% modifier effectiveness per level | 35/90/180 |
 
 ---
 
@@ -442,12 +297,9 @@ Upgrades fall into two tracks. See [game-design-vision.md](game-design-vision.md
 
 ### Villain Level
 
-**Formula:** `min(20, floor(sqrt(completedCount / 2.5)) + 1)`
+**Formula:** `min(20, floor(sqrt(completedCount / 5)) + 1)`
 
-Effects:
-- +10% base gold per level (compounding)
-- Unlocks villain titles
-- Indirectly gates content through gold scaling
+**Symmetric scaling:** Everything scales at +7% per villain level — gold, time, and clicks. Gold/minute per minion stays roughly flat; growth comes from more minions and upgrades, not raw VL progression.
 
 ### Villain Titles [CURRENT]
 
@@ -463,33 +315,39 @@ Effects:
 
 ---
 
+## Card-Based Automation [PROPOSED]
+
+See [game-design-vision.md](game-design-vision.md) for full details on the card system. Summary:
+
+- **29 universal logic cards** (8 Triggers, 10 Conditions, 8 Actions, 5 Modifiers)
+- Cards compose into **automation rules** (WHEN → IF → THEN)
+- **Default rule:** `WHEN Idle → Assign to Work` (always active, lowest priority)
+- AND-clause multipliers reward stacking conditions (1x/1.5x/2.5x/5x/8x/12x)
+- Cards acquired through **quarterly rewards** (hitting targets) and **gold-purchased packs**
+- 12 deterministic milestone drops ensure minimum viable card set
+- Boss modifiers can interact with rules ("automation disabled", "only 1 rule slot")
+
+---
+
 ## Balancing Principles
 
-### Notoriety as Core Tension
+### Quarterly Targets as Core Tension
 
-Notoriety is the primary balancing lever. Every gold-earning action increases risk. Players must constantly weigh:
-- Push harder for gold → risk raids and gold penalties
-- Play safe → slower progression
-- Invest in Research passive → less notoriety but opportunity cost of leveling other departments
+The quarterly review system replaces notoriety as the primary balancing lever. Every decision weighs investment against accumulation:
+- Spend gold on upgrades → higher gold/task going forward (spending doesn't count against target)
+- Hire more minions → expensive upfront, but more tasks completed within the budget
+- Higher-tier tasks → more gold per task, but fewer total tasks possible if manually clicking
 
 ### Automation Should Be Authored, Not Purchased
 
-Each automation tier should remove a manual chore but introduce a new strategic choice:
+Each automation tier removes a manual chore but introduces a new strategic choice:
 - Minions remove clicking → player chooses mission routing
-- Card-based rules remove routing → player designs and refines automation logic
-- Better rules reduce notoriety → slower Government Suspicion → longer runs
-- Phase scaling removes micro-management → same universal cards compose into division-level and regional-level automation
-
-### Two-Currency Tension
-
-With Gold + Influence, the core economic tension is:
-- **Gold** grows your operation (more minions, better stats, bribe your way out of trouble)
-- **Influence** makes your operation smarter (better automation cards = better rules = less manual intervention)
-- **Higher-tier tasks** earn more of both but generate more notoriety — the eternal risk/reward
-- Every Influence spent on card packs is Influence not saved for Phase 2/3 investments
+- Card-based rules remove routing → player designs automation logic
+- Better rules → more efficient gold/task → easier quarterly targets → harder year-end bosses
 
 ### Power Curve
 
-- **Linear early** — clear, predictable growth to teach mechanics
-- **Exponential mid** — satisfying acceleration as card synergies compound
-- **Run clock pressure** — Government Suspicion prevents infinite optimization, pushing toward decisive play
+- **Linear early** — clear, predictable growth to teach mechanics (Q1-Q2 Year 1)
+- **Exponential mid** — satisfying acceleration as card synergies compound (Q3+ Year 1)
+- **Boss pressure** — Year-End reviews with modifiers prevent infinite optimization, pushing toward decisive play
+- **Escalating targets** — Year 2+ demands better builds, creating natural roguelike difficulty ramp

@@ -30,35 +30,6 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-export function makeCoverOpTask(overrides: Partial<Task> = {}): Task {
-  return makeTask({
-    goldReward: 0,
-    isCoverOp: true,
-    template: {
-      name: 'Bribe the Witnesses',
-      description: 'Pay off everyone who saw anything. Reduces notoriety.',
-      category: 'schemes',
-      tier: 'petty',
-    },
-    ...overrides,
-  });
-}
-
-export function makeBreakoutTask(targetId: string, overrides: Partial<Task> = {}): Task {
-  return makeTask({
-    goldReward: 0,
-    isBreakoutOp: true,
-    breakoutTargetId: targetId,
-    template: {
-      name: `Prison Break: Target`,
-      description: 'Break them out!',
-      category: 'mayhem',
-      tier: 'petty',
-    },
-    ...overrides,
-  });
-}
-
 export function makeSpecialOpTask(overrides: Partial<Task> = {}): Task {
   return makeTask({
     isSpecialOp: true,

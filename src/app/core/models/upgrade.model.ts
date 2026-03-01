@@ -1,5 +1,5 @@
-export type UpgradeCategory = 'click' | 'minion' | 'war-room' | 'department' | 'notoriety';
-export type UpgradeEffectType = 'percentage' | 'additive' | 'refresh-multiplier' | 'passive-decay';
+export type UpgradeCategory = 'click' | 'minion' | 'war-room' | 'department';
+export type UpgradeEffectType = 'percentage' | 'additive' | 'refresh-multiplier';
 
 export interface Upgrade {
   id: string;
@@ -37,9 +37,6 @@ export function upgradeEffectAtLevel(upgrade: Upgrade, level: number): number {
     case 'refresh-multiplier':
       // Asymptotic speedup: returns multiplier on interval (smaller = faster)
       return 1 / (1 + level * upgrade.effectRate);
-    case 'passive-decay':
-      // Logarithmic decay rate
-      return upgrade.effectRate * Math.log(level + 1);
   }
 }
 
@@ -183,58 +180,5 @@ export function createDefaultUpgrades(): Upgrade[] {
       effectMax: 0.6,
     },
 
-    // Notoriety upgrades
-    {
-      id: 'bribe-network',
-      name: 'Bribe Network',
-      description: 'Reduced bribe cost.',
-      category: 'notoriety',
-      icon: '💸',
-      currentLevel: 0,
-      baseCost: 80,
-      costScale: 2.0,
-      effectType: 'percentage',
-      effectRate: 0.1,
-      effectMax: 0.6,
-    },
-    {
-      id: 'shadow-ops',
-      name: 'Shadow Ops',
-      description: 'Reduced notoriety gain from tasks.',
-      category: 'notoriety',
-      icon: '🕶️',
-      currentLevel: 0,
-      baseCost: 100,
-      costScale: 2.2,
-      effectType: 'percentage',
-      effectRate: 0.06,
-      effectMax: 0.7,
-    },
-    {
-      id: 'cover-spawn',
-      name: 'Deep Cover',
-      description: 'Increased cover-tracks mission spawn rate.',
-      category: 'notoriety',
-      icon: '🎭',
-      currentLevel: 0,
-      baseCost: 90,
-      costScale: 2.1,
-      effectType: 'percentage',
-      effectRate: 0.08,
-      effectMax: 0.38,
-    },
-    {
-      id: 'lay-low',
-      name: 'Lay Low',
-      description: 'Passive notoriety decay over time.',
-      category: 'notoriety',
-      icon: '🤫',
-      currentLevel: 0,
-      baseCost: 120,
-      costScale: 2.4,
-      effectType: 'passive-decay',
-      effectRate: 1.5,
-      effectMax: 0,
-    },
   ];
 }

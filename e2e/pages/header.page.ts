@@ -4,8 +4,6 @@ const EMOJI_MAP: Record<string, string> = {
   gold: '🪙',
   completed: '✅',
   minions: '👾',
-  notoriety: '🔥',
-  influence: '📊',
 };
 
 export class HeaderPage {
@@ -38,10 +36,6 @@ export class HeaderPage {
 
   get minions(): Promise<number> {
     return this.getStat('Minions');
-  }
-
-  get notoriety(): Promise<number> {
-    return this.getStat('Notoriety');
   }
 
   get completed(): Promise<number> {

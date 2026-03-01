@@ -33,48 +33,6 @@ describe('GameTimerService', () => {
     expect(Date.now()).toBe(start + 5000);
   }));
 
-  describe('notoriety decay', () => {
-    it('should call processNotorietyDecay every 1s', fakeAsync(() => {
-      spyOn(gameState, 'processNotorietyDecay');
-      timerService.start();
-
-      tick(3000);
-      expect(gameState.processNotorietyDecay).toHaveBeenCalledTimes(3);
-
-      timerService.stop();
-    }));
-
-    it('should pause notoriety decay on RaidStarted', fakeAsync(() => {
-      spyOn(gameState, 'processNotorietyDecay');
-      timerService.start();
-
-      tick(1000);
-      expect(gameState.processNotorietyDecay).toHaveBeenCalledTimes(1);
-
-      events.emit({ type: 'RaidStarted' });
-      tick(3000);
-      // Should still be 1 — paused during raid
-      expect(gameState.processNotorietyDecay).toHaveBeenCalledTimes(1);
-
-      timerService.stop();
-    }));
-
-    it('should resume notoriety decay on RaidEnded', fakeAsync(() => {
-      spyOn(gameState, 'processNotorietyDecay');
-      timerService.start();
-
-      events.emit({ type: 'RaidStarted' });
-      tick(2000);
-      expect(gameState.processNotorietyDecay).toHaveBeenCalledTimes(0);
-
-      events.emit({ type: 'RaidEnded', defended: true });
-      tick(2000);
-      expect(gameState.processNotorietyDecay).toHaveBeenCalledTimes(2);
-
-      timerService.stop();
-    }));
-  });
-
   describe('notification cleanup', () => {
     it('should call cleanNotifications every 1s', fakeAsync(() => {
       spyOn(gameState, 'cleanNotifications');
@@ -173,29 +131,6 @@ describe('GameTimerService', () => {
 
       timerService.stop();
     }));
-
-    it('should cancel task timer when minion is captured', fakeAsync(() => {
-      spyOn(gameState, 'completeTaskByTimer');
-      // Set up a minion with an in-progress task
-      gameState.addGold(500);
-      gameState.hireMinion();
-      const minion = gameState.minions()[0];
-      const mission = gameState.missionBoard()[0];
-      const dept = mission.template.category;
-      gameState.reassignMinion(minion.id, dept);
-      gameState.routeMission(mission.id, dept);
-      gameState.tickTime(); // auto-assign
-
-      timerService.start();
-
-      events.emit({ type: 'TaskAssigned', taskId: mission.id, minionId: minion.id, department: dept, durationMs: 5000 });
-      events.emit({ type: 'MinionCaptured', minionId: minion.id, minionName: minion.name });
-
-      tick(6000);
-      expect(gameState.completeTaskByTimer).not.toHaveBeenCalled();
-
-      timerService.stop();
-    }));
   });
 
   describe('auto-assign', () => {
@@ -269,28 +204,26 @@ describe('GameTimerService', () => {
 
   describe('lifecycle', () => {
     it('stop should clear all timers', fakeAsync(() => {
-      spyOn(gameState, 'processNotorietyDecay');
       spyOn(gameState, 'cleanNotifications');
       spyOn(saveService, 'save');
       timerService.start();
 
       tick(1000);
-      expect(gameState.processNotorietyDecay).toHaveBeenCalledTimes(1);
+      expect(gameState.cleanNotifications).toHaveBeenCalledTimes(1);
 
       timerService.stop();
       tick(5000);
       // No additional calls after stop
-      expect(gameState.processNotorietyDecay).toHaveBeenCalledTimes(1);
       expect(gameState.cleanNotifications).toHaveBeenCalledTimes(1);
     }));
 
     it('restartTimers should re-subscribe to events', fakeAsync(() => {
-      spyOn(gameState, 'processNotorietyDecay');
+      spyOn(gameState, 'cleanNotifications');
       timerService.start();
 
       timerService.restartTimers();
       tick(2000);
-      expect(gameState.processNotorietyDecay).toHaveBeenCalledTimes(2);
+      expect(gameState.cleanNotifications).toHaveBeenCalledTimes(2);
 
       timerService.stop();
     }));

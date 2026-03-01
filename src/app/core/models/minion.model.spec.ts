@@ -1,4 +1,4 @@
-import { xpForLevel, levelFromXp, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES, SPECIALTY_CATEGORIES, SPECIALTY_BONUS, PRISON_DURATION_MS, getMinionRank, getMinionStars, getMinionRankColor } from './minion.model';
+import { xpForLevel, levelFromXp, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES, SPECIALTY_CATEGORIES, SPECIALTY_BONUS, getMinionRank, getMinionStars, getMinionRankColor } from './minion.model';
 
 describe('Minion Model', () => {
 
@@ -101,9 +101,6 @@ describe('Minion Model', () => {
       expect(SPECIALTY_BONUS).toBe(0.25);
     });
 
-    it('PRISON_DURATION_MS should be 5 minutes', () => {
-      expect(PRISON_DURATION_MS).toBe(300_000);
-    });
   });
 
   describe('getMinionRank', () => {

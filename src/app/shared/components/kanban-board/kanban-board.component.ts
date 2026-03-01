@@ -1,5 +1,5 @@
 import { Component, ChangeDetectionStrategy, input, output, computed } from '@angular/core';
-import { CdkDragDrop } from '@angular/cdk/drag-drop';
+import { CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Task, TaskCategory, QueueTarget } from '../../../core/models/task.model';
 import { Minion } from '../../../core/models/minion.model';
 import { Department } from '../../../core/models/department.model';
@@ -62,6 +62,7 @@ export class KanbanBoardComponent {
   taskClicked = output<string>();
   taskMoved = output<{ taskId: string; from: QueueTarget; to: QueueTarget }>();
   taskRouted = output<{ taskId: string; target: QueueTarget }>();
+  taskReordered = output<{ queue: QueueTarget; taskIds: string[] }>();
 
   readonly unlockedCategories = computed(() => this.unlockedDepartments());
 
@@ -98,7 +99,16 @@ export class KanbanBoardComponent {
     if (!task?.id) return;
 
     const fromQueue = event.previousContainer.data as string;
-    if (fromQueue === targetQueue) return; // same column, no move needed
+    if (fromQueue === targetQueue) {
+      // Same queue — reorder
+      const tasks = [...(targetQueue === 'player' ? this.playerQueue() : this.getDeptTasks(targetQueue as TaskCategory))];
+      const queuedTasks = tasks.filter(t => t.status === 'queued' || (t.status === 'in-progress' && !t.assignedMinionId));
+      moveItemInArray(queuedTasks, event.previousIndex, event.currentIndex);
+      const inProgressTasks = tasks.filter(t => t.status === 'in-progress' && t.assignedMinionId);
+      const newOrder = [...inProgressTasks, ...queuedTasks];
+      this.taskReordered.emit({ queue: targetQueue, taskIds: newOrder.map(t => t.id) });
+      return;
+    }
 
     if (fromQueue === 'mission-board') {
       // Dragged from mission board — route the mission to the target queue

@@ -64,15 +64,6 @@ export const SPECIALTY_CATEGORIES: TaskCategory[] = [
   'schemes', 'heists', 'research', 'mayhem',
 ];
 
-export interface CapturedMinion {
-  minion: Minion;
-  capturedAt: number;
-  expiresAt: number;
-  rescueDifficulty: number;
-}
-
-export const PRISON_DURATION_MS = 300_000; // 5 minutes
-
 // ─── Rank system ──────────────────────────
 export type MinionRank = 'Lackey' | 'Grunt' | 'Agent' | 'Operative' | 'Elite' | 'Mastermind';
 

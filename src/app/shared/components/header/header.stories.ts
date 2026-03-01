@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/angular';
 import { expect, within } from 'storybook/test';
 import { HeaderComponent } from './header.component';
+import { createInitialProgress, QuarterProgress } from '../../../core/models/quarter.model';
 
 const meta: Meta<HeaderComponent> = {
   title: 'Minion Manager/Organisms/Header',
@@ -11,6 +12,29 @@ const meta: Meta<HeaderComponent> = {
 export default meta;
 type Story = StoryObj<HeaderComponent>;
 
+const earlyProgress: QuarterProgress = {
+  ...createInitialProgress(),
+  tasksCompleted: 8,
+  grossGoldEarned: 35,
+};
+
+const midProgress: QuarterProgress = {
+  ...createInitialProgress(),
+  quarter: 2,
+  tasksCompleted: 22,
+  grossGoldEarned: 520,
+};
+
+const lateProgress: QuarterProgress = {
+  year: 2,
+  quarter: 3,
+  tasksCompleted: 45,
+  grossGoldEarned: 3200,
+  isComplete: false,
+  missedQuarters: 1,
+  quarterResults: [],
+};
+
 export const EarlyGame: Story = {
   args: {
     gold: 15,
@@ -18,10 +42,10 @@ export const EarlyGame: Story = {
     minionCount: 0,
     villainLevel: 1,
     villainTitle: 'Petty Troublemaker',
-    notoriety: 5,
-    influence: 0,
-    raidActive: false,
-    capturedCount: 0,
+    quarterProgress: earlyProgress,
+    quarterGold: 35,
+    taskBudget: 30,
+    goldTarget: 75,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -30,6 +54,8 @@ export const EarlyGame: Story = {
     expect(canvas.getByText(/15/)).toBeTruthy();
     expect(canvas.getByText(/Petty Troublemaker/)).toBeTruthy();
     expect(canvas.getByText(/Lv\. ?1/)).toBeTruthy();
+    // Verify quarter indicator renders
+    expect(canvas.getByText(/Y1Q1/)).toBeTruthy();
   },
 };
 
@@ -40,10 +66,10 @@ export const MidGame: Story = {
     minionCount: 2,
     villainLevel: 4,
     villainTitle: 'Aspiring Villain',
-    notoriety: 35,
-    influence: 12,
-    raidActive: false,
-    capturedCount: 0,
+    quarterProgress: midProgress,
+    quarterGold: 520,
+    taskBudget: 40,
+    goldTarget: 400,
   },
 };
 
@@ -54,24 +80,10 @@ export const LateGame: Story = {
     minionCount: 5,
     villainLevel: 8,
     villainTitle: 'Criminal Mastermind',
-    notoriety: 72,
-    influence: 68,
-    raidActive: false,
-    capturedCount: 1,
-  },
-};
-
-export const RaidActive: Story = {
-  args: {
-    gold: 800,
-    completedCount: 80,
-    minionCount: 4,
-    villainLevel: 6,
-    villainTitle: 'Notorious Scoundrel',
-    notoriety: 85,
-    influence: 30,
-    raidActive: true,
-    capturedCount: 0,
+    quarterProgress: lateProgress,
+    quarterGold: 3200,
+    taskBudget: 70,
+    goldTarget: 3888,
   },
 };
 
@@ -82,10 +94,10 @@ export const JustSaved: Story = {
     minionCount: 3,
     villainLevel: 5,
     villainTitle: 'Notorious Scoundrel',
-    notoriety: 47,
-    influence: 22,
+    quarterProgress: earlyProgress,
+    quarterGold: 35,
+    taskBudget: 30,
+    goldTarget: 75,
     lastSaved: Date.now(),
-    raidActive: false,
-    capturedCount: 0,
   },
 };

@@ -86,28 +86,12 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
                         Special
                       </span>
                     }
-                    @if (mission.isCoverOp) {
-                      <span class="text-xs px-1 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold uppercase">
-                        Cover
-                      </span>
-                    }
-                    @if (mission.isBreakoutOp) {
-                      <span class="text-xs px-1 py-0.5 rounded-full bg-orange-500/20 text-orange-400 font-bold uppercase">
-                        Breakout
-                      </span>
-                    }
                   </div>
                   <h3 class="text-xs font-semibold text-text-primary truncate">
                     {{ mission.template.name }}
                   </h3>
                 </div>
-                @if (mission.isCoverOp || mission.isBreakoutOp) {
-                  <span class="font-bold text-xs shrink-0" [class]="mission.isCoverOp ? 'text-green-400' : 'text-orange-400'">
-                    {{ mission.isCoverOp ? '-Heat' : 'Rescue' }}
-                  </span>
-                } @else {
-                  <span class="text-gold font-bold text-xs shrink-0">{{ mission.goldReward }}g</span>
-                }
+                <span class="text-gold font-bold text-xs shrink-0">{{ mission.goldReward }}g</span>
               </div>
 
               <!-- Footer -->
@@ -241,9 +225,7 @@ export class MissionBoardComponent {
   }
 
   getMissionCardClass(mission: Task): string {
-    if (mission.isBreakoutOp) return 'border-orange-500/40 animate-card-glow';
     if (mission.isSpecialOp) return 'border-gold/40 animate-card-glow';
-    if (mission.isCoverOp) return 'border-green-500/40';
     return '';
   }
 

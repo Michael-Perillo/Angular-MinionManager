@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed, viewChild, HostListener, ElementRef } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed, viewChild, HostListener, ElementRef, effect } from '@angular/core';
 import { GameStateService } from '../../core/services/game-state.service';
 import { GameTimerService } from '../../core/services/game-timer.service';
 import { SaveService } from '../../core/services/save.service';
@@ -11,14 +11,13 @@ import { DrawerPanelComponent } from '../../shared/components/drawer-panel/drawe
 import { MissionRouterComponent } from '../../shared/components/mission-router/mission-router.component';
 import { MobileBottomNavComponent, MobileTab } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav.component';
 import { NotificationToastComponent } from '../../shared/components/notification-toast/notification-toast.component';
-import { NotorietyBarComponent } from '../../shared/components/notoriety-bar/notoriety-bar.component';
 import { UpgradeShopComponent } from '../../shared/components/upgrade-shop/upgrade-shop.component';
 import { DepartmentPanelComponent } from '../../shared/components/department-panel/department-panel.component';
 import { HireMinionPanelComponent } from '../../shared/components/hire-minion-panel/hire-minion-panel.component';
 import { MinionRosterComponent } from '../../shared/components/minion-roster/minion-roster.component';
-import { PrisonPanelComponent } from '../../shared/components/prison-panel/prison-panel.component';
 import { PlayerWorkbenchComponent } from '../../shared/components/player-workbench/player-workbench.component';
 import { DepartmentColumnComponent } from '../../shared/components/department-column/department-column.component';
+import { QuarterReviewComponent } from '../../shared/components/quarter-review/quarter-review.component';
 
 @Component({
   selector: 'app-game-container',
@@ -31,14 +30,13 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
     MissionRouterComponent,
     MobileBottomNavComponent,
     NotificationToastComponent,
-    NotorietyBarComponent,
     UpgradeShopComponent,
     DepartmentPanelComponent,
     HireMinionPanelComponent,
     MinionRosterComponent,
-    PrisonPanelComponent,
     PlayerWorkbenchComponent,
     DepartmentColumnComponent,
+    QuarterReviewComponent,
   ],
   template: `
     <div class="h-screen flex flex-col overflow-hidden">
@@ -49,10 +47,10 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
         [minionCount]="gameState.minions().length"
         [villainLevel]="gameState.villainLevel()"
         [villainTitle]="gameState.villainTitle()"
-        [notoriety]="gameState.notoriety()"
-        [influence]="gameState.influence()"
-        [raidActive]="gameState.raidActive()"
-        [capturedCount]="gameState.capturedMinions().length"
+        [quarterProgress]="gameState.quarterProgress()"
+        [quarterGold]="gameState.quarterGold()"
+        [taskBudget]="gameState.currentQuarterTarget().taskBudget"
+        [goldTarget]="gameState.currentQuarterTarget().goldTarget"
         [lastSaved]="gameState.lastSaved()"
         (drawerToggle)="onDrawerToggle()"
         (reset)="onReset()" />
@@ -85,27 +83,19 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
               [currentTime]="currentTime()"
               (taskClicked)="onTaskClick($event)"
               (taskMoved)="onTaskMoved($event)"
-              (taskRouted)="onTaskRouted($event)" />
+              (taskRouted)="onTaskRouted($event)"
+              (taskReordered)="onTaskReordered($event)" />
           </div>
 
           <!-- Right: Collapsible drawer -->
           <app-drawer-panel
-            [notoriety]="gameState.notoriety()"
-            [threatLevel]="gameState.threatLevel()"
-            [goldPenalty]="gameState.notorietyGoldPenaltyPercent()"
             [gold]="gameState.gold()"
-            [raidActive]="gameState.raidActive()"
-            [raidTimer]="gameState.raidTimer()"
             [minions]="gameState.minions()"
             [departments]="gameState.departments()"
             [upgrades]="gameState.upgrades()"
-            [capturedMinions]="gameState.capturedMinions()"
-            [currentTime]="currentTime()"
             [nextMinionCost]="gameState.nextMinionCost()"
             [canHireMinion]="gameState.canHireMinion()"
             [unlockedDepartments]="gameState.unlockedDepartments()"
-            (bribeClicked)="onBribe()"
-            (defendClicked)="onDefendRaid()"
             (recruitClicked)="onRecruitMinion()"
             (hireChosenClicked)="onHireChosenMinion($event)"
             (upgradeClicked)="onPurchaseUpgrade($event)" />
@@ -154,7 +144,8 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                           [dragDisabled]="true"
                           [fullWidth]="true"
                           [currentTime]="currentTime()"
-                          (taskMoveRequested)="onTaskMoveRequested($event)" />
+                          (taskMoveRequested)="onTaskMoveRequested($event)"
+                          (taskReordered)="onDeptTaskReordered(cat, $event)" />
                       </div>
                     }
                   </div>
@@ -187,18 +178,11 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                 [connectedDropLists]="[]"
                 [dragDisabled]="true"
                 [fullWidth]="true"
-                (taskClicked)="onTaskClick($event)" />
+                (taskClicked)="onTaskClick($event)"
+                (taskReordered)="onPlayerTaskReordered($event)" />
             }
             @case ('more') {
               <div class="flex flex-col gap-2">
-                <button
-                  (click)="moreSection.set('notoriety')"
-                  class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
-                         hover:border-accent/30 transition-all cursor-pointer min-h-[48px]">
-                  <span class="text-xl">🔥</span>
-                  <span class="text-sm font-semibold text-text-primary">Notoriety & Raids</span>
-                  <span class="ml-auto text-text-muted">→</span>
-                </button>
                 <button
                   (click)="moreSection.set('hire')"
                   class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
@@ -223,16 +207,6 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                   <span class="text-sm font-semibold text-text-primary">Departments</span>
                   <span class="ml-auto text-text-muted">→</span>
                 </button>
-                @if (gameState.capturedMinions().length > 0) {
-                  <button
-                    (click)="moreSection.set('prison')"
-                    class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
-                           border-orange-500/30 hover:border-orange-500/50 transition-all cursor-pointer min-h-[48px]">
-                    <span class="text-xl">🔒</span>
-                    <span class="text-sm font-semibold text-orange-400">Prison</span>
-                    <span class="ml-auto text-orange-400">→</span>
-                  </button>
-                }
                 <button
                   (click)="onReset()"
                   class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
@@ -253,17 +227,6 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                   </button>
 
                   @switch (moreSection()) {
-                    @case ('notoriety') {
-                      <app-notoriety-bar
-                        [notoriety]="gameState.notoriety()"
-                        [threatLevel]="gameState.threatLevel()"
-                        [goldPenalty]="gameState.notorietyGoldPenaltyPercent()"
-                        [gold]="gameState.gold()"
-                        [raidActive]="gameState.raidActive()"
-                        [raidTimer]="gameState.raidTimer()"
-                        (bribeClicked)="onBribe()"
-                        (defendClicked)="onDefendRaid()" />
-                    }
                     @case ('hire') {
                       <app-hire-minion-panel
                         #mobileHirePanel
@@ -288,11 +251,6 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
                       <app-department-panel
                         [departments]="gameState.departments()" />
                     }
-                    @case ('prison') {
-                      <app-prison-panel
-                        [capturedMinions]="gameState.capturedMinions()"
-                        [currentTime]="currentTime()" />
-                    }
                   }
                 </div>
               }
@@ -302,7 +260,6 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
 
         <app-mobile-bottom-nav
           [activeTab]="mobileTab()"
-          [hasAlert]="gameState.raidActive()"
           (tabSelected)="onMobileTabChange($event)" />
       }
 
@@ -315,6 +272,14 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
         [unlockedDepartments]="gameState.unlockedDepartmentList()"
         (queueSelected)="onQueueSelected($event)"
         (closed)="routerMission.set(null); pendingMove.set(null)" />
+
+      <!-- Quarter Review Modal -->
+      @if (latestQuarterResult(); as result) {
+        <app-quarter-review
+          [result]="result"
+          [missedQuarters]="gameState.quarterProgress().missedQuarters"
+          (advance)="onQuarterAdvance()" />
+      }
 
       <!-- Notifications -->
       <div class="fixed bottom-4 right-4 flex flex-col gap-2 z-50 max-w-sm pointer-events-none"
@@ -352,6 +317,13 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly allCategories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
   readonly kanbanDropListIds = ['schemes', 'heists', 'research', 'mayhem', 'player'];
 
+  readonly latestQuarterResult = computed(() => {
+    const qp = this.gameState.quarterProgress();
+    if (!qp.isComplete) return null;
+    const results = qp.quarterResults;
+    return results.length > 0 ? results[results.length - 1] : null;
+  });
+
   readonly deptQueueCounts = computed(() => {
     const queues = this.gameState.departmentQueues();
     return {
@@ -361,6 +333,15 @@ export class GameContainerComponent implements OnInit, OnDestroy {
       mayhem: queues.mayhem.length,
     } as Record<TaskCategory, number>;
   });
+
+  constructor() {
+    // Pause game timers when a quarter completes (modal will block gameplay)
+    effect(() => {
+      if (this.gameState.quarterProgress().isComplete) {
+        this.gameTimer.stop();
+      }
+    });
+  }
 
   @HostListener('window:resize')
   onResize(): void {
@@ -374,7 +355,10 @@ export class GameContainerComponent implements OnInit, OnDestroy {
       this.gameState.initializeGame();
     }
 
-    this.gameTimer.start();
+    // Don't start timers if loading a save with a completed quarter (modal will show)
+    if (!this.gameState.quarterProgress().isComplete) {
+      this.gameTimer.start();
+    }
 
     // Tick currentTime frequently for smooth progress percentage updates
     this.currentTimeInterval = setInterval(() => this.currentTime.set(Date.now()), 250);
@@ -421,12 +405,16 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     this.gameState.routeMission(event.taskId, event.target);
   }
 
-  onBribe(): void {
-    this.gameState.payBribe();
+  onTaskReordered(event: { queue: QueueTarget; taskIds: string[] }): void {
+    this.gameState.reorderQueue(event.queue, event.taskIds);
   }
 
-  onDefendRaid(): void {
-    this.gameState.defendRaid();
+  onDeptTaskReordered(cat: TaskCategory, taskIds: string[]): void {
+    this.gameState.reorderQueue(cat, taskIds);
+  }
+
+  onPlayerTaskReordered(taskIds: string[]): void {
+    this.gameState.reorderQueue('player', taskIds);
   }
 
   onPurchaseUpgrade(upgradeId: string): void {
@@ -455,6 +443,11 @@ export class GameContainerComponent implements OnInit, OnDestroy {
 
   onHireChosenMinion(minion: Minion): void {
     this.gameState.hireChosenMinion(minion);
+  }
+
+  onQuarterAdvance(): void {
+    this.gameState.advanceQuarter();
+    this.gameTimer.restartTimers();
   }
 
   onReset(): void {

@@ -46,11 +46,7 @@ test('Purchase upgrade after earning gold', async ({ page, nav }) => {
 test('Drawer tab navigation shows correct content', async ({ page, nav }) => {
   test.skip(nav.isMobile, 'Desktop drawer not available on mobile');
 
-  // Open drawer — Notoriety is default tab
-  await nav.goToNotoriety();
-  await expect(page.locator('app-notoriety-bar')).toBeVisible();
-
-  // Minions tab
+  // Open drawer — Minions is default tab
   await nav.goToHirePanel();
   await expect(page.locator('app-hire-minion-panel')).toBeVisible();
 
@@ -76,6 +72,65 @@ test('Reset game clears progress', async ({ nav, game, header, page }) => {
   await expect(page.locator('app-mission-board .game-card').first()).toBeVisible();
 });
 
+test('Quarter review modal appears on quarter completion', async ({ page, nav }) => {
+  // Seed state: Y1Q1 at 29/30 tasks, with a 1-click task in the player workbench
+  const taskId = 'e2e-final-task';
+  await nav.seedState({
+    gold: 100,
+    completedCount: 29,
+    totalGoldEarned: 100,
+    unlockedDepartments: ['schemes'],
+    missionBoard: [],
+    playerQueue: [
+      {
+        id: taskId,
+        template: { name: 'Final Task', description: 'Complete this.', category: 'schemes', tier: 'petty' },
+        status: 'queued',
+        tier: 'petty',
+        goldReward: 5,
+        timeToComplete: 999,
+        timeRemaining: 999,
+        clicksRequired: 1,
+        clicksRemaining: 1,
+        assignedMinionId: null,
+        queuedAt: Date.now(),
+        assignedQueue: 'player',
+      },
+    ],
+    quarterProgress: {
+      year: 1,
+      quarter: 1,
+      grossGoldEarned: 100,
+      tasksCompleted: 29,
+      isComplete: false,
+      missedQuarters: 0,
+      quarterResults: [],
+    },
+  });
+
+  // Navigate to workbench and click the task to complete it
+  await nav.goToWorkbench();
+  const clickBtn = page.locator('app-player-workbench button').filter({ hasText: /CLICK/ }).first();
+  await clickBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  await clickBtn.click();
+
+  // Quarter review modal should appear
+  const modal = page.locator('app-quarter-review');
+  await modal.waitFor({ state: 'visible', timeout: 5_000 });
+  await expect(modal.getByRole('heading', { name: 'Q1 Year 1 Review' })).toBeVisible();
+  await expect(modal.getByText('TARGET MET')).toBeVisible();
+
+  // Click Continue
+  const continueBtn = page.getByRole('button', { name: /Continue to Q2/i });
+  await continueBtn.click();
+
+  // Modal should dismiss
+  await modal.waitFor({ state: 'hidden', timeout: 3_000 });
+
+  // Header should show Y1Q2
+  await expect(page.getByText('Y1Q2')).toBeVisible({ timeout: 3_000 });
+});
+
 // Re-enable when event-driven saves land (save on task completion, hiring, etc.)
 test.skip('Persistence across page reload', async ({ page, game, header }) => {
   await game.earnGold();
@@ -87,14 +142,4 @@ test.skip('Persistence across page reload', async ({ page, game, header }) => {
 
   const goldAfter = await header.gold;
   expect(goldAfter).toBe(goldBefore);
-});
-
-test('Notoriety tracks after completing tasks', async ({ game, header }) => {
-  const initial = await header.notoriety;
-  expect(initial).toBe(0);
-
-  await game.earnGold();
-
-  const after = await header.notoriety;
-  expect(after).toBeGreaterThan(0);
 });

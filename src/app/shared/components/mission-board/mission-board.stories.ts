@@ -28,7 +28,7 @@ const makeBoardMissions = (): Task[] => [
   makeTask({ template: { name: 'TP the Hero\'s House', description: 'Classic TP bombardment.', category: 'mayhem', tier: 'petty' }, tier: 'petty', goldReward: 6 }),
   makeTask({ template: { name: 'Infiltrate Council', description: 'Plant a spy.', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 20, isSpecialOp: true, specialOpExpiry: Date.now() + 30000 }),
   makeTask({ template: { name: 'Mix Stink Bombs', description: 'Brew a foul concoction.', category: 'research', tier: 'petty' }, tier: 'petty', goldReward: 5 }),
-  makeTask({ template: { name: 'Bribe the Witnesses', description: 'Pay off everyone. Reduces notoriety.', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 0, isCoverOp: true }),
+  makeTask({ template: { name: 'Train the Guards', description: 'Upgrade your security detail.', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 4 }),
   makeTask({ template: { name: 'Release Robot Swarm', description: 'Deploy tiny robots.', category: 'mayhem', tier: 'sinister' }, tier: 'sinister', goldReward: 15 }),
   makeTask({ template: { name: 'Volcano Activation', description: 'Trigger a dormant volcano.', category: 'mayhem', tier: 'diabolical' }, tier: 'diabolical', goldReward: 44 }),
   makeTask({ template: { name: 'Jewel Store Heist', description: 'Crack display cases.', category: 'heists', tier: 'sinister' }, tier: 'sinister', goldReward: 16 }),
@@ -68,9 +68,6 @@ export const FullBoard: Story = {
 
     // Verify special op card has the "Special" badge
     expect(canvas.getByText('Special')).toBeTruthy();
-
-    // Verify cover op badge
-    expect(canvas.getByText('Cover')).toBeTruthy();
   },
 };
 

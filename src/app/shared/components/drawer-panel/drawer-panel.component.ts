@@ -2,27 +2,22 @@ import { Component, ChangeDetectionStrategy, input, output, signal, computed, On
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
 import { Upgrade } from '../../../core/models/upgrade.model';
-import { Minion, CapturedMinion } from '../../../core/models/minion.model';
-import { ThreatLevel } from '../../../core/models/notoriety.model';
-import { NotorietyBarComponent } from '../notoriety-bar/notoriety-bar.component';
+import { Minion } from '../../../core/models/minion.model';
 import { UpgradeShopComponent } from '../upgrade-shop/upgrade-shop.component';
 import { DepartmentPanelComponent } from '../department-panel/department-panel.component';
 import { HireMinionPanelComponent } from '../hire-minion-panel/hire-minion-panel.component';
 import { MinionRosterComponent } from '../minion-roster/minion-roster.component';
-import { PrisonPanelComponent } from '../prison-panel/prison-panel.component';
 
-type DrawerTab = 'notoriety' | 'hire' | 'upgrades' | 'departments' | 'prison';
+type DrawerTab = 'hire' | 'upgrades' | 'departments';
 
 @Component({
   selector: 'app-drawer-panel',
   standalone: true,
   imports: [
-    NotorietyBarComponent,
     UpgradeShopComponent,
     DepartmentPanelComponent,
     HireMinionPanelComponent,
     MinionRosterComponent,
-    PrisonPanelComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -40,7 +35,7 @@ type DrawerTab = 'notoriety' | 'hire' | 'upgrades' | 'departments' | 'prison';
 
         <!-- Tab bar -->
         <div class="flex border-b border-border shrink-0 overflow-x-auto">
-          @for (tab of visibleTabs(); track tab.id) {
+          @for (tab of allTabs; track tab.id) {
             <button
               (click)="activeTab.set(tab.id)"
               class="flex-1 py-1.5 px-1 text-xs font-semibold transition-colors cursor-pointer border-b-2 whitespace-nowrap"
@@ -55,17 +50,6 @@ type DrawerTab = 'notoriety' | 'hire' | 'upgrades' | 'departments' | 'prison';
         <!-- Content -->
         <div class="flex-1 overflow-y-auto p-3">
           @switch (activeTab()) {
-            @case ('notoriety') {
-              <app-notoriety-bar
-                [notoriety]="notoriety()"
-                [threatLevel]="threatLevel()"
-                [goldPenalty]="goldPenalty()"
-                [gold]="gold()"
-                [raidActive]="raidActive()"
-                [raidTimer]="raidTimer()"
-                (bribeClicked)="bribeClicked.emit()"
-                (defendClicked)="defendClicked.emit()" />
-            }
             @case ('hire') {
               <app-hire-minion-panel
                 #hirePanel
@@ -91,11 +75,6 @@ type DrawerTab = 'notoriety' | 'hire' | 'upgrades' | 'departments' | 'prison';
               <app-department-panel
                 [departments]="departments()" />
             }
-            @case ('prison') {
-              <app-prison-panel
-                [capturedMinions]="capturedMinions()"
-                [currentTime]="currentTime()" />
-            }
           }
         </div>
       </aside>
@@ -109,28 +88,17 @@ type DrawerTab = 'notoriety' | 'hire' | 'upgrades' | 'departments' | 'prison';
   `,
 })
 export class DrawerPanelComponent implements OnInit {
-  // Notoriety inputs
-  notoriety = input.required<number>();
-  threatLevel = input.required<ThreatLevel>();
-  goldPenalty = input.required<number>();
-  raidActive = input.required<boolean>();
-  raidTimer = input.required<number>();
-
   // General inputs
   gold = input.required<number>();
   minions = input.required<Minion[]>();
   departments = input.required<Record<TaskCategory, Department>>();
   upgrades = input.required<Upgrade[]>();
-  capturedMinions = input.required<CapturedMinion[]>();
-  currentTime = input.required<number>();
   nextMinionCost = input.required<number>();
   canHireMinion = input.required<boolean>();
 
   unlockedDepartments = input<Set<TaskCategory>>(new Set());
 
   // Outputs
-  bribeClicked = output<void>();
-  defendClicked = output<void>();
   hireClicked = output<void>();
   recruitClicked = output<void>();
   hireChosenClicked = output<Minion>();
@@ -143,7 +111,7 @@ export class DrawerPanelComponent implements OnInit {
   readonly hirePanel = viewChild<HireMinionPanelComponent>('hirePanel');
 
   isOpen = signal(false);
-  activeTab = signal<DrawerTab>('notoriety');
+  activeTab = signal<DrawerTab>('hire');
 
   ngOnInit(): void {
     if (this.initiallyOpen()) this.isOpen.set(true);
@@ -151,18 +119,11 @@ export class DrawerPanelComponent implements OnInit {
     if (tab) this.activeTab.set(tab);
   }
 
-  private readonly allTabs: { id: DrawerTab; label: string; icon: string; alwaysShow: boolean }[] = [
-    { id: 'notoriety', label: 'Notoriety', icon: '🔥', alwaysShow: true },
-    { id: 'hire', label: 'Minions', icon: '👾', alwaysShow: true },
-    { id: 'upgrades', label: 'Upgrades', icon: '⚡', alwaysShow: true },
-    { id: 'departments', label: 'Depts', icon: '🏛️', alwaysShow: true },
-    { id: 'prison', label: 'Prison', icon: '🔒', alwaysShow: false },
+  readonly allTabs: { id: DrawerTab; label: string; icon: string }[] = [
+    { id: 'hire', label: 'Minions', icon: '👾' },
+    { id: 'upgrades', label: 'Upgrades', icon: '⚡' },
+    { id: 'departments', label: 'Depts', icon: '🏛️' },
   ];
-
-  visibleTabs = computed(() => {
-    const hasPrisoners = this.capturedMinions().length > 0;
-    return this.allTabs.filter(t => t.alwaysShow || (t.id === 'prison' && hasPrisoners));
-  });
 
   toggle(): void {
     this.isOpen.update(v => !v);
