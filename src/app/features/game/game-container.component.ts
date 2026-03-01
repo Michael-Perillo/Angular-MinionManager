@@ -19,6 +19,7 @@ import { PlayerWorkbenchComponent } from '../../shared/components/player-workben
 import { DepartmentColumnComponent } from '../../shared/components/department-column/department-column.component';
 import { QuarterReviewComponent } from '../../shared/components/quarter-review/quarter-review.component';
 import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/reviewer-intro.component';
+import { RunOverComponent } from '../../shared/components/run-over/run-over.component';
 
 @Component({
   selector: 'app-game-container',
@@ -39,6 +40,7 @@ import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/r
     DepartmentColumnComponent,
     QuarterReviewComponent,
     ReviewerIntroComponent,
+    RunOverComponent,
   ],
   template: `
     <div class="h-screen flex flex-col overflow-hidden">
@@ -52,7 +54,7 @@ import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/r
         [quarterProgress]="gameState.quarterProgress()"
         [quarterGold]="gameState.quarterGold()"
         [taskBudget]="gameState.currentQuarterTarget().taskBudget"
-        [goldTarget]="gameState.currentQuarterTarget().goldTarget"
+        [goldTarget]="gameState.isInReview() ? gameState.reviewGoldTarget() : gameState.currentQuarterTarget().goldTarget"
         [lastSaved]="gameState.lastSaved()"
         [activeModifiers]="gameState.activeModifiers()"
         (drawerToggle)="onDrawerToggle()"
@@ -70,6 +72,7 @@ import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/r
               [connectedDropLists]="kanbanDropListIds"
               [unlockedDepartments]="gameState.unlockedDepartmentList()"
               [departments]="gameState.departments()"
+              [boardFrozen]="gameState.boardFrozen()"
               (missionAccepted)="onAcceptMission($event)"
               (missionRouteRequested)="onMissionRouteRequested($event)" />
           </div>
@@ -99,6 +102,8 @@ import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/r
             [nextMinionCost]="gameState.nextMinionCost()"
             [canHireMinion]="gameState.canHireMinion()"
             [unlockedDepartments]="gameState.unlockedDepartments()"
+            [hiringDisabled]="gameState.hiringDisabled()"
+            [upgradesDisabled]="gameState.upgradesDisabled()"
             (recruitClicked)="onRecruitMinion()"
             (hireChosenClicked)="onHireChosenMinion($event)"
             (upgradeClicked)="onPurchaseUpgrade($event)" />
@@ -117,6 +122,7 @@ import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/r
                 [dragDisabled]="true"
                 [unlockedDepartments]="gameState.unlockedDepartmentList()"
                 [departments]="gameState.departments()"
+                [boardFrozen]="gameState.boardFrozen()"
                 (missionAccepted)="onAcceptMission($event)"
                 (missionRouteRequested)="onMissionRouteRequested($event)" />
             }
@@ -238,6 +244,7 @@ import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/r
                         [minionCount]="gameState.minions().length"
                         [canHire]="gameState.canHireMinion()"
                         [unlockedDepartments]="gameState.unlockedDepartments()"
+                        [hiringDisabled]="gameState.hiringDisabled()"
                         (recruit)="onRecruitMinion('mobile')"
                         (hireChosen)="onHireChosenMinion($event)" />
                       <div class="mt-3">
@@ -248,6 +255,7 @@ import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/r
                       <app-upgrade-shop
                         [upgrades]="gameState.upgrades()"
                         [gold]="gameState.gold()"
+                        [upgradesDisabled]="gameState.upgradesDisabled()"
                         (purchaseClicked)="onPurchaseUpgrade($event)" />
                     }
                     @case ('departments') {
@@ -282,6 +290,15 @@ import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/r
           [result]="result"
           [missedQuarters]="gameState.quarterProgress().missedQuarters"
           (advance)="onQuarterAdvance()" />
+      }
+
+      <!-- Run Over Screen -->
+      @if (gameState.isRunOver()) {
+        <app-run-over
+          [quarterResults]="gameState.quarterProgress().quarterResults"
+          [totalGold]="gameState.totalGoldEarned()"
+          [totalTasks]="gameState.completedCount()"
+          (newRun)="onNewRun()" />
       }
 
       <!-- Reviewer Intro Modal (shown at Q4 start) -->
@@ -467,6 +484,12 @@ export class GameContainerComponent implements OnInit, OnDestroy {
 
   onBeginReview(): void {
     this.gameState.dismissReviewerIntro();
+    this.gameTimer.restartTimers();
+  }
+
+  onNewRun(): void {
+    this.gameState.startNewRun();
+    this.saveService.clearSave();
     this.gameTimer.restartTimers();
   }
 

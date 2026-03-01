@@ -16,6 +16,13 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
         <span class="text-xs text-gold font-bold">{{ gold() }}g available</span>
       </div>
 
+      @if (upgradesDisabled()) {
+        <div class="w-full py-2 px-4 rounded-lg text-sm font-bold uppercase tracking-wider text-center
+                    bg-red-500/10 text-red-400 border border-red-500/20">
+          🚫 Upgrades Locked
+        </div>
+      }
+
       <!-- Category tabs -->
       <div class="flex gap-1 flex-wrap">
         @for (cat of categoryTabs; track cat.key) {
@@ -53,9 +60,9 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
 
             <button
               (click)="purchaseClicked.emit(upgrade.id)"
-              [disabled]="gold() < getCost(upgrade)"
+              [disabled]="upgradesDisabled() || gold() < getCost(upgrade)"
               class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
-              [class]="gold() >= getCost(upgrade)
+              [class]="!upgradesDisabled() && gold() >= getCost(upgrade)
                 ? 'bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 active:scale-95'
                 : 'bg-white/5 text-text-muted cursor-not-allowed'">
               {{ getCost(upgrade) }}g
@@ -74,6 +81,7 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
 export class UpgradeShopComponent {
   upgrades = input.required<Upgrade[]>();
   gold = input.required<number>();
+  upgradesDisabled = input<boolean>(false);
   purchaseClicked = output<string>();
 
   selectedCategory = signal<UpgradeCategory | null>(null);
