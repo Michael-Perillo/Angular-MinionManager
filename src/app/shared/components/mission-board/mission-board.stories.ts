@@ -92,12 +92,12 @@ export const WithSortInteraction: Story = {
     await userEvent.click(canvas.getByText(/Tier/));
     expect(canvas.getByText(/Gold/)).toBeTruthy();
 
-    // Click to cycle to "Time"
+    // Click to cycle to "Clicks"
     await userEvent.click(canvas.getByText(/Gold/));
-    expect(canvas.getByText(/Time/)).toBeTruthy();
+    expect(canvas.getByText(/Clicks/)).toBeTruthy();
 
     // Click to cycle back to "Default"
-    await userEvent.click(canvas.getByText(/Time/));
+    await userEvent.click(canvas.getByText(/Clicks/));
     expect(canvas.getByText(/Default/)).toBeTruthy();
   },
 };
