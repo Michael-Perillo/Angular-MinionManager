@@ -4,6 +4,9 @@ import { Department } from './department.model';
 import { QuarterProgress } from './quarter.model';
 import { Reviewer, Modifier } from './reviewer.model';
 
+/** Single source of truth for the save format version. Bump this when changing SaveData. */
+export const SAVE_VERSION = 10;
+
 export interface SaveData {
   version: number;
   savedAt: number;
@@ -24,4 +27,6 @@ export interface SaveData {
   currentReviewer?: Reviewer | null;
   activeModifiers?: Modifier[];
   isRunOver?: boolean;
+  /** v10+: Voucher levels */
+  ownedVouchers?: Record<string, number>;
 }

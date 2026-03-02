@@ -299,3 +299,83 @@ test.describe('Year-End Boss Review', () => {
     await expect(runOver.getByRole('button', { name: 'New Run' })).toBeVisible();
   });
 });
+
+// ─── Voucher Shop ──────────────────────────
+
+test.describe('Voucher Shop', () => {
+  test('Shop appears after quarter completion and allows purchase', async ({ page, nav }) => {
+    // Seed: Q1 complete with gold to buy a voucher
+    await nav.seedState({
+      gold: 500,
+      quarterProgress: {
+        year: 1,
+        quarter: 1,
+        grossGoldEarned: 200,
+        tasksCompleted: 30,
+        isComplete: true,
+        missedQuarters: 0,
+        quarterResults: [
+          { year: 1, quarter: 1, passed: true, goldEarned: 200, target: 75, tasksCompleted: 30 },
+        ],
+      },
+    });
+
+    // Quarter review modal should be visible — click Continue
+    const reviewModal = page.locator('app-quarter-review');
+    await reviewModal.waitFor({ state: 'visible', timeout: 5_000 });
+    const reviewContinue = page.getByRole('button', { name: /Continue to Q2/i });
+    await reviewContinue.click();
+    await reviewModal.waitFor({ state: 'hidden', timeout: 3_000 });
+
+    // Shop modal should appear
+    const shop = page.locator('app-shop');
+    await shop.waitFor({ state: 'visible', timeout: 3_000 });
+
+    // Buy Iron Fingers voucher
+    const buyBtn = shop.getByTestId('buy-iron-fingers');
+    await buyBtn.click();
+
+    // Gold should have decreased (40g for Iron Fingers L1)
+    await expect(shop.getByText('460')).toBeVisible({ timeout: 2_000 });
+
+    // Close shop
+    await shop.getByTestId('shop-continue').click();
+    await shop.waitFor({ state: 'hidden', timeout: 3_000 });
+
+    // Header should show Y1Q2
+    await expect(page.getByText('Y1Q2')).toBeVisible({ timeout: 3_000 });
+  });
+
+  test('Shop does not appear for Q3→Q4 transition', async ({ page, nav }) => {
+    // Seed: Q3 complete → should go straight to reviewer intro
+    await nav.seedState({
+      gold: 500,
+      quarterProgress: {
+        year: 1,
+        quarter: 3,
+        grossGoldEarned: 1500,
+        tasksCompleted: 60,
+        isComplete: true,
+        missedQuarters: 0,
+        quarterResults: [
+          { year: 1, quarter: 1, passed: true, goldEarned: 200, target: 75, tasksCompleted: 30 },
+          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 300, tasksCompleted: 40 },
+          { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 900, tasksCompleted: 60 },
+        ],
+      },
+    });
+
+    // Quarter review modal — click Continue
+    const reviewModal = page.locator('app-quarter-review');
+    await reviewModal.waitFor({ state: 'visible', timeout: 5_000 });
+    const reviewContinue = page.getByRole('button', { name: /Continue to Q4/i });
+    await reviewContinue.click();
+    await reviewModal.waitFor({ state: 'hidden', timeout: 3_000 });
+
+    // Shop should NOT appear — reviewer intro should appear instead
+    const shop = page.locator('app-shop');
+    await expect(shop).not.toBeVisible();
+    const reviewerIntro = page.locator('app-reviewer-intro');
+    await reviewerIntro.waitFor({ state: 'visible', timeout: 3_000 });
+  });
+});

@@ -107,8 +107,17 @@ test('Quarter review modal appears on quarter completion', async ({ page, nav })
   const continueBtn = page.getByRole('button', { name: /Continue to Q2/i });
   await continueBtn.click();
 
-  // Modal should dismiss
+  // Quarter review modal should dismiss
   await modal.waitFor({ state: 'hidden', timeout: 3_000 });
+
+  // Shop modal should appear between quarters
+  const shop = page.locator('app-shop');
+  await shop.waitFor({ state: 'visible', timeout: 3_000 });
+
+  // Close shop to advance to next quarter
+  const shopContinue = shop.getByTestId('shop-continue');
+  await shopContinue.click();
+  await shop.waitFor({ state: 'hidden', timeout: 3_000 });
 
   // Header should show Y1Q2
   await expect(page.getByText('Y1Q2')).toBeVisible({ timeout: 3_000 });
