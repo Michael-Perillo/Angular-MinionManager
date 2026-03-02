@@ -1,10 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { GameStateService } from './game-state.service';
-import { SaveData } from '../models/save-data.model';
+import { SaveData, SAVE_VERSION } from '../models/save-data.model';
 import { STORAGE_BACKEND } from './storage-backend';
 
 const STORAGE_KEY = 'minion-manager-save';
-const CURRENT_VERSION = 9;
 
 @Injectable({ providedIn: 'root' })
 export class SaveService {
@@ -146,6 +145,11 @@ export class SaveService {
       }
       data.playerQueue = stripTimeFields(data.playerQueue);
       data.version = 9;
+    }
+    if (data.version < 10) {
+      // v9 → v10: Add voucher levels
+      data.ownedVouchers = data.ownedVouchers ?? {};
+      data.version = 10;
     }
     return data;
   }

@@ -4,6 +4,7 @@ import { GameTimerService } from '../../core/services/game-timer.service';
 import { SaveService } from '../../core/services/save.service';
 import { QueueTarget, TaskCategory, Task } from '../../core/models/task.model';
 import { Minion } from '../../core/models/minion.model';
+import { VoucherId } from '../../core/models/voucher.model';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { MissionBoardComponent } from '../../shared/components/mission-board/mission-board.component';
 import { KanbanBoardComponent } from '../../shared/components/kanban-board/kanban-board.component';
@@ -11,7 +12,7 @@ import { DrawerPanelComponent } from '../../shared/components/drawer-panel/drawe
 import { MissionRouterComponent } from '../../shared/components/mission-router/mission-router.component';
 import { MobileBottomNavComponent, MobileTab } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav.component';
 import { NotificationToastComponent } from '../../shared/components/notification-toast/notification-toast.component';
-// UpgradeShopComponent will be replaced by shop component in Phase 2
+import { ShopComponent } from '../../shared/components/shop/shop.component';
 import { DepartmentPanelComponent } from '../../shared/components/department-panel/department-panel.component';
 import { HireMinionPanelComponent } from '../../shared/components/hire-minion-panel/hire-minion-panel.component';
 import { MinionRosterComponent } from '../../shared/components/minion-roster/minion-roster.component';
@@ -40,6 +41,7 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
     QuarterReviewComponent,
     ReviewerIntroComponent,
     RunOverComponent,
+    ShopComponent,
   ],
   template: `
     <div class="h-screen flex flex-col overflow-hidden">
@@ -271,6 +273,15 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
           (advance)="onQuarterAdvance()" />
       }
 
+      <!-- Shop Modal (between quarters) -->
+      @if (gameState.showShop()) {
+        <app-shop
+          [vouchers]="gameState.ownedVouchers()"
+          [gold]="gameState.gold()"
+          (purchase)="onVoucherPurchase($event)"
+          (continue)="onShopContinue()" />
+      }
+
       <!-- Run Over Screen -->
       @if (gameState.isRunOver()) {
         <app-run-over
@@ -327,6 +338,10 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly latestQuarterResult = computed(() => {
     const qp = this.gameState.quarterProgress();
     if (!qp.isComplete) return null;
+    // Hide quarter review when shop, reviewer intro, or run-over is showing
+    if (this.gameState.showShop()) return null;
+    if (this.gameState.showReviewerIntro()) return null;
+    if (this.gameState.isRunOver()) return null;
     const results = qp.quarterResults;
     return results.length > 0 ? results[results.length - 1] : null;
   });
@@ -446,7 +461,20 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   onQuarterAdvance(): void {
     this.pausedAt = null;
     this.gameState.advanceQuarter();
-    // Don't restart timers if the reviewer intro is showing (Q3→Q4 transition)
+    // Don't restart timers if the reviewer intro is showing (Q3→Q4)
+    // or if the shop is showing (Q1→Q2, Q2→Q3, Q4→Y+1 Q1)
+    // or if run is over (Q4 failed)
+    if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver() && !this.gameState.showShop()) {
+      this.gameTimer.restartTimers();
+    }
+  }
+
+  onVoucherPurchase(id: VoucherId): void {
+    this.gameState.purchaseVoucher(id);
+  }
+
+  onShopContinue(): void {
+    this.gameState.continueAfterShop();
     if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver()) {
       this.gameTimer.restartTimers();
     }

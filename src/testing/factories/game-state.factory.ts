@@ -1,4 +1,4 @@
-import { SaveData } from '../../app/core/models/save-data.model';
+import { SaveData, SAVE_VERSION } from '../../app/core/models/save-data.model';
 import { TaskCategory } from '../../app/core/models/task.model';
 import { Department } from '../../app/core/models/department.model';
 
@@ -11,7 +11,7 @@ export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
   };
 
   return {
-    version: 9,
+    version: SAVE_VERSION,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,

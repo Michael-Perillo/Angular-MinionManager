@@ -4,6 +4,7 @@ import { GameEventService, GameEvent } from './game-event.service';
 import { completeTaskByClicking, setupGameWithMinions } from '../../../testing/helpers/game-test-helpers';
 import { makeSaveData } from '../../../testing/factories/game-state.factory';
 import { makeMinion } from '../../../testing/factories/minion.factory';
+import { SAVE_VERSION } from '../models/save-data.model';
 
 describe('GameStateService', () => {
   let service: GameStateService;
@@ -555,7 +556,7 @@ describe('GameStateService', () => {
 
     it('should include current version in snapshot', () => {
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(9);
+      expect(snapshot.version).toBe(SAVE_VERSION);
     });
   });
 
@@ -639,7 +640,7 @@ describe('GameStateService', () => {
       service.addGold(10_000);
       service.hireMinion();
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(9);
+      expect(snapshot.version).toBe(SAVE_VERSION);
       expect(snapshot.unlockedDepartments).toBeDefined();
       expect(snapshot.unlockedDepartments!.length).toBeGreaterThanOrEqual(1);
     });
@@ -933,6 +934,9 @@ describe('GameStateService', () => {
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
+      // Shop opens for non-Q3→Q4 transitions
+      expect(service.showShop()).toBe(true);
+      service.continueAfterShop();
 
       const progress = service.quarterProgress();
       expect(progress.quarter).toBe(2);
@@ -1008,6 +1012,9 @@ describe('GameStateService', () => {
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
+      // Shop opens for Q4 pass before Y+1 Q1
+      expect(service.showShop()).toBe(true);
+      service.continueAfterShop();
 
       const progress = service.quarterProgress();
       expect(progress.quarter).toBe(1);
@@ -1257,6 +1264,9 @@ describe('GameStateService', () => {
       expect(service.currentReviewer()).toBeNull();
       expect(service.activeModifiers()).toEqual([]);
       expect(service.isRunOver()).toBe(false);
+      // Shop opens before Y+1 Q1
+      expect(service.showShop()).toBe(true);
+      service.continueAfterShop();
       expect(service.quarterProgress().year).toBe(2);
       expect(service.quarterProgress().quarter).toBe(1);
     });
@@ -1489,10 +1499,251 @@ describe('GameStateService', () => {
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-
+      // Constraints should be reverted immediately, even before shop closes
       expect(service.hiringDisabled()).toBe(false);
       expect(service.boardFrozen()).toBe(false);
       expect(service.lockedCategory()).toBeNull();
+    });
+  });
+
+  describe('Vouchers', () => {
+    it('should start with all vouchers at level 0', () => {
+      const v = service.ownedVouchers();
+      expect(v['iron-fingers']).toBe(0);
+      expect(v['board-expansion']).toBe(0);
+      expect(v['operations-desk']).toBe(0);
+      expect(v['rapid-intel']).toBe(0);
+      expect(v['hire-discount']).toBe(0);
+      expect(v['dept-funding']).toBe(0);
+    });
+
+    it('should have base click power of 1 with no vouchers', () => {
+      expect(service.clickPower()).toBe(1);
+    });
+
+    describe('purchaseVoucher', () => {
+      it('should purchase a voucher when gold is sufficient', () => {
+        service.addGold(100);
+        const result = service.purchaseVoucher('iron-fingers');
+        expect(result).toBe(true);
+        expect(service.ownedVouchers()['iron-fingers']).toBe(1);
+        expect(service.gold()).toBe(60); // 100 - 40
+      });
+
+      it('should reject purchase when gold is insufficient', () => {
+        service.addGold(10);
+        const result = service.purchaseVoucher('iron-fingers');
+        expect(result).toBe(false);
+        expect(service.ownedVouchers()['iron-fingers']).toBe(0);
+        expect(service.gold()).toBe(10);
+      });
+
+      it('should reject purchase when voucher is at max level', () => {
+        service.addGold(10000);
+        service.purchaseVoucher('iron-fingers'); // L1: -40
+        service.purchaseVoucher('iron-fingers'); // L2: -200
+        service.purchaseVoucher('iron-fingers'); // L3: -600
+        expect(service.ownedVouchers()['iron-fingers']).toBe(3);
+        const result = service.purchaseVoucher('iron-fingers'); // L4: should fail
+        expect(result).toBe(false);
+        expect(service.ownedVouchers()['iron-fingers']).toBe(3);
+      });
+
+      it('should upgrade through all levels with correct costs', () => {
+        service.addGold(10000);
+        service.purchaseVoucher('iron-fingers'); // L1: -40
+        expect(service.gold()).toBe(9960);
+        service.purchaseVoucher('iron-fingers'); // L2: -200
+        expect(service.gold()).toBe(9760);
+        service.purchaseVoucher('iron-fingers'); // L3: -600
+        expect(service.gold()).toBe(9160);
+      });
+    });
+
+    describe('voucher effects', () => {
+      beforeEach(() => {
+        service.addGold(50000);
+      });
+
+      it('iron-fingers should increase click power', () => {
+        expect(service.clickPower()).toBe(1);
+        service.purchaseVoucher('iron-fingers');
+        expect(service.clickPower()).toBe(3); // 1 + 2
+        service.purchaseVoucher('iron-fingers');
+        expect(service.clickPower()).toBe(6); // 1 + 5
+        service.purchaseVoucher('iron-fingers');
+        expect(service.clickPower()).toBe(13); // 1 + 12
+      });
+
+      it('board-expansion should increase board capacity', () => {
+        const baseCap = service.boardCapacity();
+        service.purchaseVoucher('board-expansion');
+        expect(service.boardCapacity()).toBe(baseCap + 3);
+      });
+
+      it('operations-desk should increase active slots', () => {
+        const baseSlots = service.activeSlots();
+        service.purchaseVoucher('operations-desk');
+        expect(service.activeSlots()).toBe(baseSlots + 2);
+      });
+
+      it('hire-discount should reduce next minion cost', () => {
+        const baseCost = service.nextMinionCost();
+        service.purchaseVoucher('hire-discount');
+        const discountedCost = service.nextMinionCost();
+        expect(discountedCost).toBeLessThan(baseCost);
+        expect(discountedCost).toBe(Math.floor(75 * (1 - 0.20)));
+      });
+
+      it('rapid-intel should reduce board refresh interval', () => {
+        const baseInterval = service.getEffectiveBoardRefreshInterval();
+        service.purchaseVoucher('rapid-intel');
+        const newInterval = service.getEffectiveBoardRefreshInterval();
+        expect(newInterval).toBeLessThan(baseInterval);
+      });
+    });
+
+    describe('persistence', () => {
+      it('should include voucher levels in snapshot', () => {
+        service.addGold(1000);
+        service.purchaseVoucher('iron-fingers');
+        service.purchaseVoucher('board-expansion');
+        const snapshot = service.getSnapshot();
+        expect(snapshot.ownedVouchers).toBeDefined();
+        expect(snapshot.ownedVouchers!['iron-fingers']).toBe(1);
+        expect(snapshot.ownedVouchers!['board-expansion']).toBe(1);
+      });
+
+      it('should restore voucher levels from snapshot', () => {
+        const data = makeSaveData({
+          ownedVouchers: { 'iron-fingers': 2, 'dept-funding': 1 },
+        });
+        service.loadSnapshot(data);
+        expect(service.ownedVouchers()['iron-fingers']).toBe(2);
+        expect(service.ownedVouchers()['dept-funding']).toBe(1);
+        expect(service.ownedVouchers()['board-expansion']).toBe(0);
+      });
+
+      it('should restore voucher effects on load', () => {
+        const data = makeSaveData({
+          ownedVouchers: { 'iron-fingers': 3 },
+        });
+        service.loadSnapshot(data);
+        expect(service.clickPower()).toBe(13); // 1 + 12
+      });
+    });
+  });
+
+  describe('Shop flow', () => {
+    it('should not show shop initially', () => {
+      expect(service.showShop()).toBe(false);
+    });
+
+    it('openShop/closeShop should toggle showShop signal', () => {
+      service.openShop();
+      expect(service.showShop()).toBe(true);
+      service.closeShop();
+      expect(service.showShop()).toBe(false);
+    });
+
+    it('advanceQuarter should show shop for Q1→Q2 transition', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 1,
+          grossGoldEarned: 100,
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+      expect(service.showShop()).toBe(true);
+      // Quarter should NOT have advanced yet
+      expect(service.quarterProgress().quarter).toBe(1);
+      expect(service.quarterProgress().isComplete).toBe(true);
+    });
+
+    it('continueAfterShop should advance the quarter and close shop', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 1,
+          grossGoldEarned: 100,
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+      expect(service.showShop()).toBe(true);
+
+      service.continueAfterShop();
+      expect(service.showShop()).toBe(false);
+      expect(service.quarterProgress().quarter).toBe(2);
+      expect(service.quarterProgress().isComplete).toBe(false);
+    });
+
+    it('Q3→Q4 should skip shop and go straight to review', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 3,
+          grossGoldEarned: 1000,
+          tasksCompleted: 60,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [
+            { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
+            { year: 1, quarter: 2, passed: true, goldEarned: 400, target: 300, tasksCompleted: 40 },
+            { year: 1, quarter: 3, passed: true, goldEarned: 1000, target: 900, tasksCompleted: 60 },
+          ],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+      // Shop should NOT be shown for Q3→Q4
+      expect(service.showShop()).toBe(false);
+      // Reviewer should be shown instead
+      expect(service.showReviewerIntro()).toBe(true);
+      expect(service.quarterProgress().quarter).toBe(4);
+    });
+
+    it('Q4 pass should show shop before advancing to Y+1 Q1', () => {
+      const data = makeSaveData({
+        quarterProgress: {
+          year: 1,
+          quarter: 4,
+          grossGoldEarned: 500,
+          tasksCompleted: 30,
+          isComplete: true,
+          missedQuarters: 0,
+          quarterResults: [{ year: 1, quarter: 4, passed: true, goldEarned: 500, target: 200, tasksCompleted: 30 }],
+        },
+      });
+      service.loadSnapshot(data);
+      service.advanceQuarter();
+      expect(service.showShop()).toBe(true);
+
+      service.continueAfterShop();
+      expect(service.quarterProgress().year).toBe(2);
+      expect(service.quarterProgress().quarter).toBe(1);
+    });
+
+    it('resetGame should clear vouchers and shop', () => {
+      service.addGold(1000);
+      service.purchaseVoucher('iron-fingers');
+      service.openShop();
+      expect(service.ownedVouchers()['iron-fingers']).toBe(1);
+      expect(service.showShop()).toBe(true);
+
+      service.resetGame();
+      expect(service.ownedVouchers()['iron-fingers']).toBe(0);
+      expect(service.showShop()).toBe(false);
     });
   });
 

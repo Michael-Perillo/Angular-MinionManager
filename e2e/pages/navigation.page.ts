@@ -1,5 +1,8 @@
 import { Page } from '@playwright/test';
 
+/** Must match SAVE_VERSION in src/app/core/models/save-data.model.ts */
+const SAVE_VERSION = 10;
+
 export interface NavigationPage {
   resetGame(): Promise<void>;
   seedState(overrides: Record<string, unknown>): Promise<void>;
@@ -11,11 +14,11 @@ export interface NavigationPage {
   readonly isMobile: boolean;
 }
 
-/** Minimal valid SaveData (version 5) that loadSnapshot accepts. */
+/** Minimal valid SaveData that loadSnapshot accepts. */
 function baseSaveData(): Record<string, unknown> {
   const defaultDept = (category: string) => ({ category, xp: 0, level: 1 });
   return {
-    version: 9,
+    version: SAVE_VERSION,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,
@@ -34,6 +37,7 @@ function baseSaveData(): Record<string, unknown> {
     departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
     playerQueue: [],
     unlockedDepartments: [],
+    ownedVouchers: {},
   };
 }
 
@@ -50,7 +54,7 @@ export class DesktopNavigation implements NavigationPage {
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
-    const save = { ...baseSaveData(), ...overrides, version: 9, savedAt: Date.now() };
+    const save = { ...baseSaveData(), ...overrides, version: SAVE_VERSION, savedAt: Date.now() };
     const json = JSON.stringify(save);
     // Use addInitScript so seeded data is written before the Angular app boots.
     // This avoids the beforeunload auto-save race (app saves empty state over seed on reload).
@@ -111,7 +115,7 @@ export class MobileNavigation implements NavigationPage {
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
-    const save = { ...baseSaveData(), ...overrides, version: 9, savedAt: Date.now() };
+    const save = { ...baseSaveData(), ...overrides, version: SAVE_VERSION, savedAt: Date.now() };
     await this.page.evaluate((data) => {
       localStorage.setItem('minion-manager-save', JSON.stringify(data));
     }, save);

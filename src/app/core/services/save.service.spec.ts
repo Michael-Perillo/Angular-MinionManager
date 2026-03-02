@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { SaveService } from './save.service';
 import { GameStateService } from './game-state.service';
 import { STORAGE_BACKEND, StorageBackend } from './storage-backend';
+import { SAVE_VERSION } from '../models/save-data.model';
 
 const STORAGE_KEY = 'minion-manager-save';
 
@@ -85,7 +86,7 @@ describe('SaveService', () => {
   });
 
   describe('migration', () => {
-    it('should migrate v3 data through to v9', () => {
+    it('should migrate v3 data through to current version', () => {
       const v3Data: any = {
         version: 3,
         savedAt: Date.now(),
@@ -119,14 +120,14 @@ describe('SaveService', () => {
       expect(gameState.gold()).toBe(200);
 
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.version).toBe(9);
+      expect(snapshot.version).toBe(SAVE_VERSION);
       // Influence, resources, and upgradeLevels should be stripped
       expect((snapshot as any).influence).toBeUndefined();
       expect((snapshot as any).resources).toBeUndefined();
       expect((snapshot as any).upgradeLevels).toBeUndefined();
     });
 
-    it('should migrate v4 data (remove notoriety/raids/influence/upgrades) to v9', () => {
+    it('should migrate v4 data (remove notoriety/raids/influence/upgrades) to current version', () => {
       const v4Data: any = {
         version: 4,
         savedAt: Date.now(),
@@ -167,7 +168,7 @@ describe('SaveService', () => {
       expect(gameState.gold()).toBe(300);
 
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.version).toBe(9);
+      expect(snapshot.version).toBe(SAVE_VERSION);
       // Notoriety and influence fields should be stripped
       expect((snapshot as any).notoriety).toBeUndefined();
       expect((snapshot as any).raidActive).toBeUndefined();
@@ -184,7 +185,7 @@ describe('SaveService', () => {
       expect((snapshot as any).upgradeLevels).toBeUndefined();
     });
 
-    it('should migrate v7 data (add reviewer defaults, strip upgrades) to v9', () => {
+    it('should migrate v7 data (add reviewer defaults, strip upgrades) to current version', () => {
       const v7Data: any = {
         version: 7,
         savedAt: Date.now(),
@@ -217,7 +218,7 @@ describe('SaveService', () => {
       expect(gameState.gold()).toBe(500);
 
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.version).toBe(9);
+      expect(snapshot.version).toBe(SAVE_VERSION);
       expect(snapshot.currentReviewer).toBeNull();
       expect(snapshot.activeModifiers).toEqual([]);
       expect(snapshot.isRunOver).toBe(false);

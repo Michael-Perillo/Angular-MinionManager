@@ -5,3 +5,4 @@ export * from './task-pool';
 export * from './department.model';
 export * from './save-data.model';
 export * from './quarter.model';
+export * from './voucher.model';

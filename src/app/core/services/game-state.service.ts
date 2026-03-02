@@ -20,7 +20,11 @@ import {
 import {
   Reviewer, Modifier, selectReviewer, getReviewModifiers, getReviewerGoldTarget,
 } from '../models/reviewer.model';
-import { SaveData } from '../models/save-data.model';
+import {
+  VoucherId, VOUCHERS, ALL_VOUCHER_IDS, createEmptyVoucherLevels,
+  getVoucherCost, getVoucherEffect,
+} from '../models/voucher.model';
+import { SaveData, SAVE_VERSION } from '../models/save-data.model';
 import { GameEventService } from './game-event.service';
 
 const ALL_CATEGORIES: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
@@ -74,6 +78,10 @@ export class GameStateService {
   private readonly _goldRewardMultiplier = signal(1);
   private readonly _lockedCategory = signal<TaskCategory | null>(null);
 
+  // ─── Voucher & shop signals ───────────────
+  private readonly _ownedVouchers = signal<Record<VoucherId, number>>(createEmptyVoucherLevels());
+  private readonly _showShop = signal(false);
+
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
   readonly minions = this._minions.asReadonly();
@@ -101,6 +109,17 @@ export class GameStateService {
   readonly boardFrozen = this._boardFrozen.asReadonly();
   readonly boardLimited = this._boardLimited.asReadonly();
   readonly lockedCategory = this._lockedCategory.asReadonly();
+  readonly ownedVouchers = this._ownedVouchers.asReadonly();
+  readonly showShop = this._showShop.asReadonly();
+
+  // ─── Voucher effect helpers (private computed) ──
+  private readonly voucherClickPower = computed(() => getVoucherEffect('iron-fingers', this._ownedVouchers()['iron-fingers']));
+  private readonly voucherBoardBonus = computed(() => getVoucherEffect('board-expansion', this._ownedVouchers()['board-expansion']));
+  private readonly voucherSlotBonus = computed(() => getVoucherEffect('operations-desk', this._ownedVouchers()['operations-desk']));
+  private readonly voucherRefreshMult = computed(() => getVoucherEffect('rapid-intel', this._ownedVouchers()['rapid-intel']));
+  private readonly voucherHireDiscount = computed(() => getVoucherEffect('hire-discount', this._ownedVouchers()['hire-discount']));
+  private readonly voucherXpMult = computed(() => getVoucherEffect('dept-funding', this._ownedVouchers()['dept-funding']));
+
   readonly currentQuarterTarget = computed(() => {
     const p = this._quarterProgress();
     return getQuarterTarget(p.year, p.quarter);
@@ -149,7 +168,7 @@ export class GameStateService {
   );
 
   readonly nextMinionCost = computed(() =>
-    Math.floor(75 * Math.pow(1.6, this._minions().length))
+    Math.floor(75 * Math.pow(1.6, this._minions().length) * (1 - this.voucherHireDiscount()))
   );
 
   readonly canHireMinion = computed(() =>
@@ -164,21 +183,21 @@ export class GameStateService {
     this.activeMissions().filter(t => t.status === 'in-progress')
   );
 
-  /** Mission board capacity: base 12, scales with minions. Clamped to 2 by board-limited modifier. */
+  /** Mission board capacity: base 12, scales with minions + voucher bonus. Clamped to 2 by board-limited modifier. */
   readonly boardCapacity = computed(() => {
     if (this._boardLimited()) return 2;
     const base = 12;
     const minionBonus = Math.min(8, this._minions().length * 2);
-    return base + minionBonus;
+    return base + minionBonus + this.voucherBoardBonus();
   });
 
-  /** Active mission slots: base 3 + 1 per minion */
+  /** Active mission slots: base 3 + 1 per minion + voucher bonus */
   readonly activeSlots = computed(() =>
-    3 + this._minions().length
+    3 + this._minions().length + this.voucherSlotBonus()
   );
 
-  /** Click power: base 1 (will be expanded by vouchers in Phase 2) */
-  readonly clickPower = computed(() => 1);
+  /** Click power: base 1 + voucher bonus */
+  readonly clickPower = computed(() => 1 + this.voucherClickPower());
 
   /** Minions grouped by assigned department */
   readonly minionsByDepartment = computed(() => {
@@ -263,6 +282,8 @@ export class GameStateService {
     this._goldDrainPerTask.set(0);
     this._goldRewardMultiplier.set(1);
     this._lockedCategory.set(null);
+    this._ownedVouchers.set(createEmptyVoucherLevels());
+    this._showShop.set(false);
     this._unlockedDepartments.set(new Set());
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
@@ -278,7 +299,7 @@ export class GameStateService {
   // ─── Snapshot (persistence) ─────────────────
   getSnapshot(): SaveData {
     return {
-      version: 9,
+      version: SAVE_VERSION,
       savedAt: Date.now(),
       gold: this._gold(),
       completedCount: this._completedCount(),
@@ -296,6 +317,7 @@ export class GameStateService {
       currentReviewer: this._currentReviewer(),
       activeModifiers: this._activeModifiers(),
       isRunOver: this._isRunOver(),
+      ownedVouchers: this._ownedVouchers(),
     };
   }
 
@@ -335,6 +357,20 @@ export class GameStateService {
     this._activeModifiers.set(data.activeModifiers ?? []);
     this._isRunOver.set(data.isRunOver ?? false);
     this._showReviewerIntro.set(false);
+
+    // Load vouchers (v10+)
+    if (data.ownedVouchers) {
+      const levels = createEmptyVoucherLevels();
+      for (const id of ALL_VOUCHER_IDS) {
+        if (id in data.ownedVouchers) {
+          levels[id] = (data.ownedVouchers as Record<string, number>)[id] ?? 0;
+        }
+      }
+      this._ownedVouchers.set(levels);
+    } else {
+      this._ownedVouchers.set(createEmptyVoucherLevels());
+    }
+    this._showShop.set(false);
 
     // Re-apply modifier constraints if in review
     this.revertModifiers();
@@ -716,11 +752,12 @@ export class GameStateService {
     });
   }
 
-  /** Get the effective board refresh interval in ms (factoring passives) */
+  /** Get the effective board refresh interval in ms (factoring passives + voucher) */
   getEffectiveBoardRefreshInterval(): number {
     const schemesPassive = getPassiveBonus('schemes', this._departments().schemes.level);
     const schemesRefreshBonus = 1 - schemesPassive * 0.01;
-    return this.BOARD_REFRESH_INTERVAL * Math.max(0.2, schemesRefreshBonus);
+    const voucherMult = this.voucherRefreshMult() || 1;
+    return this.BOARD_REFRESH_INTERVAL * Math.max(0.2, schemesRefreshBonus * voucherMult);
   }
 
   /** Clean old notifications */
@@ -1011,7 +1048,7 @@ export class GameStateService {
 
   private awardDeptXp(category: TaskCategory, tier: TaskTier, source: 'minion' | 'click' = 'minion'): void {
     const baseXp = DEPT_TIER_XP[tier];
-    const xpGain = baseXp;
+    const xpGain = Math.round(baseXp * (1 + this.voucherXpMult()));
     this._departments.update(depts => {
       const dept = depts[category];
       const newXp = dept.xp + xpGain;
@@ -1098,6 +1135,28 @@ export class GameStateService {
     this._notifications.update(list => [...list, notification]);
   }
 
+  // ─── Voucher shop ─────────────────────────
+
+  purchaseVoucher(id: VoucherId): boolean {
+    const current = this._ownedVouchers()[id];
+    const def = VOUCHERS[id];
+    if (current >= def.maxLevel) return false;
+    const cost = getVoucherCost(id, current + 1);
+    if (this._gold() < cost) return false;
+    this._gold.update(g => g - cost);
+    this._ownedVouchers.update(v => ({ ...v, [id]: current + 1 }));
+    return true;
+  }
+
+  openShop(): void { this._showShop.set(true); }
+  closeShop(): void { this._showShop.set(false); }
+
+  /** Called after the player closes the between-quarter shop to actually advance the quarter. */
+  continueAfterShop(): void {
+    this._showShop.set(false);
+    this.advanceToNextQuarter();
+  }
+
   // ─── Quarterly tracking ──────────────────
 
   private checkQuarterCompletion(): void {
@@ -1143,7 +1202,9 @@ export class GameStateService {
     );
   }
 
-  /** Advance to the next quarter (called after player acknowledges quarter results) */
+  /** Advance to the next quarter (called after player acknowledges quarter results).
+   *  For Q1-Q2 and Q4-pass transitions, opens the shop first; shop calls continueAfterShop().
+   *  For Q3→Q4 (review start), skips shop and goes straight to reviewer intro. */
   advanceQuarter(): void {
     const progress = this._quarterProgress();
     if (!progress.isComplete) return;
@@ -1151,11 +1212,12 @@ export class GameStateService {
     const nextQuarter = progress.quarter === 3 ? 4 as const :
       progress.quarter === 4 ? 1 as const :
       (progress.quarter + 1) as 1 | 2 | 3 | 4;
-    const nextYear = progress.quarter === 4 ? progress.year + 1 : progress.year;
 
-    // Q3→Q4: Start Year-End review — select reviewer and apply modifiers
+    // Q3→Q4: Start Year-End review — skip shop, go straight to reviewer intro
     if (nextQuarter === 4) {
       this.startReview(progress);
+      this.advanceToNextQuarter();
+      return;
     }
 
     // Q4 done: check pass/fail
@@ -1170,9 +1232,21 @@ export class GameStateService {
         });
         return; // Don't advance — game is over
       }
-      // Q4 passed — revert modifiers and move to next year
+      // Q4 passed — revert modifiers, then show shop before next year
       this.revertReview();
     }
+
+    // Show shop before advancing (Q1→Q2, Q2→Q3, Q4→Y+1 Q1)
+    this._showShop.set(true);
+  }
+
+  /** Internal: actually set the next quarter progress (called by advanceQuarter for Q3→Q4, or by continueAfterShop) */
+  private advanceToNextQuarter(): void {
+    const progress = this._quarterProgress();
+    const nextQuarter = progress.quarter === 3 ? 4 as const :
+      progress.quarter === 4 ? 1 as const :
+      (progress.quarter + 1) as 1 | 2 | 3 | 4;
+    const nextYear = progress.quarter === 4 ? progress.year + 1 : progress.year;
 
     this._quarterProgress.set({
       year: nextYear,
