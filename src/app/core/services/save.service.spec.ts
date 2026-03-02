@@ -2,7 +2,6 @@ import { TestBed } from '@angular/core/testing';
 import { SaveService } from './save.service';
 import { GameStateService } from './game-state.service';
 import { STORAGE_BACKEND, StorageBackend } from './storage-backend';
-import { makeSaveData } from '../../../testing/factories/game-state.factory';
 
 const STORAGE_KEY = 'minion-manager-save';
 
@@ -83,21 +82,10 @@ describe('SaveService', () => {
       expect(gameState.minions().length).toBe(1);
     });
 
-    it('should restore upgrade levels', () => {
-      gameState.addGold(10_000);
-      gameState.purchaseUpgrade('click-power');
-      gameState.purchaseUpgrade('click-power');
-
-      saveService.save();
-      gameState.resetGame();
-
-      saveService.load();
-      expect(gameState.getUpgradeLevel('click-power')).toBe(2);
-    });
   });
 
   describe('migration', () => {
-    it('should migrate v3 data through to v6', () => {
+    it('should migrate v3 data through to v9', () => {
       const v3Data: any = {
         version: 3,
         savedAt: Date.now(),
@@ -131,13 +119,14 @@ describe('SaveService', () => {
       expect(gameState.gold()).toBe(200);
 
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.version).toBe(8);
-      // Influence and resources should be stripped
+      expect(snapshot.version).toBe(9);
+      // Influence, resources, and upgradeLevels should be stripped
       expect((snapshot as any).influence).toBeUndefined();
       expect((snapshot as any).resources).toBeUndefined();
+      expect((snapshot as any).upgradeLevels).toBeUndefined();
     });
 
-    it('should migrate v4 data (remove notoriety/raids/influence) to v6', () => {
+    it('should migrate v4 data (remove notoriety/raids/influence/upgrades) to v9', () => {
       const v4Data: any = {
         version: 4,
         savedAt: Date.now(),
@@ -178,7 +167,7 @@ describe('SaveService', () => {
       expect(gameState.gold()).toBe(300);
 
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.version).toBe(8);
+      expect(snapshot.version).toBe(9);
       // Notoriety and influence fields should be stripped
       expect((snapshot as any).notoriety).toBeUndefined();
       expect((snapshot as any).raidActive).toBeUndefined();
@@ -188,18 +177,14 @@ describe('SaveService', () => {
       // Cover-op missions should be stripped
       expect(snapshot.missionBoard.length).toBe(1);
       expect(snapshot.missionBoard[0].id).toBe('t2');
-      // Notoriety upgrades should be stripped (loadSnapshot merges with defaults, so all 10 remain)
-      const upgradeIds = snapshot.upgradeLevels.map(u => u.id);
-      expect(upgradeIds).not.toContain('bribe-network');
-      expect(upgradeIds).not.toContain('shadow-ops');
-      expect(upgradeIds).not.toContain('cover-spawn');
-      expect(upgradeIds).not.toContain('lay-low');
-      // click-power should retain its saved level
-      const clickPower = snapshot.upgradeLevels.find(u => u.id === 'click-power');
-      expect(clickPower?.currentLevel).toBe(2);
+      // Time fields should be stripped from tasks by v9 migration
+      expect((snapshot.missionBoard[0] as any).timeToComplete).toBeUndefined();
+      expect((snapshot.missionBoard[0] as any).timeRemaining).toBeUndefined();
+      // upgradeLevels should be stripped entirely by v9 migration
+      expect((snapshot as any).upgradeLevels).toBeUndefined();
     });
 
-    it('should migrate v7 data (add reviewer defaults) to v8', () => {
+    it('should migrate v7 data (add reviewer defaults, strip upgrades) to v9', () => {
       const v7Data: any = {
         version: 7,
         savedAt: Date.now(),
@@ -213,7 +198,7 @@ describe('SaveService', () => {
           research: { category: 'research', xp: 0, level: 1 },
           mayhem: { category: 'mayhem', xp: 0, level: 1 },
         },
-        upgradeLevels: [],
+        upgradeLevels: [{ id: 'click-power', currentLevel: 3 }],
         activeMissions: [],
         missionBoard: [],
         usedNameIndices: [],
@@ -232,10 +217,12 @@ describe('SaveService', () => {
       expect(gameState.gold()).toBe(500);
 
       const snapshot = gameState.getSnapshot();
-      expect(snapshot.version).toBe(8);
+      expect(snapshot.version).toBe(9);
       expect(snapshot.currentReviewer).toBeNull();
       expect(snapshot.activeModifiers).toEqual([]);
       expect(snapshot.isRunOver).toBe(false);
+      // upgradeLevels should be stripped by v9 migration
+      expect((snapshot as any).upgradeLevels).toBeUndefined();
     });
   });
 

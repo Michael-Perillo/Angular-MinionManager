@@ -1,75 +1,18 @@
-import { Component, ChangeDetectionStrategy, input, output, computed, signal } from '@angular/core';
-import { Upgrade, upgradeCost, upgradeEffectAtLevel, UpgradeCategory } from '../../../core/models/upgrade.model';
-import { TooltipDirective } from '../../directives/tooltip.directive';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 
+/**
+ * Placeholder for the Phase 2 Shop component.
+ * Will be replaced with voucher/joker/pack tabs.
+ */
 @Component({
   selector: 'app-upgrade-shop',
   standalone: true,
-  imports: [TooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-bold text-text-primary font-display uppercase tracking-wider">
-          Lair Upgrades
-        </h2>
-        <span class="text-xs text-gold font-bold">{{ gold() }}g available</span>
-      </div>
-
-      @if (upgradesDisabled()) {
-        <div class="w-full py-2 px-4 rounded-lg text-sm font-bold uppercase tracking-wider text-center
-                    bg-red-500/10 text-red-400 border border-red-500/20">
-          🚫 Upgrades Locked
-        </div>
-      }
-
-      <!-- Category tabs -->
-      <div class="flex gap-1 flex-wrap">
-        @for (cat of categoryTabs; track cat.key) {
-          <button
-            (click)="selectedCategory.set(cat.key)"
-            class="px-2 py-1 text-xs rounded cursor-pointer transition-colors"
-            [class]="selectedCategory() === cat.key ? 'bg-accent/20 text-accent border border-accent/30' : 'text-text-muted hover:text-text-secondary'">
-            {{ cat.label }}
-          </button>
-        }
-      </div>
-
-      <div class="flex flex-col gap-2">
-        @for (upgrade of filteredUpgrades(); track upgrade.id) {
-          <div
-            class="game-card p-3 flex items-center gap-3"
-            [appTooltip]="getEffectTooltip(upgrade)"
-            [appTooltipPosition]="'left'">
-            <span class="text-xl shrink-0">{{ upgrade.icon }}</span>
-
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-text-primary">{{ upgrade.name }}</span>
-                <span class="text-xs text-text-muted">
-                  Lv.{{ upgrade.currentLevel }}
-                </span>
-              </div>
-              <p class="text-xs text-text-secondary mt-0.5">{{ upgrade.description }}</p>
-              @if (upgrade.currentLevel > 0) {
-                <p class="text-xs text-accent mt-0.5">
-                  Current: {{ getCurrentEffect(upgrade) }} | Next: {{ getNextEffect(upgrade) }}
-                </p>
-              }
-            </div>
-
-            <button
-              (click)="purchaseClicked.emit(upgrade.id)"
-              [disabled]="upgradesDisabled() || gold() < getCost(upgrade)"
-              class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
-              [class]="!upgradesDisabled() && gold() >= getCost(upgrade)
-                ? 'bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 active:scale-95'
-                : 'bg-white/5 text-text-muted cursor-not-allowed'">
-              {{ getCost(upgrade) }}g
-            </button>
-          </div>
-        }
-      </div>
+    <section class="flex flex-col items-center justify-center p-8 text-center">
+      <span class="text-3xl mb-3 opacity-40">🏪</span>
+      <p class="text-sm text-text-muted">Shop coming soon...</p>
+      <p class="text-xs text-text-muted mt-1">Vouchers, jokers, and card packs</p>
     </section>
   `,
   styles: `
@@ -78,71 +21,4 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
     }
   `,
 })
-export class UpgradeShopComponent {
-  upgrades = input.required<Upgrade[]>();
-  gold = input.required<number>();
-  upgradesDisabled = input<boolean>(false);
-  purchaseClicked = output<string>();
-
-  selectedCategory = signal<UpgradeCategory | null>(null);
-
-  categoryTabs = [
-    { key: null as UpgradeCategory | null, label: 'All' },
-    { key: 'click' as UpgradeCategory, label: 'Click Power' },
-    { key: 'minion' as UpgradeCategory, label: 'Minion Training' },
-    { key: 'war-room' as UpgradeCategory, label: 'War Room' },
-    { key: 'department' as UpgradeCategory, label: 'Departments' },
-  ];
-
-  filteredUpgrades = computed(() => {
-    const all = this.upgrades();
-    if (!this.selectedCategory()) return all;
-    return all.filter(u => u.category === this.selectedCategory());
-  });
-
-  getCost(upgrade: Upgrade): number {
-    return upgradeCost(upgrade);
-  }
-
-  getCurrentEffect(upgrade: Upgrade): string {
-    return this.formatEffect(upgrade, upgrade.currentLevel);
-  }
-
-  getNextEffect(upgrade: Upgrade): string {
-    return this.formatEffect(upgrade, upgrade.currentLevel + 1);
-  }
-
-  getEffectTooltip(upgrade: Upgrade): string {
-    if (upgrade.currentLevel === 0) return upgrade.description;
-    const current = this.getCurrentEffect(upgrade);
-    return `${upgrade.name}: ${current} (next: ${this.getNextEffect(upgrade)})`;
-  }
-
-  private formatEffect(upgrade: Upgrade, level: number): string {
-    const effect = upgradeEffectAtLevel(upgrade, level);
-    switch (upgrade.id) {
-      case 'click-power':
-        return `+${effect} click power`;
-      case 'click-gold':
-        return `+${Math.round(effect * 100)}% gold from clicks`;
-      case 'minion-speed':
-        return `+${Math.round(effect * 100)}% minion speed`;
-      case 'minion-efficiency':
-        return `+${Math.round(effect * 100)}% minion efficiency`;
-      case 'minion-xp':
-        return `+${Math.round(effect * 100)}% minion XP`;
-      case 'board-slots':
-        return `+${effect} board slots`;
-      case 'active-slots':
-        return `+${effect} active slots`;
-      case 'board-refresh':
-        return `-${Math.round((1 - effect) * 100)}% refresh time`;
-      case 'dept-xp-boost':
-        return `+${Math.round(effect * 100)}% dept XP`;
-      case 'hire-discount':
-        return `-${Math.round(effect * 100)}% hire cost`;
-      default:
-        return `Level ${level}`;
-    }
-  }
-}
+export class UpgradeShopComponent {}

@@ -171,12 +171,12 @@ describe('ReviewerModel', () => {
 
     it('should scale gold target for Year 2', () => {
       const reviewer = REVIEWERS[0];
-      expect(getReviewerGoldTarget(reviewer, 2)).toBe(Math.round(200 * 1.8));
+      expect(getReviewerGoldTarget(reviewer, 2)).toBe(Math.round(200 * 2.2));
     });
 
     it('should scale gold target for Year 3', () => {
       const reviewer = REVIEWERS[0];
-      expect(getReviewerGoldTarget(reviewer, 3)).toBe(Math.round(200 * 1.8 * 1.8));
+      expect(getReviewerGoldTarget(reviewer, 3)).toBe(Math.round(200 * 2.2 * 2.2));
     });
   });
 

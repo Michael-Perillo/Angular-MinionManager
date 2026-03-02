@@ -36,37 +36,55 @@ export interface QuarterResult {
   tasksCompleted: number;
 }
 
-// ─── Year 1 base targets ───────────────────
+// ─── Hand-tuned targets (Y1-Y3) ───────────
 
-const YEAR_1_TARGETS: QuarterTarget[] = [
-  { quarter: 1, taskBudget: 30, goldTarget: 75 },
-  { quarter: 2, taskBudget: 40, goldTarget: 400 },
-  { quarter: 3, taskBudget: 60, goldTarget: 1200 },
-  { quarter: 4, taskBudget: 30, goldTarget: 0 }, // Year-End review — target set by reviewer
-];
+const HAND_TUNED_TARGETS: Record<number, QuarterTarget[]> = {
+  1: [
+    { quarter: 1, taskBudget: 30, goldTarget: 75 },
+    { quarter: 2, taskBudget: 40, goldTarget: 300 },
+    { quarter: 3, taskBudget: 60, goldTarget: 900 },
+    { quarter: 4, taskBudget: 30, goldTarget: 0 }, // Year-End review — target set by reviewer
+  ],
+  2: [
+    { quarter: 1, taskBudget: 40, goldTarget: 400 },
+    { quarter: 2, taskBudget: 50, goldTarget: 1000 },
+    { quarter: 3, taskBudget: 70, goldTarget: 2500 },
+    { quarter: 4, taskBudget: 30, goldTarget: 0 },
+  ],
+  3: [
+    { quarter: 1, taskBudget: 50, goldTarget: 800 },
+    { quarter: 2, taskBudget: 60, goldTarget: 2500 },
+    { quarter: 3, taskBudget: 80, goldTarget: 6000 },
+    { quarter: 4, taskBudget: 30, goldTarget: 0 },
+  ],
+};
 
-// ─── Scaling constants ─────────────────────
+// ─── Scaling constants (Y4+) ──────────────
 
 /** Additional tasks per quarter per year (Year 2+) */
 const TASK_BUDGET_INCREASE_PER_YEAR = 10;
 
-/** Gold target multiplier per year (Year 2+) */
-const GOLD_TARGET_SCALE_PER_YEAR = 1.8;
+/** Gold target multiplier per year beyond Y3 */
+const GOLD_TARGET_SCALE_PER_YEAR = 2.2;
 
 // ─── Public functions ──────────────────────
 
 /** Get the target for a given year and quarter */
 export function getQuarterTarget(year: number, quarter: 1 | 2 | 3 | 4): QuarterTarget {
-  const base = YEAR_1_TARGETS[quarter - 1];
-  if (year === 1) return base;
+  // Hand-tuned targets for Y1-Y3
+  if (year <= 3) {
+    return HAND_TUNED_TARGETS[year][quarter - 1];
+  }
 
-  const yearOffset = year - 1;
+  // Y4+: scale from Y3 base
+  const y3 = HAND_TUNED_TARGETS[3][quarter - 1];
+  const yearsAbove3 = year - 3;
   return {
     quarter,
-    taskBudget: base.taskBudget + TASK_BUDGET_INCREASE_PER_YEAR * yearOffset,
+    taskBudget: y3.taskBudget + TASK_BUDGET_INCREASE_PER_YEAR * yearsAbove3,
     goldTarget: quarter === 4
       ? 0 // Year-End review target is set by the reviewer
-      : Math.round(base.goldTarget * Math.pow(GOLD_TARGET_SCALE_PER_YEAR, yearOffset)),
+      : Math.round(y3.goldTarget * Math.pow(GOLD_TARGET_SCALE_PER_YEAR, yearsAbove3)),
   };
 }
 

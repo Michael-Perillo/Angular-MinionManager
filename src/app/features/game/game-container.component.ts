@@ -11,7 +11,7 @@ import { DrawerPanelComponent } from '../../shared/components/drawer-panel/drawe
 import { MissionRouterComponent } from '../../shared/components/mission-router/mission-router.component';
 import { MobileBottomNavComponent, MobileTab } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav.component';
 import { NotificationToastComponent } from '../../shared/components/notification-toast/notification-toast.component';
-import { UpgradeShopComponent } from '../../shared/components/upgrade-shop/upgrade-shop.component';
+// UpgradeShopComponent will be replaced by shop component in Phase 2
 import { DepartmentPanelComponent } from '../../shared/components/department-panel/department-panel.component';
 import { HireMinionPanelComponent } from '../../shared/components/hire-minion-panel/hire-minion-panel.component';
 import { MinionRosterComponent } from '../../shared/components/minion-roster/minion-roster.component';
@@ -32,7 +32,6 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
     MissionRouterComponent,
     MobileBottomNavComponent,
     NotificationToastComponent,
-    UpgradeShopComponent,
     DepartmentPanelComponent,
     HireMinionPanelComponent,
     MinionRosterComponent,
@@ -86,7 +85,6 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
               [minions]="gameState.minions()"
               [clickPower]="gameState.clickPower()"
               [unlockedDepartments]="gameState.unlockedDepartmentList()"
-              [currentTime]="currentTime()"
               (taskClicked)="onTaskClick($event)"
               (taskMoved)="onTaskMoved($event)"
               (taskRouted)="onTaskRouted($event)"
@@ -98,15 +96,12 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
             [gold]="gameState.gold()"
             [minions]="gameState.minions()"
             [departments]="gameState.departments()"
-            [upgrades]="gameState.upgrades()"
             [nextMinionCost]="gameState.nextMinionCost()"
             [canHireMinion]="gameState.canHireMinion()"
             [unlockedDepartments]="gameState.unlockedDepartments()"
             [hiringDisabled]="gameState.hiringDisabled()"
-            [upgradesDisabled]="gameState.upgradesDisabled()"
             (recruitClicked)="onRecruitMinion()"
-            (hireChosenClicked)="onHireChosenMinion($event)"
-            (upgradeClicked)="onPurchaseUpgrade($event)" />
+            (hireChosenClicked)="onHireChosenMinion($event)" />
         </main>
       }
 
@@ -152,8 +147,7 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
                           [connectedDropLists]="[]"
                           [dragDisabled]="true"
                           [fullWidth]="true"
-                          [currentTime]="currentTime()"
-                          (taskMoveRequested)="onTaskMoveRequested($event)"
+                                    (taskMoveRequested)="onTaskMoveRequested($event)"
                           (taskReordered)="onDeptTaskReordered(cat, $event)" />
                       </div>
                     }
@@ -201,14 +195,6 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
                   <span class="ml-auto text-text-muted">→</span>
                 </button>
                 <button
-                  (click)="moreSection.set('upgrades')"
-                  class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
-                         hover:border-accent/30 transition-all cursor-pointer min-h-[48px]">
-                  <span class="text-xl">⚡</span>
-                  <span class="text-sm font-semibold text-text-primary">Lair Upgrades</span>
-                  <span class="ml-auto text-text-muted">→</span>
-                </button>
-                <button
                   (click)="moreSection.set('departments')"
                   class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
                          hover:border-accent/30 transition-all cursor-pointer min-h-[48px]">
@@ -250,13 +236,6 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
                       <div class="mt-3">
                         <app-minion-roster [minions]="gameState.minions()" />
                       </div>
-                    }
-                    @case ('upgrades') {
-                      <app-upgrade-shop
-                        [upgrades]="gameState.upgrades()"
-                        [gold]="gameState.gold()"
-                        [upgradesDisabled]="gameState.upgradesDisabled()"
-                        (purchaseClicked)="onPurchaseUpgrade($event)" />
                     }
                     @case ('departments') {
                       <app-department-panel
@@ -332,7 +311,6 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly deptSwipeContainer = viewChild<ElementRef>('deptSwipeContainer');
   readonly mobileHirePanel = viewChild<HireMinionPanelComponent>('mobileHirePanel');
 
-  readonly currentTime = signal(Date.now());
   readonly isMobile = signal(false);
   readonly mobileTab = signal<MobileTab>('missions');
   readonly mobileDeptTab = signal<TaskCategory>('schemes');
@@ -341,7 +319,6 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly routerMission = signal<Task | null>(null);
   readonly pendingMove = signal<{ taskId: string; fromQueue: string } | null>(null);
 
-  private currentTimeInterval: ReturnType<typeof setInterval> | null = null;
   private pausedAt: number | null = null;
 
   readonly allCategories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
@@ -369,10 +346,6 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     effect(() => {
       if (this.gameState.quarterProgress().isComplete) {
         this.gameTimer.stop();
-        if (this.currentTimeInterval) {
-          clearInterval(this.currentTimeInterval);
-          this.currentTimeInterval = null;
-        }
         this.pausedAt = Date.now();
       }
     });
@@ -394,16 +367,10 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     if (!this.gameState.quarterProgress().isComplete) {
       this.gameTimer.start();
     }
-
-    // Tick currentTime frequently for smooth progress percentage updates
-    this.currentTimeInterval = setInterval(() => this.currentTime.set(Date.now()), 250);
   }
 
   ngOnDestroy(): void {
     this.gameTimer.stop();
-    if (this.currentTimeInterval) {
-      clearInterval(this.currentTimeInterval);
-    }
   }
 
   onTaskClick(taskId: string): void {
@@ -452,10 +419,6 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     this.gameState.reorderQueue('player', taskIds);
   }
 
-  onPurchaseUpgrade(upgradeId: string): void {
-    this.gameState.purchaseUpgrade(upgradeId);
-  }
-
   onTaskMoveRequested(event: { taskId: string; fromQueue: string }): void {
     this.pendingMove.set(event);
     // Create a minimal task stub for the router (it only reads .id)
@@ -481,18 +444,7 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   }
 
   onQuarterAdvance(): void {
-    // Shift task timing to account for time spent in the modal
-    if (this.pausedAt) {
-      const pauseDuration = Date.now() - this.pausedAt;
-      this.gameState.shiftTaskTiming(pauseDuration);
-      this.pausedAt = null;
-    }
-
-    // Restart the currentTime interval for progress bars
-    if (!this.currentTimeInterval) {
-      this.currentTimeInterval = setInterval(() => this.currentTime.set(Date.now()), 250);
-    }
-
+    this.pausedAt = null;
     this.gameState.advanceQuarter();
     // Don't restart timers if the reviewer intro is showing (Q3→Q4 transition)
     if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver()) {

@@ -28,7 +28,6 @@ import { TaskCardComponent } from '../task-card/task-card.component';
           @for (task of tasks(); track task.id) {
             <app-task-card
               [task]="task"
-              [currentTime]="currentTime()"
               (workClicked)="taskClicked.emit($event)" />
           }
         </div>
@@ -44,6 +43,5 @@ import { TaskCardComponent } from '../task-card/task-card.component';
 export class TaskQueueComponent {
   tasks = input.required<Task[]>();
   capacity = input<number>(5);
-  currentTime = input<number>(Date.now());
   taskClicked = output<string>();
 }

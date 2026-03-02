@@ -15,13 +15,13 @@ describe('QuarterModel', () => {
     it('should return Year 1 Q2 targets', () => {
       const target = getQuarterTarget(1, 2);
       expect(target.taskBudget).toBe(40);
-      expect(target.goldTarget).toBe(400);
+      expect(target.goldTarget).toBe(300);
     });
 
     it('should return Year 1 Q3 targets', () => {
       const target = getQuarterTarget(1, 3);
       expect(target.taskBudget).toBe(60);
-      expect(target.goldTarget).toBe(1200);
+      expect(target.goldTarget).toBe(900);
     });
 
     it('should return Year 1 Q4 with 0 gold target (set by reviewer)', () => {
@@ -37,7 +37,7 @@ describe('QuarterModel', () => {
 
     it('should scale gold target for Year 2', () => {
       const target = getQuarterTarget(2, 1);
-      expect(target.goldTarget).toBe(Math.round(75 * 1.8));
+      expect(target.goldTarget).toBe(400); // hand-tuned Y2Q1 target
     });
 
     it('should scale task budget for Year 3', () => {

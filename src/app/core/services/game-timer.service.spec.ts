@@ -3,8 +3,6 @@ import { GameTimerService } from './game-timer.service';
 import { GameStateService } from './game-state.service';
 import { GameEventService } from './game-event.service';
 import { SaveService } from './save.service';
-import { makeSaveData } from '../../../testing/factories/game-state.factory';
-import { makeMinion } from '../../../testing/factories/minion.factory';
 
 describe('GameTimerService', () => {
   let timerService: GameTimerService;
@@ -118,20 +116,28 @@ describe('GameTimerService', () => {
     }));
   });
 
-  describe('task completion timers', () => {
-    it('should schedule and fire task completion on TaskAssigned event', fakeAsync(() => {
-      spyOn(gameState, 'completeTaskByTimer');
+  describe('minion click interval', () => {
+    it('should call processMinionClicks every 1s', fakeAsync(() => {
+      spyOn(gameState, 'processMinionClicks');
       timerService.start();
 
-      events.emit({ type: 'TaskAssigned', taskId: 't1', minionId: 'm1', department: 'schemes', durationMs: 3000 });
-
-      tick(2999);
-      expect(gameState.completeTaskByTimer).not.toHaveBeenCalled();
-
-      tick(1);
-      expect(gameState.completeTaskByTimer).toHaveBeenCalledWith('t1', 'schemes');
+      tick(3000);
+      expect(gameState.processMinionClicks).toHaveBeenCalledTimes(3);
 
       timerService.stop();
+    }));
+
+    it('should stop calling processMinionClicks after stop', fakeAsync(() => {
+      spyOn(gameState, 'processMinionClicks');
+      timerService.start();
+
+      tick(2000);
+      expect(gameState.processMinionClicks).toHaveBeenCalledTimes(2);
+
+      timerService.stop();
+      tick(3000);
+      // No additional calls after stop
+      expect(gameState.processMinionClicks).toHaveBeenCalledTimes(2);
     }));
   });
 
@@ -199,78 +205,6 @@ describe('GameTimerService', () => {
       events.emit({ type: 'TaskQueued', taskId: 't2', department: 'heists' });
       tick(0);
       expect(gameState.autoAssignMinions).toHaveBeenCalledTimes(2);
-
-      timerService.stop();
-    }));
-  });
-
-  describe('scheduleExistingTaskTimers with completesAt', () => {
-    const makeTask = (overrides: Partial<any> = {}): any => ({
-      id: 't1',
-      template: { name: 'Test', description: 'desc', category: 'schemes', tier: 'petty' },
-      status: 'in-progress',
-      tier: 'petty',
-      goldReward: 10,
-      timeToComplete: 10,
-      timeRemaining: 10,
-      clicksRequired: 0,
-      clicksRemaining: 0,
-      assignedMinionId: null,
-      queuedAt: Date.now(),
-      assignedQueue: 'schemes',
-      ...overrides,
-    });
-
-    it('should use completesAt for remaining duration when already set', fakeAsync(() => {
-      spyOn(gameState, 'completeTaskByTimer');
-      spyOn(gameState, 'setTaskTimingInfo');
-
-      const now = Date.now();
-      const data = makeSaveData({
-        minions: [makeMinion({ id: 'm1', assignedDepartment: 'schemes' })],
-        departmentQueues: {
-          schemes: [makeTask({ assignedMinionId: 'm1', assignedAt: now, completesAt: now + 3000 })],
-          heists: [],
-          research: [],
-          mayhem: [],
-        },
-      });
-      gameState.loadSnapshot(data);
-
-      timerService.start();
-
-      // setTaskTimingInfo should NOT be called since completesAt was already set
-      expect(gameState.setTaskTimingInfo).not.toHaveBeenCalled();
-
-      tick(3000);
-      expect(gameState.completeTaskByTimer).toHaveBeenCalledWith('t1', 'schemes');
-
-      timerService.stop();
-    }));
-
-    it('should fall back to timeRemaining when completesAt is not set', fakeAsync(() => {
-      spyOn(gameState, 'completeTaskByTimer');
-      spyOn(gameState, 'setTaskTimingInfo').and.callThrough();
-
-      const now = Date.now();
-      const data = makeSaveData({
-        minions: [makeMinion({ id: 'm1', assignedDepartment: 'schemes' })],
-        departmentQueues: {
-          schemes: [makeTask({ timeRemaining: 5, assignedMinionId: 'm1' })],
-          heists: [],
-          research: [],
-          mayhem: [],
-        },
-      });
-      gameState.loadSnapshot(data);
-
-      timerService.start();
-
-      // setTaskTimingInfo SHOULD be called since completesAt was not set
-      expect(gameState.setTaskTimingInfo).toHaveBeenCalled();
-
-      tick(5000);
-      expect(gameState.completeTaskByTimer).toHaveBeenCalledWith('t1', 'schemes');
 
       timerService.stop();
     }));

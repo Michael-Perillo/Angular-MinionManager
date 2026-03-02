@@ -21,7 +21,6 @@ import { PlayerWorkbenchComponent } from '../player-workbench/player-workbench.c
           [assignedMinions]="getDeptMinions(cat)"
           [connectedDropLists]="dropListIds()"
           [dragDisabled]="dragDisabled()"
-          [currentTime]="currentTime()"
           (taskDropped)="onTaskDropped($event, cat)" />
       }
 
@@ -57,8 +56,6 @@ export class KanbanBoardComponent {
   clickPower = input.required<number>();
   dragDisabled = input<boolean>(false);
   unlockedDepartments = input<TaskCategory[]>([]);
-  currentTime = input<number>(Date.now());
-
   taskClicked = output<string>();
   taskMoved = output<{ taskId: string; from: QueueTarget; to: QueueTarget }>();
   taskRouted = output<{ taskId: string; target: QueueTarget }>();

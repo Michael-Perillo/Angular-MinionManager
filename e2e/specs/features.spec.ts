@@ -104,13 +104,13 @@ test.describe('Mission Board Sorting', () => {
     await sortArea.locator('button').filter({ hasText: /Tier/ }).click();
     await expect(sortArea.getByText('Gold')).toBeVisible();
 
-    // Gold → Time
+    // Gold → Clicks
     await sortArea.locator('button').filter({ hasText: /Gold/ }).click();
-    await expect(sortArea.getByText('Time')).toBeVisible();
+    await expect(sortArea.locator('button').filter({ hasText: /Clicks/ })).toBeVisible();
 
-    // Time → Default (wraps)
-    await sortArea.locator('button').filter({ hasText: /Time/ }).click();
-    await expect(sortArea.getByText('Default')).toBeVisible();
+    // Clicks → Default (wraps)
+    await sortArea.locator('button').filter({ hasText: /Clicks/ }).click();
+    await expect(sortArea.locator('button').filter({ hasText: /Default/ })).toBeVisible();
   });
 
   test('Sort by tier shows higher tier missions first', async ({ page, nav }) => {
@@ -170,8 +170,6 @@ test.describe('Year-End Boss Review', () => {
           status: 'queued',
           tier: 'petty',
           goldReward: 5,
-          timeToComplete: 999,
-          timeRemaining: 999,
           clicksRequired: 1,
           clicksRemaining: 1,
           assignedMinionId: null,
@@ -188,7 +186,7 @@ test.describe('Year-End Boss Review', () => {
         missedQuarters: 0,
         quarterResults: [
           { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
-          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 400, tasksCompleted: 40 },
+          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 300, tasksCompleted: 40 },
         ],
       },
     });
@@ -245,8 +243,8 @@ test.describe('Year-End Boss Review', () => {
         missedQuarters: 0,
         quarterResults: [
           { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
-          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 400, tasksCompleted: 40 },
-          { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 },
+          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 300, tasksCompleted: 40 },
+          { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 900, tasksCompleted: 60 },
         ],
       },
     });
@@ -287,8 +285,8 @@ test.describe('Year-End Boss Review', () => {
         missedQuarters: 1,
         quarterResults: [
           { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
-          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 400, tasksCompleted: 40 },
-          { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 },
+          { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 300, tasksCompleted: 40 },
+          { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 900, tasksCompleted: 60 },
           { year: 1, quarter: 4, passed: false, goldEarned: 100, target: 200, tasksCompleted: 30 },
         ],
       },

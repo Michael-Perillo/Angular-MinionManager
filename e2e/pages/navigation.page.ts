@@ -7,7 +7,6 @@ export interface NavigationPage {
   goToWorkbench(): Promise<void>;
   goToDepartments(): Promise<void>;
   goToHirePanel(): Promise<void>;
-  goToUpgradeShop(): Promise<void>;
   goToDepartmentPanel(): Promise<void>;
   readonly isMobile: boolean;
 }
@@ -16,7 +15,7 @@ export interface NavigationPage {
 function baseSaveData(): Record<string, unknown> {
   const defaultDept = (category: string) => ({ category, xp: 0, level: 1 });
   return {
-    version: 8,
+    version: 9,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,
@@ -28,7 +27,6 @@ function baseSaveData(): Record<string, unknown> {
       research: defaultDept('research'),
       mayhem: defaultDept('mayhem'),
     },
-    upgradeLevels: [],
     activeMissions: [],
     missionBoard: [],
     usedNameIndices: [],
@@ -52,7 +50,7 @@ export class DesktopNavigation implements NavigationPage {
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
-    const save = { ...baseSaveData(), ...overrides, version: 5, savedAt: Date.now() };
+    const save = { ...baseSaveData(), ...overrides, version: 9, savedAt: Date.now() };
     const json = JSON.stringify(save);
     // Use addInitScript so seeded data is written before the Angular app boots.
     // This avoids the beforeunload auto-save race (app saves empty state over seed on reload).
@@ -87,18 +85,6 @@ export class DesktopNavigation implements NavigationPage {
     await minionsTab.click();
   }
 
-  async goToUpgradeShop(): Promise<void> {
-    const drawer = this.page.locator('app-drawer-panel');
-    const isOpen = await drawer.isVisible().catch(() => false);
-    if (!isOpen) {
-      await this.page.locator('app-header button').filter({ hasText: '⚙️' }).click();
-      await drawer.waitFor({ state: 'visible', timeout: 3_000 });
-    }
-    const upgradesTab = this.page.locator('app-drawer-panel button').filter({ hasText: /Upgrades/ });
-    await upgradesTab.waitFor({ state: 'visible', timeout: 3_000 });
-    await upgradesTab.click();
-  }
-
   async goToDepartmentPanel(): Promise<void> {
     const drawer = this.page.locator('app-drawer-panel');
     const isOpen = await drawer.isVisible().catch(() => false);
@@ -125,7 +111,7 @@ export class MobileNavigation implements NavigationPage {
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
-    const save = { ...baseSaveData(), ...overrides, version: 5, savedAt: Date.now() };
+    const save = { ...baseSaveData(), ...overrides, version: 9, savedAt: Date.now() };
     await this.page.evaluate((data) => {
       localStorage.setItem('minion-manager-save', JSON.stringify(data));
     }, save);
@@ -152,12 +138,6 @@ export class MobileNavigation implements NavigationPage {
     await this.page.locator('app-mobile-bottom-nav button').filter({ hasText: 'More' }).click();
     await this.page.waitForTimeout(100);
     await this.page.getByText('Hire Minions').click();
-  }
-
-  async goToUpgradeShop(): Promise<void> {
-    await this.page.locator('app-mobile-bottom-nav button').filter({ hasText: 'More' }).click();
-    await this.page.waitForTimeout(100);
-    await this.page.getByText('Lair Upgrades').click();
   }
 
   async goToDepartmentPanel(): Promise<void> {

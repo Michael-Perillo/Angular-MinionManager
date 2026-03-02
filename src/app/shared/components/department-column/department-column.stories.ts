@@ -11,8 +11,6 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
   status: 'queued',
   tier: 'petty',
   goldReward: 5,
-  timeToComplete: 8,
-  timeRemaining: 8,
   clicksRequired: 10,
   clicksRemaining: 10,
   assignedMinionId: null,
@@ -94,10 +92,6 @@ export const MultipleMinions: Story = {
         goldReward: 18,
         status: 'in-progress',
         assignedMinionId: workingMinionId,
-        timeRemaining: 12,
-        timeToComplete: 20,
-        assignedAt: Date.now(),
-        completesAt: Date.now() + 12000,
         assignedQueue: 'heists',
       }),
       makeTask({
@@ -112,7 +106,6 @@ export const MultipleMinions: Story = {
         assignedQueue: 'heists',
       }),
     ],
-    currentTime: Date.now(),
     department: makeDept({ category: 'heists', level: 3, xp: 60 }),
     assignedMinions: [
       makeMinion({

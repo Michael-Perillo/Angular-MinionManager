@@ -4,7 +4,6 @@ import { DrawerPanelComponent } from './drawer-panel.component';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
 import { Minion } from '../../../core/models/minion.model';
-import { createDefaultUpgrades } from '../../../core/models/upgrade.model';
 
 const makeDept = (cat: TaskCategory, level = 1, xp = 0): Department => ({
   category: cat,
@@ -53,7 +52,6 @@ export const Open: Story = {
     gold: 150,
     minions: defaultMinions(),
     departments: defaultDepts(),
-    upgrades: createDefaultUpgrades(),
     nextMinionCost: 75,
     canHireMinion: true,
     unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
@@ -63,10 +61,6 @@ export const Open: Story = {
 
     // Default tab is Minions — verify it renders
     expect(canvas.getByText('Hire Minion')).toBeTruthy();
-
-    // Click "Upgrades" tab
-    await userEvent.click(canvas.getByText(/Upgrades/));
-    expect(canvas.getByText(/Lair Upgrades/)).toBeTruthy();
 
     // Click "Depts" tab
     await userEvent.click(canvas.getByText(/Depts/));
@@ -80,17 +74,16 @@ export const Closed: Story = {
     gold: 150,
     minions: defaultMinions(),
     departments: defaultDepts(),
-    upgrades: createDefaultUpgrades(),
     nextMinionCost: 75,
     canHireMinion: true,
     unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
   },
 };
 
-export const WithUpgrades: Story = {
+export const WithDepartments: Story = {
   args: {
     initiallyOpen: true,
-    initialTab: 'upgrades',
+    initialTab: 'departments',
     gold: 800,
     minions: defaultMinions(),
     departments: {
@@ -99,7 +92,6 @@ export const WithUpgrades: Story = {
       research: makeDept('research', 4, 120),
       mayhem: makeDept('mayhem', 2, 20),
     },
-    upgrades: createDefaultUpgrades().map((u, i) => i < 3 ? { ...u, currentLevel: 2 } : u),
     nextMinionCost: 120,
     canHireMinion: true,
     unlockedDepartments: new Set(['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[]),

@@ -10,8 +10,6 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
   status: 'queued',
   tier: 'petty',
   goldReward: 5,
-  timeToComplete: 8,
-  timeRemaining: 8,
   clicksRequired: 10,
   clicksRemaining: 10,
   assignedMinionId: null,
@@ -96,7 +94,7 @@ export const MidGame: Story = {
   args: {
     departmentQueues: {
       schemes: [
-        makeTask({ id: midTaskId, template: { name: 'Blackmail the Mayor', description: 'Leverage dirty secrets.', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 20, status: 'in-progress', assignedMinionId: midMinionId, timeRemaining: 12, timeToComplete: 20, assignedQueue: 'schemes' }),
+        makeTask({ id: midTaskId, template: { name: 'Blackmail the Mayor', description: 'Leverage dirty secrets.', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 20, status: 'in-progress', assignedMinionId: midMinionId, assignedQueue: 'schemes' }),
         makeTask({ template: { name: 'Spread Rumors', description: 'Whisper campaigns.', category: 'schemes', tier: 'petty' }, assignedQueue: 'schemes' }),
       ],
       heists: [
@@ -137,15 +135,15 @@ export const LateGame: Story = {
   args: {
     departmentQueues: {
       schemes: [
-        makeTask({ id: lateIds.t1, template: { name: 'Infiltrate Council', description: 'Plant a spy.', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 20, status: 'in-progress', assignedMinionId: lateIds.m1, timeRemaining: 8, timeToComplete: 20, assignedQueue: 'schemes' }),
+        makeTask({ id: lateIds.t1, template: { name: 'Infiltrate Council', description: 'Plant a spy.', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 20, status: 'in-progress', assignedMinionId: lateIds.m1, assignedQueue: 'schemes' }),
         makeTask({ template: { name: 'Rig the Lottery', description: 'Fix the numbers.', category: 'schemes', tier: 'diabolical' }, tier: 'diabolical', goldReward: 40, assignedQueue: 'schemes' }),
       ],
       heists: [
-        makeTask({ id: lateIds.t2, template: { name: 'Museum Night Raid', description: 'Break in after hours.', category: 'heists', tier: 'sinister' }, tier: 'sinister', goldReward: 18, status: 'in-progress', assignedMinionId: lateIds.m3, timeRemaining: 5, timeToComplete: 20, assignedQueue: 'heists' }),
+        makeTask({ id: lateIds.t2, template: { name: 'Museum Night Raid', description: 'Break in after hours.', category: 'heists', tier: 'sinister' }, tier: 'sinister', goldReward: 18, status: 'in-progress', assignedMinionId: lateIds.m3, assignedQueue: 'heists' }),
         makeTask({ template: { name: 'Steal the Moon', description: 'The ultimate heist.', category: 'heists', tier: 'legendary' }, tier: 'legendary', goldReward: 120, assignedQueue: 'heists' }),
       ],
       research: [
-        makeTask({ id: lateIds.t3, template: { name: 'Build Doomsday Device', description: 'Ultimate bargaining chip.', category: 'research', tier: 'diabolical' }, tier: 'diabolical', goldReward: 48, status: 'in-progress', assignedMinionId: lateIds.m5, timeRemaining: 30, timeToComplete: 45, assignedQueue: 'research' }),
+        makeTask({ id: lateIds.t3, template: { name: 'Build Doomsday Device', description: 'Ultimate bargaining chip.', category: 'research', tier: 'diabolical' }, tier: 'diabolical', goldReward: 48, status: 'in-progress', assignedMinionId: lateIds.m5, assignedQueue: 'research' }),
         makeTask({ template: { name: 'Clone Army Research', description: 'Mass production.', category: 'research', tier: 'legendary' }, tier: 'legendary', goldReward: 120, assignedQueue: 'research' }),
         makeTask({ template: { name: 'Weather Machine', description: 'Control the weather.', category: 'research', tier: 'sinister' }, tier: 'sinister', goldReward: 18, assignedQueue: 'research' }),
       ],

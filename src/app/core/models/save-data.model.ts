@@ -12,7 +12,6 @@ export interface SaveData {
   totalGoldEarned: number;
   minions: Minion[];
   departments: Record<TaskCategory, Department>;
-  upgradeLevels: { id: string; currentLevel: number }[];
   activeMissions: Task[];
   missionBoard: Task[];
   usedNameIndices: number[];
