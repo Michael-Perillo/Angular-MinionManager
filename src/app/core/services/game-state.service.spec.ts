@@ -321,6 +321,8 @@ describe('GameStateService', () => {
     it('should increase department XP on task completion', () => {
       const mission = service.missionBoard()[0];
       const category = mission.template.category;
+      // Dept XP gated behind unlock — unlock the task's department
+      (service as any)._unlockedDepartments.set(new Set([category]));
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
 

@@ -58,7 +58,7 @@ export class ProgressBarComponent {
         el.style.transition = 'none';
         el.style.width = `${pct}%`;
         el.getBoundingClientRect(); // force reflow
-        el.style.transition = 'width 1s linear';
+        el.style.transition = 'width 150ms linear';
       } else {
         // Normal progress — smooth linear transition matching tick interval
         el.style.width = `${pct}%`;
