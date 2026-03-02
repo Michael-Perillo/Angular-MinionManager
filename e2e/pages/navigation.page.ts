@@ -1,7 +1,7 @@
 import { Page } from '@playwright/test';
 
 /** Must match SAVE_VERSION in src/app/core/models/save-data.model.ts */
-const SAVE_VERSION = 10;
+const SAVE_VERSION = 11;
 
 export interface NavigationPage {
   resetGame(): Promise<void>;
@@ -38,6 +38,10 @@ function baseSaveData(): Record<string, unknown> {
     playerQueue: [],
     unlockedDepartments: [],
     ownedVouchers: {},
+    ownedCards: [],
+    ownedJokers: [],
+    equippedJokers: [],
+    rules: [],
   };
 }
 

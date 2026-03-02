@@ -2,12 +2,14 @@ import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { GameTimerService } from './game-timer.service';
 import { GameStateService } from './game-state.service';
 import { GameEventService } from './game-event.service';
+import { RuleEngineService } from './rule-engine.service';
 import { SaveService } from './save.service';
 
 describe('GameTimerService', () => {
   let timerService: GameTimerService;
   let gameState: GameStateService;
   let events: GameEventService;
+  let ruleEngine: RuleEngineService;
   let saveService: SaveService;
 
   beforeEach(() => {
@@ -15,6 +17,7 @@ describe('GameTimerService', () => {
     timerService = TestBed.inject(GameTimerService);
     gameState = TestBed.inject(GameStateService);
     events = TestBed.inject(GameEventService);
+    ruleEngine = TestBed.inject(RuleEngineService);
     saveService = TestBed.inject(SaveService);
     gameState.initializeGame();
   });
@@ -141,45 +144,45 @@ describe('GameTimerService', () => {
     }));
   });
 
-  describe('auto-assign', () => {
-    it('should call autoAssignMinions on MinionIdle event (debounced)', fakeAsync(() => {
-      spyOn(gameState, 'autoAssignMinions');
+  describe('auto-assign (rule engine dispatch)', () => {
+    it('should call ruleEngine.evaluateRules on MinionIdle event (debounced)', fakeAsync(() => {
+      spyOn(ruleEngine, 'evaluateRules').and.returnValue([]);
       timerService.start();
 
       events.emit({ type: 'MinionIdle', minionId: 'm1', department: 'schemes' });
       // Not called yet — debounced via microtask
-      expect(gameState.autoAssignMinions).not.toHaveBeenCalled();
+      expect(ruleEngine.evaluateRules).not.toHaveBeenCalled();
 
       tick(0); // flush microtask
-      expect(gameState.autoAssignMinions).toHaveBeenCalledTimes(1);
+      expect(ruleEngine.evaluateRules).toHaveBeenCalledTimes(1);
 
       timerService.stop();
     }));
 
-    it('should call autoAssignMinions on TaskQueued event', fakeAsync(() => {
-      spyOn(gameState, 'autoAssignMinions');
+    it('should call ruleEngine.evaluateRules on TaskQueued event', fakeAsync(() => {
+      spyOn(ruleEngine, 'evaluateRules').and.returnValue([]);
       timerService.start();
 
       events.emit({ type: 'TaskQueued', taskId: 't1', department: 'heists' });
       tick(0);
-      expect(gameState.autoAssignMinions).toHaveBeenCalledTimes(1);
+      expect(ruleEngine.evaluateRules).toHaveBeenCalledTimes(1);
 
       timerService.stop();
     }));
 
-    it('should call autoAssignMinions on MinionHired event', fakeAsync(() => {
-      spyOn(gameState, 'autoAssignMinions');
+    it('should call ruleEngine.evaluateRules on MinionHired event', fakeAsync(() => {
+      spyOn(ruleEngine, 'evaluateRules').and.returnValue([]);
       timerService.start();
 
       events.emit({ type: 'MinionHired', minionId: 'm1', department: 'research' });
       tick(0);
-      expect(gameState.autoAssignMinions).toHaveBeenCalledTimes(1);
+      expect(ruleEngine.evaluateRules).toHaveBeenCalledTimes(1);
 
       timerService.stop();
     }));
 
     it('should debounce multiple rapid events into one call', fakeAsync(() => {
-      spyOn(gameState, 'autoAssignMinions');
+      spyOn(ruleEngine, 'evaluateRules').and.returnValue([]);
       timerService.start();
 
       events.emit({ type: 'MinionIdle', minionId: 'm1', department: 'schemes' });
@@ -188,23 +191,35 @@ describe('GameTimerService', () => {
 
       tick(0);
       // All three events should be batched into a single call
-      expect(gameState.autoAssignMinions).toHaveBeenCalledTimes(1);
+      expect(ruleEngine.evaluateRules).toHaveBeenCalledTimes(1);
 
       timerService.stop();
     }));
 
-    it('should allow subsequent auto-assign after debounce completes', fakeAsync(() => {
+    it('should allow subsequent evaluation after debounce completes', fakeAsync(() => {
+      spyOn(ruleEngine, 'evaluateRules').and.returnValue([]);
+      timerService.start();
+
+      events.emit({ type: 'MinionIdle', minionId: 'm1', department: 'schemes' });
+      tick(0);
+      expect(ruleEngine.evaluateRules).toHaveBeenCalledTimes(1);
+
+      // Second batch
+      events.emit({ type: 'TaskQueued', taskId: 't2', department: 'heists' });
+      tick(0);
+      expect(ruleEngine.evaluateRules).toHaveBeenCalledTimes(2);
+
+      timerService.stop();
+    }));
+
+    it('should fall back to autoAssignMinions when automation is disabled', fakeAsync(() => {
       spyOn(gameState, 'autoAssignMinions');
+      spyOn(gameState, 'automationDisabled').and.returnValue(true);
       timerService.start();
 
       events.emit({ type: 'MinionIdle', minionId: 'm1', department: 'schemes' });
       tick(0);
       expect(gameState.autoAssignMinions).toHaveBeenCalledTimes(1);
-
-      // Second batch
-      events.emit({ type: 'TaskQueued', taskId: 't2', department: 'heists' });
-      tick(0);
-      expect(gameState.autoAssignMinions).toHaveBeenCalledTimes(2);
 
       timerService.stop();
     }));

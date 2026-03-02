@@ -1,5 +1,5 @@
 export type VoucherId = 'iron-fingers' | 'board-expansion' | 'operations-desk' |
-                        'rapid-intel' | 'hire-discount' | 'dept-funding';
+                        'rapid-intel' | 'hire-discount' | 'dept-funding' | 'rule-mastery';
 
 export interface VoucherDefinition {
   id: VoucherId;
@@ -19,17 +19,18 @@ export const VOUCHERS: Record<VoucherId, VoucherDefinition> = {
   'rapid-intel':      { id: 'rapid-intel',      name: 'Rapid Intel',      icon: '\u{1F4E1}', description: 'Faster mission board refresh',     maxLevel: 3, levelCosts: [60, 250, 650],  levelEffects: [0.65, 0.40, 0.20],  effectLabel: '\u00D7 refresh' },
   'hire-discount':    { id: 'hire-discount',    name: 'Hire Discount',    icon: '\u{1F4B0}', description: 'Reduced minion hiring cost',       maxLevel: 3, levelCosts: [75, 300, 750],  levelEffects: [0.20, 0.40, 0.60],  effectLabel: '% discount' },
   'dept-funding':     { id: 'dept-funding',     name: 'Dept Funding',     icon: '\u{1F393}', description: 'Increased department XP gain',     maxLevel: 3, levelCosts: [75, 300, 750],  levelEffects: [0.50, 1.20, 2.50],  effectLabel: '% bonus XP' },
+  'rule-mastery':     { id: 'rule-mastery',     name: 'Rule Mastery',     icon: '\u{1F9E0}', description: 'Additional automation rule slots', maxLevel: 3, levelCosts: [100, 400, 1000], levelEffects: [1, 2, 3],           effectLabel: 'rule slots' },
 };
 
 export const ALL_VOUCHER_IDS: VoucherId[] = [
   'iron-fingers', 'board-expansion', 'operations-desk',
-  'rapid-intel', 'hire-discount', 'dept-funding',
+  'rapid-intel', 'hire-discount', 'dept-funding', 'rule-mastery',
 ];
 
 export function createEmptyVoucherLevels(): Record<VoucherId, number> {
   return {
     'iron-fingers': 0, 'board-expansion': 0, 'operations-desk': 0,
-    'rapid-intel': 0, 'hire-discount': 0, 'dept-funding': 0,
+    'rapid-intel': 0, 'hire-discount': 0, 'dept-funding': 0, 'rule-mastery': 0,
   };
 }
 

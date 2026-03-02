@@ -24,6 +24,15 @@ import {
   VoucherId, VOUCHERS, ALL_VOUCHER_IDS, createEmptyVoucherLevels,
   getVoucherCost, getVoucherEffect,
 } from '../models/voucher.model';
+import { CardId, AnyCard } from '../models/card.model';
+import {
+  JokerId, JokerDefinition, MAX_JOKER_SLOTS, JOKER_POOL,
+  aggregateJokerMult, aggregateJokerFlat, JokerContext,
+} from '../models/joker.model';
+import { Rule, DEFAULT_RULE, createRule, isDefaultRule, getCardsInUse, getCardsUsedByRule } from '../models/rule.model';
+import {
+  PackType, PackItem, PACK_DEFINITIONS, generatePackContents, getPackPickCount,
+} from '../models/card-pack.model';
 import { SaveData, SAVE_VERSION } from '../models/save-data.model';
 import { GameEventService } from './game-event.service';
 
@@ -82,6 +91,16 @@ export class GameStateService {
   private readonly _ownedVouchers = signal<Record<VoucherId, number>>(createEmptyVoucherLevels());
   private readonly _showShop = signal(false);
 
+  // ─── Card/joker/rule signals ─────────────
+  private readonly _ownedCards = signal<Set<CardId>>(new Set());
+  private readonly _ownedJokers = signal<Set<JokerId>>(new Set());
+  private readonly _equippedJokers = signal<JokerId[]>([]);
+  private readonly _rules = signal<Rule[]>([DEFAULT_RULE]);
+  private readonly _pendingPack = signal<PackItem[] | null>(null);
+  private readonly _pendingPickCount = signal(0);
+  private readonly _showPackReward = signal(false);
+  private readonly _automationDisabled = signal(false);
+
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
   readonly minions = this._minions.asReadonly();
@@ -111,6 +130,14 @@ export class GameStateService {
   readonly lockedCategory = this._lockedCategory.asReadonly();
   readonly ownedVouchers = this._ownedVouchers.asReadonly();
   readonly showShop = this._showShop.asReadonly();
+  readonly ownedCards = this._ownedCards.asReadonly();
+  readonly ownedJokers = this._ownedJokers.asReadonly();
+  readonly equippedJokers = this._equippedJokers.asReadonly();
+  readonly rules = this._rules.asReadonly();
+  readonly pendingPack = this._pendingPack.asReadonly();
+  readonly pendingPickCount = this._pendingPickCount.asReadonly();
+  readonly showPackReward = this._showPackReward.asReadonly();
+  readonly automationDisabled = this._automationDisabled.asReadonly();
 
   // ─── Voucher effect helpers (private computed) ──
   private readonly voucherClickPower = computed(() => getVoucherEffect('iron-fingers', this._ownedVouchers()['iron-fingers']));
@@ -119,6 +146,14 @@ export class GameStateService {
   private readonly voucherRefreshMult = computed(() => getVoucherEffect('rapid-intel', this._ownedVouchers()['rapid-intel']));
   private readonly voucherHireDiscount = computed(() => getVoucherEffect('hire-discount', this._ownedVouchers()['hire-discount']));
   private readonly voucherXpMult = computed(() => getVoucherEffect('dept-funding', this._ownedVouchers()['dept-funding']));
+  private readonly voucherRuleMastery = computed(() => getVoucherEffect('rule-mastery', this._ownedVouchers()['rule-mastery']));
+
+  /** Max rule slots: base 1 + Rule Mastery voucher effect */
+  readonly maxRuleSlots = computed(() => 1 + this.voucherRuleMastery());
+
+  readonly activeRuleCount = computed(() =>
+    this._rules().filter(r => r.id !== '__default__').length
+  );
 
   readonly currentQuarterTarget = computed(() => {
     const p = this._quarterProgress();
@@ -196,8 +231,8 @@ export class GameStateService {
     3 + this._minions().length + this.voucherSlotBonus()
   );
 
-  /** Click power: base 1 + voucher bonus */
-  readonly clickPower = computed(() => 1 + this.voucherClickPower());
+  /** Click power: base 1 + voucher bonus + joker bonus */
+  readonly clickPower = computed(() => 1 + this.voucherClickPower() + this.getJokerClickPowerBonus());
 
   /** Minions grouped by assigned department */
   readonly minionsByDepartment = computed(() => {
@@ -284,6 +319,14 @@ export class GameStateService {
     this._lockedCategory.set(null);
     this._ownedVouchers.set(createEmptyVoucherLevels());
     this._showShop.set(false);
+    this._ownedCards.set(new Set());
+    this._ownedJokers.set(new Set());
+    this._equippedJokers.set([]);
+    this._rules.set([DEFAULT_RULE]);
+    this._pendingPack.set(null);
+    this._pendingPickCount.set(0);
+    this._showPackReward.set(false);
+    this._automationDisabled.set(false);
     this._unlockedDepartments.set(new Set());
     this.usedNameIndices.clear();
     this.lastBoardRefresh = 0;
@@ -318,6 +361,10 @@ export class GameStateService {
       activeModifiers: this._activeModifiers(),
       isRunOver: this._isRunOver(),
       ownedVouchers: this._ownedVouchers(),
+      ownedCards: [...this._ownedCards()],
+      ownedJokers: [...this._ownedJokers()],
+      equippedJokers: this._equippedJokers(),
+      rules: this._rules(),
     };
   }
 
@@ -371,6 +418,15 @@ export class GameStateService {
       this._ownedVouchers.set(createEmptyVoucherLevels());
     }
     this._showShop.set(false);
+
+    // Load card/joker/rule state (v11+)
+    this._ownedCards.set(new Set(data.ownedCards ?? []));
+    this._ownedJokers.set(new Set(data.ownedJokers ?? []));
+    this._equippedJokers.set(data.equippedJokers ?? []);
+    this._rules.set(data.rules?.length ? data.rules : [DEFAULT_RULE]);
+    this._pendingPack.set(null);
+    this._pendingPickCount.set(0);
+    this._showPackReward.set(false);
 
     // Re-apply modifier constraints if in review
     this.revertModifiers();
@@ -707,7 +763,7 @@ export class GameStateService {
           const minion = this._minions().find(m => m.id === task.assignedMinionId);
           if (!minion) return task;
 
-          const clicks = Math.max(1, Math.floor(minion.stats.speed));
+          const clicks = Math.max(1, Math.floor(minion.stats.speed * this.getJokerSpeedMult()));
           const newRemaining = task.clicksRemaining - clicks;
 
           if (newRemaining <= 0) {
@@ -812,10 +868,11 @@ export class GameStateService {
     const vlBonus = 1 + (this.villainLevel() - 1) * VILLAIN_SCALE_PER_LEVEL;
     let scaledGold = Math.round(config.gold * vlBonus);
 
-    // Clicks are fixed per tier, reduced by Research passive
+    // Clicks are fixed per tier, reduced by Research passive + joker click-reduction
     const researchBonus = getPassiveBonus('research', this._departments().research.level);
-    const clickReduction = 1 - researchBonus * 0.01;
-    const scaledClicks = Math.max(1, Math.round(config.clicks * clickReduction));
+    const jokerClickReduction = aggregateJokerFlat(this._equippedJokers(), 'click-reduction', {});
+    const clickReduction = 1 - researchBonus * 0.01 - jokerClickReduction;
+    const scaledClicks = Math.max(5, Math.round(config.clicks * Math.max(0.2, clickReduction)));
 
     // Mayhem passive: increased Special Op appearance rate
     const mayhemBonus = getPassiveBonus('mayhem', this._departments().mayhem.level);
@@ -954,7 +1011,7 @@ export class GameStateService {
 
   private freeMinionFromTask(minionId: string, taskTier: TaskTier, taskCategory: TaskCategory): void {
     const baseXp = this.TIER_XP[taskTier];
-    const xpGain = baseXp;
+    const xpGain = Math.round(baseXp * this.getJokerXpMult());
 
     this._minions.update(list =>
       list.map(m => {
@@ -1007,7 +1064,12 @@ export class GameStateService {
     // Boss modifier
     mult *= this._goldRewardMultiplier();
 
+    // Joker gold multiplier
+    const jokerContext: JokerContext = { department: taskCategory, taskCategory };
+    mult *= this.getJokerGoldMult(jokerContext);
+
     let finalAmount = Math.round(baseGold * mult);
+    finalAmount += this.getJokerFlatGold();
     finalAmount = Math.max(0, finalAmount - this._goldDrainPerTask());
 
     this._gold.update(g => g + finalAmount);
@@ -1048,7 +1110,8 @@ export class GameStateService {
 
   private awardDeptXp(category: TaskCategory, tier: TaskTier, source: 'minion' | 'click' = 'minion'): void {
     const baseXp = DEPT_TIER_XP[tier];
-    const xpGain = Math.round(baseXp * (1 + this.voucherXpMult()));
+    const jokerDeptXpMult = this.getJokerDeptXpMult(category);
+    const xpGain = Math.round(baseXp * (1 + this.voucherXpMult()) * jokerDeptXpMult);
     this._departments.update(depts => {
       const dept = depts[category];
       const newXp = dept.xp + xpGain;
@@ -1236,6 +1299,14 @@ export class GameStateService {
       this.revertReview();
     }
 
+    // If quarter passed, show pack reward before shop
+    const latestResult = progress.quarterResults[progress.quarterResults.length - 1];
+    if (latestResult?.passed) {
+      this.openPack('quarterly-reward', progress.quarter as 1 | 2 | 3 | 4);
+      this._showPackReward.set(true);
+      return; // Pack → shop → advance
+    }
+
     // Show shop before advancing (Q1→Q2, Q2→Q3, Q4→Y+1 Q1)
     this._showShop.set(true);
   }
@@ -1328,6 +1399,9 @@ export class GameStateService {
         case 'lock-mayhem':
           this._lockedCategory.set('mayhem');
           break;
+        case 'automation-disabled':
+          this._automationDisabled.set(true);
+          break;
       }
     }
   }
@@ -1340,6 +1414,7 @@ export class GameStateService {
     this._goldDrainPerTask.set(0);
     this._goldRewardMultiplier.set(1);
     this._lockedCategory.set(null);
+    this._automationDisabled.set(false);
   }
 
   private revertReview(): void {
@@ -1347,5 +1422,158 @@ export class GameStateService {
     this._activeModifiers.set([]);
     this._showReviewerIntro.set(false);
     this.revertModifiers();
+  }
+
+  // ─── Card/joker collection ──────────────
+
+  addCard(cardId: CardId): void {
+    this._ownedCards.update(s => { const n = new Set(s); n.add(cardId); return n; });
+  }
+
+  addJoker(jokerId: JokerId): void {
+    this._ownedJokers.update(s => { const n = new Set(s); n.add(jokerId); return n; });
+  }
+
+  // ─── Joker slots ────────────────────────
+
+  equipJoker(jokerId: JokerId): boolean {
+    if (!this._ownedJokers().has(jokerId)) return false;
+    if (this._equippedJokers().includes(jokerId)) return false;
+    if (this._equippedJokers().length >= MAX_JOKER_SLOTS) return false;
+    this._equippedJokers.update(list => [...list, jokerId]);
+    return true;
+  }
+
+  unequipJoker(jokerId: JokerId): void {
+    this._equippedJokers.update(list => list.filter(id => id !== jokerId));
+  }
+
+  // ─── Rule CRUD ──────────────────────────
+
+  addRule(rule: Rule): boolean {
+    if (this.activeRuleCount() >= this.maxRuleSlots()) return false;
+    // Check card uniqueness: no card already in use by another rule
+    const inUse = getCardsInUse(this._rules());
+    const needed = getCardsUsedByRule(rule);
+    for (const cardId of needed) {
+      if (inUse.has(cardId)) return false;
+    }
+    this._rules.update(list => {
+      const custom = list.filter(r => !isDefaultRule(r));
+      custom.push(rule);
+      // Sort by priority, default always last
+      custom.sort((a, b) => a.priority - b.priority);
+      return [...custom, DEFAULT_RULE];
+    });
+    return true;
+  }
+
+  removeRule(ruleId: string): void {
+    if (ruleId === '__default__') return;
+    this._rules.update(list => list.filter(r => r.id !== ruleId));
+  }
+
+  updateRule(ruleId: string, updates: Partial<Rule>): void {
+    if (ruleId === '__default__') return;
+    this._rules.update(list =>
+      list.map(r => r.id === ruleId ? { ...r, ...updates, id: ruleId } : r)
+    );
+  }
+
+  reorderRules(ruleIds: string[]): void {
+    this._rules.update(list => {
+      const byId = new Map(list.map(r => [r.id, r]));
+      const ordered: Rule[] = [];
+      let priority = 1;
+      for (const id of ruleIds) {
+        const rule = byId.get(id);
+        if (rule && !isDefaultRule(rule)) {
+          ordered.push({ ...rule, priority: priority++ });
+        }
+      }
+      ordered.push(DEFAULT_RULE);
+      return ordered;
+    });
+  }
+
+  toggleRuleEnabled(ruleId: string): void {
+    if (ruleId === '__default__') return;
+    this._rules.update(list =>
+      list.map(r => r.id === ruleId ? { ...r, enabled: !r.enabled } : r)
+    );
+  }
+
+  // ─── Card packs ─────────────────────────
+
+  openPack(packType: PackType, quarter?: 1 | 2 | 3 | 4): void {
+    const items = generatePackContents(
+      packType,
+      this._ownedCards(),
+      this._ownedJokers(),
+      quarter,
+    );
+    this._pendingPack.set(items);
+    this._pendingPickCount.set(getPackPickCount(packType, quarter));
+  }
+
+  purchasePack(packType: PackType): boolean {
+    const cost = PACK_DEFINITIONS[packType].goldCost;
+    if (this._gold() < cost) return false;
+    this._gold.update(g => g - cost);
+    this.openPack(packType);
+    this._showPackReward.set(true);
+    return true;
+  }
+
+  pickFromPack(selectedIds: string[]): void {
+    for (const id of selectedIds) {
+      const item = this._pendingPack()?.find(i => i.id === id);
+      if (!item) continue;
+      if (item._itemType === 'card') {
+        this.addCard(id);
+      } else {
+        this.addJoker(id);
+      }
+    }
+    this._pendingPack.set(null);
+    this._pendingPickCount.set(0);
+  }
+
+  /** Called after pack reward is dismissed to proceed to shop */
+  continueAfterPack(): void {
+    this._showPackReward.set(false);
+    this._showShop.set(true);
+  }
+
+  // ─── Public assignment (for rule engine) ──
+
+  executeAssignment(minionId: string, taskId: string, dept: TaskCategory): void {
+    this.assignMinionToTask(minionId, taskId, dept);
+  }
+
+  // ─── Joker effect helpers (private) ──────
+
+  private getJokerGoldMult(context: JokerContext): number {
+    return aggregateJokerMult(this._equippedJokers(), 'gold-mult', context);
+  }
+
+  private getJokerFlatGold(): number {
+    return aggregateJokerFlat(this._equippedJokers(), 'gold-flat', {});
+  }
+
+  private getJokerClickPowerBonus(): number {
+    return aggregateJokerFlat(this._equippedJokers(), 'click-power', {});
+  }
+
+  private getJokerSpeedMult(): number {
+    return aggregateJokerMult(this._equippedJokers(), 'speed-mult', {});
+  }
+
+  private getJokerXpMult(): number {
+    return aggregateJokerMult(this._equippedJokers(), 'xp-mult', {});
+  }
+
+  private getJokerDeptXpMult(category: TaskCategory): number {
+    return aggregateJokerMult(this._equippedJokers(), 'dept-xp-mult', { department: category });
   }
 }

@@ -1,12 +1,16 @@
-import { Component, ChangeDetectionStrategy, input, output, signal, OnInit, viewChild } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, signal, OnInit, viewChild, computed } from '@angular/core';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
 import { Minion } from '../../../core/models/minion.model';
+import { CardId, CARD_POOL } from '../../../core/models/card.model';
+import { JokerId } from '../../../core/models/joker.model';
+import { Rule, isDefaultRule } from '../../../core/models/rule.model';
 import { DepartmentPanelComponent } from '../department-panel/department-panel.component';
 import { HireMinionPanelComponent } from '../hire-minion-panel/hire-minion-panel.component';
 import { MinionRosterComponent } from '../minion-roster/minion-roster.component';
+import { JokerSlotsComponent } from '../joker-slots/joker-slots.component';
 
-type DrawerTab = 'hire' | 'departments';
+type DrawerTab = 'hire' | 'departments' | 'rules';
 
 @Component({
   selector: 'app-drawer-panel',
@@ -15,6 +19,7 @@ type DrawerTab = 'hire' | 'departments';
     DepartmentPanelComponent,
     HireMinionPanelComponent,
     MinionRosterComponent,
+    JokerSlotsComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -67,6 +72,66 @@ type DrawerTab = 'hire' | 'departments';
               <app-department-panel
                 [departments]="departments()" />
             }
+            @case ('rules') {
+              <!-- Joker slots -->
+              <app-joker-slots
+                [equippedJokers]="equippedJokers()"
+                [ownedJokers]="ownedJokers()"
+                (jokerEquipped)="jokerEquipped.emit($event)"
+                (jokerUnequipped)="jokerUnequipped.emit($event)" />
+
+              <!-- Rule summary -->
+              <div class="mt-4 space-y-2">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-xs font-bold text-text-primary uppercase tracking-wider">
+                    Rules <span class="text-text-muted">({{ customRules().length }}/{{ maxRuleSlots() }})</span>
+                  </h4>
+                  <button
+                    (click)="editRulesClicked.emit()"
+                    class="text-[10px] px-2 py-1 rounded bg-accent/20 text-accent
+                           hover:bg-accent/30 cursor-pointer uppercase tracking-wider font-bold"
+                    data-testid="edit-rules-btn">
+                    Edit
+                  </button>
+                </div>
+                @for (rule of customRules(); track rule.id) {
+                  <div class="rounded-lg border border-white/10 bg-surface-dark p-2"
+                       [attr.data-testid]="'rule-summary-' + rule.id">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-text-primary truncate">{{ rule.name }}</span>
+                      <span class="text-[10px] px-1.5 py-0.5 rounded"
+                            [class]="rule.enabled ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'">
+                        {{ rule.enabled ? 'ON' : 'OFF' }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-0.5 mt-1">
+                      <span class="text-sm">{{ getCardIcon(rule.triggerId) }}</span>
+                      <span class="text-text-muted text-[10px]">→</span>
+                      @for (condId of rule.conditionIds; track condId) {
+                        <span class="text-sm">{{ getCardIcon(condId) }}</span>
+                        <span class="text-text-muted text-[10px]">→</span>
+                      }
+                      <span class="text-sm">{{ getCardIcon(rule.actionId) }}</span>
+                    </div>
+                  </div>
+                }
+                @if (customRules().length === 0) {
+                  <p class="text-xs text-text-muted">No custom rules yet. Click Edit to create one.</p>
+                }
+                <!-- Default rule -->
+                <div class="rounded-lg border border-white/5 bg-white/5 p-2 opacity-60">
+                  <div class="flex items-center justify-between">
+                    <span class="text-[10px] font-semibold text-text-muted">Default: Auto-Assign</span>
+                    <span class="text-[9px] text-text-muted uppercase">Always</span>
+                  </div>
+                  <div class="flex items-center gap-0.5 mt-1">
+                    <span class="text-sm">💤</span>
+                    <span class="text-text-muted text-[10px]">→</span>
+                    <span class="text-sm">⚒️</span>
+                  </div>
+                </div>
+              </div>
+            }
           }
         </div>
       </aside>
@@ -90,11 +155,20 @@ export class DrawerPanelComponent implements OnInit {
   unlockedDepartments = input<Set<TaskCategory>>(new Set());
   hiringDisabled = input<boolean>(false);
 
+  // Rules tab inputs
+  equippedJokers = input<JokerId[]>([]);
+  ownedJokers = input<Set<JokerId>>(new Set());
+  rules = input<Rule[]>([]);
+  maxRuleSlots = input<number>(1);
+
   // Outputs
   hireClicked = output<void>();
   recruitClicked = output<void>();
   hireChosenClicked = output<Minion>();
   drawerToggled = output<boolean>();
+  jokerEquipped = output<JokerId>();
+  jokerUnequipped = output<JokerId>();
+  editRulesClicked = output<void>();
 
   initiallyOpen = input(false);
   initialTab = input<DrawerTab | null>(null);
@@ -113,7 +187,16 @@ export class DrawerPanelComponent implements OnInit {
   readonly allTabs: { id: DrawerTab; label: string; icon: string }[] = [
     { id: 'hire', label: 'Minions', icon: '👾' },
     { id: 'departments', label: 'Depts', icon: '🏛️' },
+    { id: 'rules', label: 'Rules', icon: '🧠' },
   ];
+
+  readonly customRules = computed(() =>
+    this.rules().filter(r => !isDefaultRule(r))
+  );
+
+  getCardIcon(id: CardId): string {
+    return CARD_POOL[id]?.icon ?? '?';
+  }
 
   toggle(): void {
     this.isOpen.update(v => !v);

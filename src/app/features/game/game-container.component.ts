@@ -2,9 +2,13 @@ import { Component, inject, OnInit, OnDestroy, signal, computed, viewChild, Host
 import { GameStateService } from '../../core/services/game-state.service';
 import { GameTimerService } from '../../core/services/game-timer.service';
 import { SaveService } from '../../core/services/save.service';
+import { DevConsoleService } from '../../core/services/dev-console.service';
 import { QueueTarget, TaskCategory, Task } from '../../core/models/task.model';
 import { Minion } from '../../core/models/minion.model';
 import { VoucherId } from '../../core/models/voucher.model';
+import { Rule } from '../../core/models/rule.model';
+import { JokerId } from '../../core/models/joker.model';
+import { PackType } from '../../core/models/card-pack.model';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { MissionBoardComponent } from '../../shared/components/mission-board/mission-board.component';
 import { KanbanBoardComponent } from '../../shared/components/kanban-board/kanban-board.component';
@@ -21,6 +25,8 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
 import { QuarterReviewComponent } from '../../shared/components/quarter-review/quarter-review.component';
 import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/reviewer-intro.component';
 import { RunOverComponent } from '../../shared/components/run-over/run-over.component';
+import { CardPackOpenerComponent } from '../../shared/components/card-pack-opener/card-pack-opener.component';
+import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-editor.component';
 
 @Component({
   selector: 'app-game-container',
@@ -42,6 +48,8 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
     ReviewerIntroComponent,
     RunOverComponent,
     ShopComponent,
+    CardPackOpenerComponent,
+    RuleEditorComponent,
   ],
   template: `
     <div class="h-screen flex flex-col overflow-hidden">
@@ -102,8 +110,15 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
             [canHireMinion]="gameState.canHireMinion()"
             [unlockedDepartments]="gameState.unlockedDepartments()"
             [hiringDisabled]="gameState.hiringDisabled()"
+            [equippedJokers]="gameState.equippedJokers()"
+            [ownedJokers]="gameState.ownedJokers()"
+            [rules]="gameState.rules()"
+            [maxRuleSlots]="gameState.maxRuleSlots()"
             (recruitClicked)="onRecruitMinion()"
-            (hireChosenClicked)="onHireChosenMinion($event)" />
+            (hireChosenClicked)="onHireChosenMinion($event)"
+            (jokerEquipped)="onJokerEquipped($event)"
+            (jokerUnequipped)="onJokerUnequipped($event)"
+            (editRulesClicked)="showRuleEditor.set(true)" />
         </main>
       }
 
@@ -273,13 +288,35 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
           (advance)="onQuarterAdvance()" />
       }
 
+      <!-- Pack Reward Modal (after quarter, before shop) -->
+      @if (gameState.showPackReward() && gameState.pendingPack(); as pack) {
+        <app-card-pack-opener
+          [cards]="pack"
+          [pickCount]="gameState.pendingPickCount()"
+          [packName]="'Quarterly Bonus'"
+          (cardsPicked)="onPackPicked($event)" />
+      }
+
       <!-- Shop Modal (between quarters) -->
       @if (gameState.showShop()) {
         <app-shop
           [vouchers]="gameState.ownedVouchers()"
           [gold]="gameState.gold()"
           (purchase)="onVoucherPurchase($event)"
+          (packPurchased)="onShopPackPurchase($event)"
           (continue)="onShopContinue()" />
+      }
+
+      <!-- Rule Editor Modal -->
+      @if (showRuleEditor()) {
+        <app-rule-editor
+          [rules]="gameState.rules()"
+          [ownedCards]="gameState.ownedCards()"
+          [maxSlots]="gameState.maxRuleSlots()"
+          (ruleAdded)="onRuleAdded($event)"
+          (ruleRemoved)="onRuleRemoved($event)"
+          (ruleToggled)="onRuleToggled($event)"
+          (closed)="showRuleEditor.set(false)" />
       }
 
       <!-- Run Over Screen -->
@@ -316,6 +353,7 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly gameState = inject(GameStateService);
   private readonly gameTimer = inject(GameTimerService);
   private readonly saveService = inject(SaveService);
+  private readonly devConsole = inject(DevConsoleService);
 
   readonly drawerPanel = viewChild(DrawerPanelComponent);
   readonly missionRouter = viewChild(MissionRouterComponent);
@@ -329,6 +367,7 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly moreSection = signal<string | null>(null);
   readonly routerMission = signal<Task | null>(null);
   readonly pendingMove = signal<{ taskId: string; fromQueue: string } | null>(null);
+  readonly showRuleEditor = signal(false);
 
   private pausedAt: number | null = null;
 
@@ -338,7 +377,8 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   readonly latestQuarterResult = computed(() => {
     const qp = this.gameState.quarterProgress();
     if (!qp.isComplete) return null;
-    // Hide quarter review when shop, reviewer intro, or run-over is showing
+    // Hide quarter review when pack reward, shop, reviewer intro, or run-over is showing
+    if (this.gameState.showPackReward()) return null;
     if (this.gameState.showShop()) return null;
     if (this.gameState.showReviewerIntro()) return null;
     if (this.gameState.isRunOver()) return null;
@@ -373,6 +413,7 @@ export class GameContainerComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.isMobile.set(window.innerWidth < 768);
+    this.devConsole.install();
 
     if (!this.saveService.load()) {
       this.gameState.initializeGame();
@@ -461,10 +502,9 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   onQuarterAdvance(): void {
     this.pausedAt = null;
     this.gameState.advanceQuarter();
-    // Don't restart timers if the reviewer intro is showing (Q3→Q4)
-    // or if the shop is showing (Q1→Q2, Q2→Q3, Q4→Y+1 Q1)
-    // or if run is over (Q4 failed)
-    if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver() && !this.gameState.showShop()) {
+    // Don't restart timers if the pack reward, reviewer intro, shop, or run-over is showing
+    if (!this.gameState.showPackReward() && !this.gameState.showReviewerIntro() &&
+        !this.gameState.isRunOver() && !this.gameState.showShop()) {
       this.gameTimer.restartTimers();
     }
   }
@@ -538,5 +578,41 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     const el = this.deptSwipeContainer()?.nativeElement;
     if (!el) return;
     el.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
+  }
+
+  // ─── Pack reward handlers ────────────────
+  onPackPicked(selectedIds: string[]): void {
+    this.gameState.pickFromPack(selectedIds);
+    this.gameState.continueAfterPack();
+    // Shop or reviewer intro will now show
+    if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver() && !this.gameState.showShop()) {
+      this.gameTimer.restartTimers();
+    }
+  }
+
+  onShopPackPurchase(packType: PackType): void {
+    this.gameState.purchasePack(packType);
+  }
+
+  // ─── Joker handlers ─────────────────────
+  onJokerEquipped(jokerId: JokerId): void {
+    this.gameState.equipJoker(jokerId);
+  }
+
+  onJokerUnequipped(jokerId: JokerId): void {
+    this.gameState.unequipJoker(jokerId);
+  }
+
+  // ─── Rule handlers ──────────────────────
+  onRuleAdded(rule: Rule): void {
+    this.gameState.addRule(rule);
+  }
+
+  onRuleRemoved(ruleId: string): void {
+    this.gameState.removeRule(ruleId);
+  }
+
+  onRuleToggled(ruleId: string): void {
+    this.gameState.toggleRuleEnabled(ruleId);
   }
 }

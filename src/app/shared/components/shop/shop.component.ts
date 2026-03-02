@@ -1,12 +1,17 @@
-import { Component, ChangeDetectionStrategy, input, output, computed } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, computed, signal } from '@angular/core';
 import {
   VoucherId, VoucherDefinition, VOUCHERS, ALL_VOUCHER_IDS,
   getVoucherCost, getVoucherEffect,
 } from '../../../core/models/voucher.model';
+import { PackType } from '../../../core/models/card-pack.model';
+import { CardShopComponent } from '../card-shop/card-shop.component';
+
+type ShopTab = 'vouchers' | 'card-packs';
 
 @Component({
   selector: 'app-shop',
   standalone: true,
+  imports: [CardShopComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <!-- Backdrop -->
@@ -34,69 +39,94 @@ import {
           </div>
         </div>
 
-        <!-- Voucher grid -->
+        <!-- Tab bar -->
+        <div class="flex border-b border-border shrink-0">
+          @for (tab of shopTabs; track tab.id) {
+            <button
+              (click)="activeTab.set(tab.id)"
+              class="flex-1 py-2 px-3 text-xs font-semibold transition-colors cursor-pointer border-b-2"
+              [class]="activeTab() === tab.id
+                ? 'text-gold border-gold'
+                : 'text-text-muted border-transparent hover:text-text-secondary'"
+              [attr.data-testid]="'shop-tab-' + tab.id">
+              {{ tab.icon }} {{ tab.label }}
+            </button>
+          }
+        </div>
+
+        <!-- Tab content -->
         <div class="flex-1 overflow-y-auto p-4">
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            @for (v of voucherList(); track v.def.id) {
-              <div
-                class="rounded-lg p-4 transition-all"
-                [class]="v.isMaxed
-                  ? 'bg-green-500/10 border border-green-500/30'
-                  : 'bg-surface-dark border border-white/10 hover:border-white/20'"
-                [attr.data-testid]="'voucher-' + v.def.id">
-                <!-- Icon + Name -->
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="text-2xl">{{ v.def.icon }}</span>
-                  <div class="flex-1 min-w-0">
-                    <h3 class="text-sm font-bold text-text-primary truncate">{{ v.def.name }}</h3>
-                    <p class="text-[10px] text-text-muted">{{ v.def.description }}</p>
-                  </div>
-                </div>
-
-                <!-- Level pips -->
-                <div class="flex items-center gap-1 mb-2">
-                  @for (pip of [1,2,3]; track pip) {
-                    <div
-                      class="w-3 h-3 rounded-full border"
-                      [class]="pip <= v.level
-                        ? 'bg-gold border-gold'
-                        : 'bg-transparent border-white/20'">
+          @switch (activeTab()) {
+            @case ('vouchers') {
+              <!-- Voucher grid -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                @for (v of voucherList(); track v.def.id) {
+                  <div
+                    class="rounded-lg p-4 transition-all"
+                    [class]="v.isMaxed
+                      ? 'bg-green-500/10 border border-green-500/30'
+                      : 'bg-surface-dark border border-white/10 hover:border-white/20'"
+                    [attr.data-testid]="'voucher-' + v.def.id">
+                    <!-- Icon + Name -->
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="text-2xl">{{ v.def.icon }}</span>
+                      <div class="flex-1 min-w-0">
+                        <h3 class="text-sm font-bold text-text-primary truncate">{{ v.def.name }}</h3>
+                        <p class="text-[10px] text-text-muted">{{ v.def.description }}</p>
+                      </div>
                     </div>
-                  }
-                  @if (v.isMaxed) {
-                    <span class="ml-auto text-[10px] font-bold text-green-400 uppercase tracking-wider">MAX</span>
-                  }
-                </div>
 
-                <!-- Current effect / Next level info -->
-                @if (v.level > 0) {
-                  <p class="text-xs text-text-secondary mb-2">
-                    Current: <span class="text-gold font-semibold">{{ formatEffect(v.def, v.level) }}</span>
-                  </p>
-                }
-                @if (!v.isMaxed) {
-                  <p class="text-xs text-text-muted mb-3">
-                    Next: <span class="text-text-secondary">{{ formatEffect(v.def, v.level + 1) }}</span>
-                  </p>
-                }
+                    <!-- Level pips -->
+                    <div class="flex items-center gap-1 mb-2">
+                      @for (pip of [1,2,3]; track pip) {
+                        <div
+                          class="w-3 h-3 rounded-full border"
+                          [class]="pip <= v.level
+                            ? 'bg-gold border-gold'
+                            : 'bg-transparent border-white/20'">
+                        </div>
+                      }
+                      @if (v.isMaxed) {
+                        <span class="ml-auto text-[10px] font-bold text-green-400 uppercase tracking-wider">MAX</span>
+                      }
+                    </div>
 
-                <!-- Buy button -->
-                @if (!v.isMaxed) {
-                  <button
-                    (click)="purchase.emit(v.def.id)"
-                    [disabled]="!v.canAfford"
-                    class="w-full py-2 px-3 rounded-lg text-xs font-bold uppercase tracking-wider
-                           transition-all cursor-pointer min-h-[36px]"
-                    [class]="v.canAfford
-                      ? 'bg-gold/20 hover:bg-gold/30 text-gold border border-gold/30 active:scale-95'
-                      : 'opacity-50 cursor-not-allowed bg-white/5 text-text-muted border border-white/10'"
-                    [attr.data-testid]="'buy-' + v.def.id">
-                    {{ v.nextCost }} 🪙
-                  </button>
+                    <!-- Current effect / Next level info -->
+                    @if (v.level > 0) {
+                      <p class="text-xs text-text-secondary mb-2">
+                        Current: <span class="text-gold font-semibold">{{ formatEffect(v.def, v.level) }}</span>
+                      </p>
+                    }
+                    @if (!v.isMaxed) {
+                      <p class="text-xs text-text-muted mb-3">
+                        Next: <span class="text-text-secondary">{{ formatEffect(v.def, v.level + 1) }}</span>
+                      </p>
+                    }
+
+                    <!-- Buy button -->
+                    @if (!v.isMaxed) {
+                      <button
+                        (click)="purchase.emit(v.def.id)"
+                        [disabled]="!v.canAfford"
+                        class="w-full py-2 px-3 rounded-lg text-xs font-bold uppercase tracking-wider
+                               transition-all cursor-pointer min-h-[36px]"
+                        [class]="v.canAfford
+                          ? 'bg-gold/20 hover:bg-gold/30 text-gold border border-gold/30 active:scale-95'
+                          : 'opacity-50 cursor-not-allowed bg-white/5 text-text-muted border border-white/10'"
+                        [attr.data-testid]="'buy-' + v.def.id">
+                        {{ v.nextCost }} 🪙
+                      </button>
+                    }
+                  </div>
                 }
               </div>
             }
-          </div>
+            @case ('card-packs') {
+              <app-card-shop
+                [gold]="gold()"
+                (packPurchased)="packPurchased.emit($event)" />
+            }
+          }
         </div>
 
         <!-- Footer: summary of owned effects -->
@@ -126,6 +156,14 @@ export class ShopComponent {
 
   continue = output<void>();
   purchase = output<VoucherId>();
+  packPurchased = output<PackType>();
+
+  activeTab = signal<ShopTab>('vouchers');
+
+  readonly shopTabs: { id: ShopTab; label: string; icon: string }[] = [
+    { id: 'vouchers', label: 'Vouchers', icon: '🎫' },
+    { id: 'card-packs', label: 'Card Packs', icon: '🃏' },
+  ];
 
   readonly voucherList = computed(() => {
     const levels = this.vouchers();
