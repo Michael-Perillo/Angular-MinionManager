@@ -936,7 +936,11 @@ describe('GameStateService', () => {
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-      // Shop opens for non-Q3→Q4 transitions
+      // Passed quarter: pack reward shown first
+      expect(service.showPackReward()).toBe(true);
+      service.pickFromPack([]);
+      service.continueAfterPack();
+      // Then shop opens
       expect(service.showShop()).toBe(true);
       service.continueAfterShop();
 
@@ -1014,7 +1018,10 @@ describe('GameStateService', () => {
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-      // Shop opens for Q4 pass before Y+1 Q1
+      // Q4 pass: pack reward shown first
+      expect(service.showPackReward()).toBe(true);
+      service.pickFromPack([]);
+      service.continueAfterPack();
       expect(service.showShop()).toBe(true);
       service.continueAfterShop();
 
@@ -1266,7 +1273,10 @@ describe('GameStateService', () => {
       expect(service.currentReviewer()).toBeNull();
       expect(service.activeModifiers()).toEqual([]);
       expect(service.isRunOver()).toBe(false);
-      // Shop opens before Y+1 Q1
+      // Pack reward first, then shop opens before Y+1 Q1
+      expect(service.showPackReward()).toBe(true);
+      service.pickFromPack([]);
+      service.continueAfterPack();
       expect(service.showShop()).toBe(true);
       service.continueAfterShop();
       expect(service.quarterProgress().year).toBe(2);
@@ -1648,7 +1658,7 @@ describe('GameStateService', () => {
       expect(service.showShop()).toBe(false);
     });
 
-    it('advanceQuarter should show shop for Q1→Q2 transition', () => {
+    it('advanceQuarter should show pack reward for Q1→Q2 transition (passed)', () => {
       const data = makeSaveData({
         quarterProgress: {
           year: 1,
@@ -1662,7 +1672,9 @@ describe('GameStateService', () => {
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-      expect(service.showShop()).toBe(true);
+      // Passed quarter: pack reward first, then shop
+      expect(service.showPackReward()).toBe(true);
+      expect(service.showShop()).toBe(false);
       // Quarter should NOT have advanced yet
       expect(service.quarterProgress().quarter).toBe(1);
       expect(service.quarterProgress().isComplete).toBe(true);
@@ -1682,6 +1694,10 @@ describe('GameStateService', () => {
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
+      // Passed quarter: go through pack reward first
+      expect(service.showPackReward()).toBe(true);
+      service.pickFromPack([]);
+      service.continueAfterPack();
       expect(service.showShop()).toBe(true);
 
       service.continueAfterShop();
@@ -1715,7 +1731,7 @@ describe('GameStateService', () => {
       expect(service.quarterProgress().quarter).toBe(4);
     });
 
-    it('Q4 pass should show shop before advancing to Y+1 Q1', () => {
+    it('Q4 pass should show pack reward then shop before advancing to Y+1 Q1', () => {
       const data = makeSaveData({
         quarterProgress: {
           year: 1,
@@ -1729,6 +1745,10 @@ describe('GameStateService', () => {
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
+      // Pack reward first
+      expect(service.showPackReward()).toBe(true);
+      service.pickFromPack([]);
+      service.continueAfterPack();
       expect(service.showShop()).toBe(true);
 
       service.continueAfterShop();

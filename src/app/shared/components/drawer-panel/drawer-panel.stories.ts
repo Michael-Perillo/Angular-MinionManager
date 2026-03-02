@@ -4,6 +4,8 @@ import { DrawerPanelComponent } from './drawer-panel.component';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
 import { Minion } from '../../../core/models/minion.model';
+import { DEFAULT_RULE, createRule } from '../../../core/models/rule.model';
+import { JokerId } from '../../../core/models/joker.model';
 
 const makeDept = (cat: TaskCategory, level = 1, xp = 0): Department => ({
   category: cat,
@@ -95,5 +97,31 @@ export const WithDepartments: Story = {
     nextMinionCost: 120,
     canHireMinion: true,
     unlockedDepartments: new Set(['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[]),
+  },
+};
+
+export const WithRules: Story = {
+  args: {
+    initiallyOpen: true,
+    initialTab: 'rules',
+    gold: 500,
+    minions: defaultMinions(),
+    departments: defaultDepts(),
+    nextMinionCost: 75,
+    canHireMinion: true,
+    unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
+    equippedJokers: ['gold-rush', 'iron-fist'] as JokerId[],
+    ownedJokers: new Set<JokerId>(['gold-rush', 'iron-fist', 'quick-study', 'speed-demon']),
+    rules: [
+      createRule('when-idle', 'assign-to-work', ['specialty-match']),
+      DEFAULT_RULE,
+    ],
+    maxRuleSlots: 3,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // Should show Rules tab content with joker slots and rule summary
+    expect(canvas.getByTestId('joker-slots')).toBeTruthy();
+    expect(canvas.getByTestId('edit-rules-btn')).toBeTruthy();
   },
 };

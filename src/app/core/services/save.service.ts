@@ -151,6 +151,14 @@ export class SaveService {
       data.ownedVouchers = data.ownedVouchers ?? {};
       data.version = 10;
     }
+    if (data.version < 11) {
+      // v10 → v11: Add card/joker/rule system
+      data.ownedCards = data.ownedCards ?? [];
+      data.ownedJokers = data.ownedJokers ?? [];
+      data.equippedJokers = data.equippedJokers ?? [];
+      data.rules = data.rules ?? [];
+      data.version = 11;
+    }
     return data;
   }
 }

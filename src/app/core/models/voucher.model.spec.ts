@@ -5,9 +5,9 @@ import {
 
 describe('Voucher Model', () => {
   describe('VOUCHERS', () => {
-    it('should define exactly 6 vouchers', () => {
-      expect(ALL_VOUCHER_IDS.length).toBe(6);
-      expect(Object.keys(VOUCHERS).length).toBe(6);
+    it('should define exactly 7 vouchers', () => {
+      expect(ALL_VOUCHER_IDS.length).toBe(7);
+      expect(Object.keys(VOUCHERS).length).toBe(7);
     });
 
     it('each voucher has maxLevel 3', () => {
@@ -74,6 +74,7 @@ describe('Voucher Model', () => {
       expect(getVoucherCost('rapid-intel', 1)).toBe(60);
       expect(getVoucherCost('hire-discount', 1)).toBe(75);
       expect(getVoucherCost('dept-funding', 1)).toBe(75);
+      expect(getVoucherCost('rule-mastery', 1)).toBe(100);
     });
   });
 

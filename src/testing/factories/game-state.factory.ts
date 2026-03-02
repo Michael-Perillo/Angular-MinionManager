@@ -29,6 +29,10 @@ export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
       mayhem: [],
     },
     playerQueue: [],
+    ownedCards: [],
+    ownedJokers: [],
+    equippedJokers: [],
+    rules: [],
     ...overrides,
   };
 }

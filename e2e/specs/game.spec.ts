@@ -110,6 +110,17 @@ test('Quarter review modal appears on quarter completion', async ({ page, nav })
   // Quarter review modal should dismiss
   await modal.waitFor({ state: 'hidden', timeout: 3_000 });
 
+  // Pack reward modal should appear (passed quarter)
+  const packOpener = page.locator('app-card-pack-opener');
+  await packOpener.waitFor({ state: 'visible', timeout: 3_000 });
+
+  // Select first card and confirm
+  const firstCard = packOpener.locator('[data-testid^="pack-card-"]').first();
+  await firstCard.click();
+  const confirmBtn2 = packOpener.getByTestId('pack-confirm-btn');
+  await confirmBtn2.click();
+  await packOpener.waitFor({ state: 'hidden', timeout: 3_000 });
+
   // Shop modal should appear between quarters
   const shop = page.locator('app-shop');
   await shop.waitFor({ state: 'visible', timeout: 3_000 });

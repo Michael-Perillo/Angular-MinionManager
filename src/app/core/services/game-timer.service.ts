@@ -1,13 +1,15 @@
 import { Injectable, OnDestroy, inject } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { GameStateService } from './game-state.service';
-import { GameEventService } from './game-event.service';
+import { GameEventService, GameEvent } from './game-event.service';
+import { RuleEngineService } from './rule-engine.service';
 import { SaveService } from './save.service';
 
 @Injectable({ providedIn: 'root' })
 export class GameTimerService implements OnDestroy {
   private readonly gameState = inject(GameStateService);
   private readonly events = inject(GameEventService);
+  private readonly ruleEngine = inject(RuleEngineService);
   private readonly saveService = inject(SaveService);
 
   private notificationCleanupInterval: ReturnType<typeof setInterval> | null = null;
@@ -33,12 +35,14 @@ export class GameTimerService implements OnDestroy {
       this.scheduleSpecialOpExpiry(e.missionId);
     });
 
-    // Auto-assign on relevant events (debounced via microtask)
-    const autoAssignEvents: Array<'MinionIdle' | 'TaskQueued' | 'MinionHired' | 'MinionReassigned'> =
-      ['MinionIdle', 'TaskQueued', 'MinionHired', 'MinionReassigned'];
-    for (const eventType of autoAssignEvents) {
+    // Auto-assign on relevant events via rule engine (debounced via microtask)
+    const ruleEvents: Array<GameEvent['type']> = [
+      'MinionIdle', 'TaskQueued', 'MinionHired', 'MinionReassigned',
+      'TaskCompleted', 'LevelUp',
+    ];
+    for (const eventType of ruleEvents) {
       this.autoAssignSubs.push(
-        this.events.on(eventType).subscribe(() => this.debouncedAutoAssign())
+        this.events.on(eventType).subscribe(event => this.debouncedRuleEvaluation(event))
       );
     }
 
@@ -48,6 +52,9 @@ export class GameTimerService implements OnDestroy {
         this.rescheduleBoardRefresh();
       }
     });
+
+    // Run initial rule evaluation to assign any pre-existing idle minions
+    this.debouncedRuleEvaluation({ type: 'MinionIdle', minionId: '', department: 'schemes' });
   }
 
   stop(): void {
@@ -144,13 +151,30 @@ export class GameTimerService implements OnDestroy {
     }
   }
 
-  // ─── Auto-assign (debounced) ──────────
-  private debouncedAutoAssign(): void {
+  // ─── Rule engine dispatch (debounced) ──
+  private lastEvent: GameEvent | null = null;
+
+  private debouncedRuleEvaluation(event: GameEvent): void {
+    this.lastEvent = event;
     if (this.autoAssignPending) return;
     this.autoAssignPending = true;
     queueMicrotask(() => {
       this.autoAssignPending = false;
-      this.gameState.autoAssignMinions();
+      const ev = this.lastEvent!;
+
+      // If automation disabled by boss modifier, fall back to default auto-assign
+      if (this.gameState.automationDisabled()) {
+        this.gameState.autoAssignMinions();
+        return;
+      }
+
+      const actions = this.ruleEngine.evaluateRules(ev);
+      for (const action of actions) {
+        if (action.taskId) {
+          this.gameState.executeAssignment(action.minionId, action.taskId, action.department);
+        }
+        // 'hold' action = intentionally do nothing
+      }
     });
   }
 

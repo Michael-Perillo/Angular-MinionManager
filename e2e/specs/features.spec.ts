@@ -327,6 +327,17 @@ test.describe('Voucher Shop', () => {
     await reviewContinue.click();
     await reviewModal.waitFor({ state: 'hidden', timeout: 3_000 });
 
+    // Pack reward modal should appear (passed quarter)
+    const packOpener = page.locator('app-card-pack-opener');
+    await packOpener.waitFor({ state: 'visible', timeout: 3_000 });
+
+    // Select first card and confirm
+    const firstCard = packOpener.locator('[data-testid^="pack-card-"]').first();
+    await firstCard.click();
+    const packConfirm = packOpener.getByTestId('pack-confirm-btn');
+    await packConfirm.click();
+    await packOpener.waitFor({ state: 'hidden', timeout: 3_000 });
+
     // Shop modal should appear
     const shop = page.locator('app-shop');
     await shop.waitFor({ state: 'visible', timeout: 3_000 });
@@ -377,5 +388,242 @@ test.describe('Voucher Shop', () => {
     await expect(shop).not.toBeVisible();
     const reviewerIntro = page.locator('app-reviewer-intro');
     await reviewerIntro.waitFor({ state: 'visible', timeout: 3_000 });
+  });
+});
+
+// ─── Rules & Jokers ──────────────────────────
+
+test.describe('Rules & Jokers', () => {
+  test('Rule editor opens from drawer and can create a rule', async ({ page, nav }) => {
+    test.skip(nav.isMobile, 'Drawer panel is desktop-only');
+
+    // Seed with owned cards and rule slots
+    await nav.seedState({
+      gold: 500,
+      unlockedDepartments: ['schemes'],
+      ownedCards: [
+        'when-idle', 'specialty-match', 'assign-to-work',
+        'when-task-appears', 'assign-highest-tier',
+      ],
+      ownedVouchers: { 'rule-mastery': 1 }, // 2 rule slots
+    });
+
+    // Open drawer and go to Rules tab
+    await nav.goToHirePanel(); // opens drawer
+    const rulesTab = page.locator('app-drawer-panel button').filter({ hasText: /Rules/ });
+    await rulesTab.click();
+
+    // Should see Edit button and joker slots
+    const editBtn = page.getByTestId('edit-rules-btn');
+    await editBtn.waitFor({ state: 'visible', timeout: 3_000 });
+    await editBtn.click();
+
+    // Rule editor modal should open
+    const ruleEditor = page.locator('app-rule-editor');
+    await ruleEditor.waitFor({ state: 'visible', timeout: 3_000 });
+
+    // Should show 0/2 slots used
+    await expect(ruleEditor.getByText('0/2')).toBeVisible();
+
+    // Click Add Rule
+    const addBtn = ruleEditor.getByTestId('add-rule-btn');
+    await addBtn.click();
+
+    // Builder should appear — select trigger, action
+    await expect(ruleEditor.getByText('New Rule')).toBeVisible();
+
+    // Select "When Idle" trigger (💤)
+    const triggerCard = ruleEditor.getByTestId('card-when-idle');
+    await triggerCard.click();
+
+    // Select "Assign to Work" action (⚒️)
+    const actionCard = ruleEditor.getByTestId('card-assign-to-work');
+    await actionCard.click();
+
+    // Create Rule button should be enabled now
+    const createBtn = ruleEditor.getByTestId('create-rule-btn');
+    await expect(createBtn).toBeEnabled();
+    await createBtn.click();
+
+    // Should show 1/2 slots used
+    await expect(ruleEditor.getByText('1/2')).toBeVisible();
+
+    // Close rule editor
+    const closeBtn = ruleEditor.getByTestId('rule-editor-close');
+    await closeBtn.click();
+    await ruleEditor.waitFor({ state: 'hidden', timeout: 3_000 });
+  });
+
+  test('Rule can be toggled and removed', async ({ page, nav }) => {
+    test.skip(nav.isMobile, 'Drawer panel is desktop-only');
+
+    // Seed with an existing custom rule
+    await nav.seedState({
+      gold: 500,
+      unlockedDepartments: ['schemes'],
+      ownedCards: [
+        'when-idle', 'specialty-match', 'assign-to-work',
+        'when-task-appears', 'assign-highest-tier',
+      ],
+      ownedVouchers: { 'rule-mastery': 1 },
+      rules: [
+        {
+          id: 'test-rule-1',
+          name: 'When Idle → Assign to Work',
+          priority: 0,
+          triggerId: 'when-idle',
+          conditionIds: [],
+          actionId: 'assign-to-work',
+          enabled: true,
+        },
+      ],
+    });
+
+    // Open drawer → Rules tab → Edit
+    await nav.goToHirePanel();
+    const rulesTab = page.locator('app-drawer-panel button').filter({ hasText: /Rules/ });
+    await rulesTab.click();
+    const editBtn = page.getByTestId('edit-rules-btn');
+    await editBtn.click();
+
+    const ruleEditor = page.locator('app-rule-editor');
+    await ruleEditor.waitFor({ state: 'visible', timeout: 3_000 });
+
+    // Should show 1/2 slots used
+    await expect(ruleEditor.getByText('1/2')).toBeVisible();
+
+    // Toggle the rule off
+    const ruleRow = ruleEditor.getByTestId('rule-test-rule-1');
+    const toggleBtn = ruleRow.locator('button').filter({ hasText: 'ON' });
+    await toggleBtn.click();
+
+    // Should now show OFF
+    await expect(ruleRow.locator('button').filter({ hasText: 'OFF' })).toBeVisible();
+
+    // Remove the rule
+    const removeBtn = ruleEditor.getByTestId('remove-test-rule-1');
+    await removeBtn.click();
+
+    // Should show 0/2 slots used
+    await expect(ruleEditor.getByText('0/2')).toBeVisible();
+
+    // Close
+    await ruleEditor.getByTestId('rule-editor-close').click();
+  });
+
+  test('Joker equip and unequip from drawer', async ({ page, nav }) => {
+    test.skip(nav.isMobile, 'Drawer panel is desktop-only');
+
+    // Seed with owned jokers
+    await nav.seedState({
+      gold: 500,
+      unlockedDepartments: ['schemes'],
+      ownedJokers: ['gold-rush', 'iron-fist', 'quick-study'],
+      equippedJokers: [],
+    });
+
+    // Open drawer → Rules tab
+    await nav.goToHirePanel();
+    const rulesTab = page.locator('app-drawer-panel button').filter({ hasText: /Rules/ });
+    await rulesTab.click();
+
+    // Should see 5 empty joker slots
+    const jokerSlots = page.getByTestId('joker-slots');
+    await jokerSlots.waitFor({ state: 'visible', timeout: 3_000 });
+    const emptySlots = jokerSlots.getByTestId('joker-empty-slot');
+    await expect(emptySlots).toHaveCount(5);
+
+    // Click an empty slot to open picker
+    await emptySlots.first().click();
+
+    // Picker should show available jokers
+    await expect(page.getByText('Choose a Joker')).toBeVisible();
+    const pickGoldRush = page.getByTestId('pick-gold-rush');
+    await pickGoldRush.click();
+
+    // Should now show 1 equipped + 4 empty slots
+    await expect(page.getByTestId('equipped-gold-rush')).toBeVisible();
+    await expect(emptySlots).toHaveCount(4);
+
+    // Click equipped joker to unequip
+    await page.getByTestId('equipped-gold-rush').click();
+    await expect(emptySlots).toHaveCount(5);
+  });
+
+  test('Pack reward appears after passing a quarter', async ({ page, nav }) => {
+    // Seed: Q1 complete with passed result
+    await nav.seedState({
+      gold: 500,
+      quarterProgress: {
+        year: 1,
+        quarter: 1,
+        grossGoldEarned: 200,
+        tasksCompleted: 30,
+        isComplete: true,
+        missedQuarters: 0,
+        quarterResults: [
+          { year: 1, quarter: 1, passed: true, goldEarned: 200, target: 75, tasksCompleted: 30 },
+        ],
+      },
+    });
+
+    // Quarter review → Continue
+    const reviewModal = page.locator('app-quarter-review');
+    await reviewModal.waitFor({ state: 'visible', timeout: 5_000 });
+    await page.getByRole('button', { name: /Continue to Q2/i }).click();
+    await reviewModal.waitFor({ state: 'hidden', timeout: 3_000 });
+
+    // Pack reward modal should appear
+    const packOpener = page.locator('app-card-pack-opener');
+    await packOpener.waitFor({ state: 'visible', timeout: 3_000 });
+    await expect(packOpener.getByText('Quarterly Bonus')).toBeVisible();
+
+    // Should show cards to pick from
+    const cards = packOpener.locator('[data-testid^="pack-card-"]');
+    const cardCount = await cards.count();
+    expect(cardCount).toBeGreaterThanOrEqual(3);
+
+    // Select first card
+    await cards.first().click();
+
+    // Confirm button should be enabled
+    const confirmBtn = packOpener.getByTestId('pack-confirm-btn');
+    await expect(confirmBtn).toBeEnabled();
+    await confirmBtn.click();
+
+    // Pack should dismiss and shop should appear
+    await packOpener.waitFor({ state: 'hidden', timeout: 3_000 });
+    const shop = page.locator('app-shop');
+    await shop.waitFor({ state: 'visible', timeout: 3_000 });
+  });
+
+  test('Pack reward does NOT appear after missing a quarter', async ({ page, nav }) => {
+    // Seed: Q1 complete but MISSED
+    await nav.seedState({
+      gold: 50,
+      quarterProgress: {
+        year: 1,
+        quarter: 1,
+        grossGoldEarned: 30,
+        tasksCompleted: 30,
+        isComplete: true,
+        missedQuarters: 1,
+        quarterResults: [
+          { year: 1, quarter: 1, passed: false, goldEarned: 30, target: 75, tasksCompleted: 30 },
+        ],
+      },
+    });
+
+    // Quarter review → Continue
+    const reviewModal = page.locator('app-quarter-review');
+    await reviewModal.waitFor({ state: 'visible', timeout: 5_000 });
+    await page.getByRole('button', { name: /Continue to Q2/i }).click();
+    await reviewModal.waitFor({ state: 'hidden', timeout: 3_000 });
+
+    // Pack reward should NOT appear — go straight to shop
+    const packOpener = page.locator('app-card-pack-opener');
+    await expect(packOpener).not.toBeVisible();
+    const shop = page.locator('app-shop');
+    await shop.waitFor({ state: 'visible', timeout: 3_000 });
   });
 });

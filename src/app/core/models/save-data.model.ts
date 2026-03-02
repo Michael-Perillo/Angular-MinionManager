@@ -3,9 +3,10 @@ import { Task, TaskCategory } from './task.model';
 import { Department } from './department.model';
 import { QuarterProgress } from './quarter.model';
 import { Reviewer, Modifier } from './reviewer.model';
+import { Rule } from './rule.model';
 
 /** Single source of truth for the save format version. Bump this when changing SaveData. */
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 11;
 
 export interface SaveData {
   version: number;
@@ -29,4 +30,9 @@ export interface SaveData {
   isRunOver?: boolean;
   /** v10+: Voucher levels */
   ownedVouchers?: Record<string, number>;
+  /** v11+: Card/joker/rule system */
+  ownedCards?: string[];
+  ownedJokers?: string[];
+  equippedJokers?: string[];
+  rules?: Rule[];
 }

@@ -5,7 +5,7 @@ import { VoucherId } from '../../../core/models/voucher.model';
 
 const emptyVouchers = (): Record<VoucherId, number> => ({
   'iron-fingers': 0, 'board-expansion': 0, 'operations-desk': 0,
-  'rapid-intel': 0, 'hire-discount': 0, 'dept-funding': 0,
+  'rapid-intel': 0, 'hire-discount': 0, 'dept-funding': 0, 'rule-mastery': 0,
 });
 
 const meta: Meta<ShopComponent> = {
@@ -37,6 +37,8 @@ export const Default: Story = {
     expect(hireDiscount).toBeTruthy();
     const deptFunding = canvas.getByTestId('voucher-dept-funding');
     expect(deptFunding).toBeTruthy();
+    const ruleMastery = canvas.getByTestId('voucher-rule-mastery');
+    expect(ruleMastery).toBeTruthy();
 
     // Continue button should be visible
     const continueBtn = canvas.getByTestId('shop-continue');
@@ -70,7 +72,7 @@ export const MaxedOut: Story = {
   args: {
     vouchers: {
       'iron-fingers': 3, 'board-expansion': 3, 'operations-desk': 3,
-      'rapid-intel': 3, 'hire-discount': 3, 'dept-funding': 3,
+      'rapid-intel': 3, 'hire-discount': 3, 'dept-funding': 3, 'rule-mastery': 3,
     },
     gold: 9999,
   },
@@ -94,9 +96,9 @@ export const Broke: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    // All buy buttons should be disabled
+    // All buy buttons should be disabled (7 vouchers)
     const buyButtons = canvasElement.querySelectorAll('[data-testid^="buy-"]');
-    expect(buyButtons.length).toBe(6);
+    expect(buyButtons.length).toBe(7);
     buyButtons.forEach(btn => {
       expect((btn as HTMLButtonElement).disabled).toBe(true);
     });
