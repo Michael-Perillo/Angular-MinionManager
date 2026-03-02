@@ -1,20 +1,17 @@
-import { Component, ChangeDetectionStrategy, input, output, signal, computed, OnInit, viewChild } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, signal, OnInit, viewChild } from '@angular/core';
 import { TaskCategory } from '../../../core/models/task.model';
 import { Department } from '../../../core/models/department.model';
-import { Upgrade } from '../../../core/models/upgrade.model';
 import { Minion } from '../../../core/models/minion.model';
-import { UpgradeShopComponent } from '../upgrade-shop/upgrade-shop.component';
 import { DepartmentPanelComponent } from '../department-panel/department-panel.component';
 import { HireMinionPanelComponent } from '../hire-minion-panel/hire-minion-panel.component';
 import { MinionRosterComponent } from '../minion-roster/minion-roster.component';
 
-type DrawerTab = 'hire' | 'upgrades' | 'departments';
+type DrawerTab = 'hire' | 'departments';
 
 @Component({
   selector: 'app-drawer-panel',
   standalone: true,
   imports: [
-    UpgradeShopComponent,
     DepartmentPanelComponent,
     HireMinionPanelComponent,
     MinionRosterComponent,
@@ -66,13 +63,6 @@ type DrawerTab = 'hire' | 'upgrades' | 'departments';
                   [minions]="minions()" />
               </div>
             }
-            @case ('upgrades') {
-              <app-upgrade-shop
-                [upgrades]="upgrades()"
-                [gold]="gold()"
-                [upgradesDisabled]="upgradesDisabled()"
-                (purchaseClicked)="upgradeClicked.emit($event)" />
-            }
             @case ('departments') {
               <app-department-panel
                 [departments]="departments()" />
@@ -94,19 +84,16 @@ export class DrawerPanelComponent implements OnInit {
   gold = input.required<number>();
   minions = input.required<Minion[]>();
   departments = input.required<Record<TaskCategory, Department>>();
-  upgrades = input.required<Upgrade[]>();
   nextMinionCost = input.required<number>();
   canHireMinion = input.required<boolean>();
 
   unlockedDepartments = input<Set<TaskCategory>>(new Set());
   hiringDisabled = input<boolean>(false);
-  upgradesDisabled = input<boolean>(false);
 
   // Outputs
   hireClicked = output<void>();
   recruitClicked = output<void>();
   hireChosenClicked = output<Minion>();
-  upgradeClicked = output<string>();
   drawerToggled = output<boolean>();
 
   initiallyOpen = input(false);
@@ -125,7 +112,6 @@ export class DrawerPanelComponent implements OnInit {
 
   readonly allTabs: { id: DrawerTab; label: string; icon: string }[] = [
     { id: 'hire', label: 'Minions', icon: '👾' },
-    { id: 'upgrades', label: 'Upgrades', icon: '⚡' },
     { id: 'departments', label: 'Depts', icon: '🏛️' },
   ];
 

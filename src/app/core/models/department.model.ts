@@ -62,9 +62,9 @@ export interface DepartmentPassive {
 
 export const DEPARTMENT_PASSIVES: Record<TaskCategory, DepartmentPassive> = {
   research: {
-    name: 'Covert Ops',
-    description: 'Increases stealth effectiveness',
-    scalingPerLevel: 5,
+    name: 'Efficiency Lab',
+    description: 'Reduced clicks required for tasks',
+    scalingPerLevel: 3,
     unit: '%',
   },
   schemes: {
@@ -74,9 +74,9 @@ export const DEPARTMENT_PASSIVES: Record<TaskCategory, DepartmentPassive> = {
     unit: '%',
   },
   heists: {
-    name: 'Loot Bonus',
-    description: 'Bonus gold from all tasks',
-    scalingPerLevel: 4,
+    name: 'Payday',
+    description: 'Increased Special Op gold bonus',
+    scalingPerLevel: 5,
     unit: '%',
   },
   mayhem: {
@@ -91,4 +91,14 @@ export const DEPARTMENT_PASSIVES: Record<TaskCategory, DepartmentPassive> = {
 export function getPassiveBonus(category: TaskCategory, level: number): number {
   if (level <= 1) return 0;
   return (level - 1) * DEPARTMENT_PASSIVES[category].scalingPerLevel;
+}
+
+// ─── Scoring: department local multiplier ──────────────
+
+/** Gold multiplier per department level above 1 */
+export const DEPT_LOCAL_MULT_PER_LEVEL = 0.06;
+
+/** Get the local gold multiplier for a department at a given level */
+export function getDeptLocalMult(level: number): number {
+  return 1 + Math.max(0, level - 1) * DEPT_LOCAL_MULT_PER_LEVEL;
 }

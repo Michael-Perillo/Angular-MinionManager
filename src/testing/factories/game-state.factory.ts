@@ -11,14 +11,13 @@ export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
   };
 
   return {
-    version: 6,
+    version: 9,
     savedAt: Date.now(),
     gold: 0,
     completedCount: 0,
     totalGoldEarned: 0,
     minions: [],
     departments: defaultDepts,
-    upgradeLevels: [],
     activeMissions: [],
     missionBoard: [],
     usedNameIndices: [],

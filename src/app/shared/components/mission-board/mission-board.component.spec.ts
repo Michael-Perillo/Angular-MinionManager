@@ -184,7 +184,7 @@ describe('MissionBoardComponent', () => {
       expect(component.sortMode()).toBe('gold');
 
       component.cycleSort();
-      expect(component.sortMode()).toBe('time');
+      expect(component.sortMode()).toBe('clicks');
 
       component.cycleSort();
       expect(component.sortMode()).toBe('default'); // wraps around
@@ -201,7 +201,7 @@ describe('MissionBoardComponent', () => {
       expect(component.sortLabel()).toBe('Gold');
 
       component.cycleSort();
-      expect(component.sortLabel()).toBe('Time');
+      expect(component.sortLabel()).toBe('Clicks');
     });
 
     it('should return correct sort icons', () => {
@@ -215,7 +215,7 @@ describe('MissionBoardComponent', () => {
       expect(component.sortIcon()).toBe('🪙');
 
       component.cycleSort();
-      expect(component.sortIcon()).toBe('⏱');
+      expect(component.sortIcon()).toBe('👆');
     });
   });
 
@@ -224,25 +224,25 @@ describe('MissionBoardComponent', () => {
       makeTask({
         tier: 'petty',
         goldReward: 10,
-        timeToComplete: 30,
+        clicksRequired: 30,
         template: { name: 'Petty Task', description: 'd', category: 'schemes', tier: 'petty' },
       }),
       makeTask({
         tier: 'legendary',
         goldReward: 500,
-        timeToComplete: 5,
+        clicksRequired: 5,
         template: { name: 'Legend Task', description: 'd', category: 'heists', tier: 'legendary' },
       }),
       makeTask({
         tier: 'sinister',
         goldReward: 50,
-        timeToComplete: 15,
+        clicksRequired: 15,
         template: { name: 'Sinister Task', description: 'd', category: 'research', tier: 'sinister' },
       }),
       makeTask({
         tier: 'diabolical',
         goldReward: 200,
-        timeToComplete: 10,
+        clicksRequired: 10,
         template: { name: 'Diabolical Task', description: 'd', category: 'mayhem', tier: 'diabolical' },
       }),
     ];
@@ -282,18 +282,18 @@ describe('MissionBoardComponent', () => {
       expect(result[3].goldReward).toBe(10);
     });
 
-    it('should sort by time ascending (fastest first)', () => {
+    it('should sort by clicks ascending (fewest first)', () => {
       setInputs(sortTasks);
       component.cycleSort(); // → tier
       component.cycleSort(); // → gold
-      component.cycleSort(); // → time
-      expect(component.sortMode()).toBe('time');
+      component.cycleSort(); // → clicks
+      expect(component.sortMode()).toBe('clicks');
 
       const result = component.filteredMissions();
-      expect(result[0].timeToComplete).toBe(5);
-      expect(result[1].timeToComplete).toBe(10);
-      expect(result[2].timeToComplete).toBe(15);
-      expect(result[3].timeToComplete).toBe(30);
+      expect(result[0].clicksRequired).toBe(5);
+      expect(result[1].clicksRequired).toBe(10);
+      expect(result[2].clicksRequired).toBe(15);
+      expect(result[3].clicksRequired).toBe(30);
     });
 
     it('should combine filter and sort correctly', () => {

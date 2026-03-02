@@ -32,27 +32,12 @@ test('Hire minion after earning gold', async ({ nav, hire, header }) => {
   expect(await header.minions).toBeGreaterThanOrEqual(1);
 });
 
-test('Purchase upgrade after earning gold', async ({ page, nav }) => {
-  await nav.seedState({ gold: 200 });
-
-  await nav.goToUpgradeShop();
-
-  const buyBtn = page.locator('app-upgrade-shop button:not([disabled])').filter({ hasText: /\d+g/ }).first();
-  await buyBtn.click();
-
-  await expect(page.locator('app-upgrade-shop').locator('text=Lv.1')).toBeVisible();
-});
-
 test('Drawer tab navigation shows correct content', async ({ page, nav }) => {
   test.skip(nav.isMobile, 'Desktop drawer not available on mobile');
 
   // Open drawer — Minions is default tab
   await nav.goToHirePanel();
   await expect(page.locator('app-hire-minion-panel')).toBeVisible();
-
-  // Upgrades tab
-  await nav.goToUpgradeShop();
-  await expect(page.locator('app-upgrade-shop')).toBeVisible();
 
   // Depts tab
   await nav.goToDepartmentPanel();
@@ -88,8 +73,6 @@ test('Quarter review modal appears on quarter completion', async ({ page, nav })
         status: 'queued',
         tier: 'petty',
         goldReward: 5,
-        timeToComplete: 999,
-        timeRemaining: 999,
         clicksRequired: 1,
         clicksRemaining: 1,
         assignedMinionId: null,

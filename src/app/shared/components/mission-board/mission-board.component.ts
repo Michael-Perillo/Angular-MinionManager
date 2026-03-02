@@ -103,7 +103,7 @@ import { TierBadgeComponent } from '../tier-badge/tier-badge.component';
 
               <!-- Footer -->
               <div class="flex items-center justify-between text-xs text-text-muted">
-                <span>{{ mission.timeToComplete }}s / {{ mission.clicksRequired }} clicks</span>
+                <span>{{ mission.clicksRequired }} clicks</span>
                 @if (mission.isSpecialOp) {
                   <span class="text-gold">Expires soon</span>
                 }
@@ -166,7 +166,7 @@ export class MissionBoardComponent {
 
   filterCategory = signal<string | null>(null);
 
-  readonly sortModes = ['default', 'tier', 'gold', 'time'] as const;
+  readonly sortModes = ['default', 'tier', 'gold', 'clicks'] as const;
   readonly sortIndex = signal(0);
   readonly sortMode = computed(() => this.sortModes[this.sortIndex()]);
   readonly sortLabel = computed(() => {
@@ -174,7 +174,7 @@ export class MissionBoardComponent {
       case 'default': return 'Default';
       case 'tier': return 'Tier';
       case 'gold': return 'Gold';
-      case 'time': return 'Time';
+      case 'clicks': return 'Clicks';
     }
   });
   readonly sortIcon = computed(() => {
@@ -182,7 +182,7 @@ export class MissionBoardComponent {
       case 'default': return '↕';
       case 'tier': return '⭐';
       case 'gold': return '🪙';
-      case 'time': return '⏱';
+      case 'clicks': return '👆';
     }
   });
 
@@ -220,8 +220,8 @@ export class MissionBoardComponent {
           return (this.TIER_RANK[b.tier] ?? 0) - (this.TIER_RANK[a.tier] ?? 0);
         case 'gold':
           return (b.goldReward ?? 0) - (a.goldReward ?? 0);
-        case 'time':
-          return a.timeToComplete - b.timeToComplete;
+        case 'clicks':
+          return a.clicksRequired - b.clicksRequired;
         default:
           return 0;
       }

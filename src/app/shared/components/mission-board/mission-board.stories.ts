@@ -10,8 +10,6 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
   status: 'queued',
   tier: 'petty',
   goldReward: 5,
-  timeToComplete: 8,
-  timeRemaining: 8,
   clicksRequired: 10,
   clicksRemaining: 10,
   assignedMinionId: null,

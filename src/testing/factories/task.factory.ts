@@ -19,8 +19,6 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     status: 'queued',
     tier,
     goldReward: config.gold,
-    timeToComplete: config.time,
-    timeRemaining: config.time,
     clicksRequired: config.clicks,
     clicksRemaining: config.clicks,
     assignedMinionId: null,

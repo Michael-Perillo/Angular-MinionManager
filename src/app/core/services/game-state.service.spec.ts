@@ -163,27 +163,6 @@ describe('GameStateService', () => {
     });
   });
 
-  describe('upgrades', () => {
-    it('should start with default upgrades all at level 0', () => {
-      const upgrades = service.upgrades();
-      expect(upgrades.length).toBeGreaterThan(0);
-      upgrades.forEach(u => expect(u.currentLevel).toBe(0));
-    });
-
-    it('should purchase upgrade when gold is sufficient', () => {
-      service.addGold(1000);
-      service.purchaseUpgrade('click-power');
-      const upgrade = service.upgrades().find(u => u.id === 'click-power');
-      expect(upgrade?.currentLevel).toBe(1);
-    });
-
-    it('should not purchase when gold is insufficient', () => {
-      service.purchaseUpgrade('click-power');
-      const upgrade = service.upgrades().find(u => u.id === 'click-power');
-      expect(upgrade?.currentLevel).toBe(0);
-    });
-  });
-
   describe('computed signals', () => {
     it('nextMinionCost should be 75 for first minion', () => {
       expect(service.nextMinionCost()).toBe(75);
@@ -231,7 +210,7 @@ describe('GameStateService', () => {
       expect(service.idleMinions().length).toBe(0);
     });
 
-    it('should complete task and free minion via completeTaskByTimer', () => {
+    it('should complete task and free minion via processMinionClicks', () => {
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       service.addGold(75);
@@ -249,8 +228,12 @@ describe('GameStateService', () => {
       const goldBefore = service.gold();
       const completedBefore = service.completedCount();
 
-      // Complete via event-driven path
-      service.completeTaskByTimer(task.id, dept);
+      // Complete via processMinionClicks (each call applies floor(speed) clicks)
+      for (let i = 0; i < 200; i++) {
+        service.processMinionClicks();
+        const remaining = service.departmentQueues()[dept].find(t => t.id === task.id);
+        if (!remaining) break;
+      }
 
       expect(service.departmentQueues()[dept].find(t => t.id === task.id)).toBeUndefined();
       expect(service.gold()).toBeGreaterThan(goldBefore);
@@ -330,7 +313,7 @@ describe('GameStateService', () => {
       const reward = task.goldReward;
 
       completeTaskByClicking(service, task.id);
-      // At baseline, gold awarded equals reward (possibly + click-gold bonus at level 0 = 1x)
+      // At baseline (dept level 1), gold = base × 1.0 dept mult × 1.0 boss mult - 0 drain
       expect(service.gold()).toBe(reward);
     });
 
@@ -346,22 +329,8 @@ describe('GameStateService', () => {
   });
 
   describe('clickTask edge cases', () => {
-    it('should apply click power upgrade', () => {
-      service.addGold(10_000);
-      service.purchaseUpgrade('click-power'); // level 1 → clickPower = 1 + additive effect
-      const power = service.clickPower();
-      expect(power).toBeGreaterThan(1);
-
-      const mission = service.missionBoard()[0];
-      service.acceptMission(mission.id);
-      const task = service.activeMissions().find(t => t.id === mission.id)!;
-      const clicksBefore = task.clicksRemaining;
-
-      service.clickTask(task.id);
-      const after = service.activeMissions().find(t => t.id === task.id);
-      if (after) {
-        expect(after.clicksRemaining).toBe(clicksBefore - power);
-      }
+    it('clickPower should be 1', () => {
+      expect(service.clickPower()).toBe(1);
     });
 
     it('should not click a task that is already complete', () => {
@@ -395,20 +364,6 @@ describe('GameStateService', () => {
       expect(after.clicksRemaining).toBe(clicksBefore);
     });
 
-    it('should apply click gold bonus upgrade', () => {
-      service.addGold(10_000);
-      service.purchaseUpgrade('click-gold'); // +15% gold
-
-      const mission = service.missionBoard().find(m => m.goldReward > 0)!;
-      service.acceptMission(mission.id);
-      const task = service.activeMissions().find(t => t.id === mission.id)!;
-      const baseReward = task.goldReward;
-
-      completeTaskByClicking(service, task.id);
-      // With click-gold level 1, bonus = 1 + 0.15 = 1.15x, so gold >= round(reward * 1.15)
-      const expectedMin = Math.round(baseReward * 1.15);
-      expect(service.gold()).toBeGreaterThanOrEqual(expectedMin - service.nextMinionCost());
-    });
   });
 
   describe('autoAssignMinions', () => {
@@ -547,36 +502,16 @@ describe('GameStateService', () => {
       const minionBefore = service.minions()[0];
       expect(minionBefore.xp).toBe(0);
 
-      // Complete via event-driven path
+      // Complete via processMinionClicks
       const task = service.inProgressTasks()[0];
-      service.completeTaskByTimer(task.id, dept);
+      for (let i = 0; i < 200; i++) {
+        service.processMinionClicks();
+        if (!service.departmentQueues()[dept].find(t => t.id === task.id)) break;
+      }
 
       const minionAfter = service.minions()[0];
       if (minionAfter) {
         expect(minionAfter.xp).toBeGreaterThan(0);
-      }
-    });
-
-    it('should increase XP with minion-xp upgrade', () => {
-      service.addGold(10_000);
-      service.hireMinion();
-      service.purchaseUpgrade('minion-xp'); // +20% XP
-
-      const mission = service.missionBoard()[0];
-      const dept = mission.template.category;
-      service.acceptMission(mission.id);
-
-      // Reassign minion to matching department
-      service.reassignMinion(service.minions()[0].id, dept);
-
-      service.tickTime(); // auto-assigns
-
-      const task = service.inProgressTasks()[0];
-      service.completeTaskByTimer(task.id, dept);
-
-      const minion = service.minions()[0];
-      if (minion) {
-        expect(minion.xp).toBeGreaterThan(0);
       }
     });
   });
@@ -596,19 +531,6 @@ describe('GameStateService', () => {
       expect(service.gold()).toBe(snapshot.gold);
       expect(service.minions().length).toBe(snapshot.minions.length);
       expect(service.completedCount()).toBe(snapshot.completedCount);
-    });
-
-    it('should preserve upgrade levels through snapshot', () => {
-      service.addGold(10_000);
-      service.purchaseUpgrade('click-power');
-      service.purchaseUpgrade('click-power');
-
-      const snapshot = service.getSnapshot();
-      service.resetGame();
-      expect(service.getUpgradeLevel('click-power')).toBe(0);
-
-      service.loadSnapshot(snapshot);
-      expect(service.getUpgradeLevel('click-power')).toBe(2);
     });
 
     it('should preserve usedNameIndices through snapshot', () => {
@@ -633,24 +555,7 @@ describe('GameStateService', () => {
 
     it('should include current version in snapshot', () => {
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(8);
-    });
-  });
-
-  describe('purchaseUpgrade edge cases', () => {
-    it('should allow purchasing beyond old max levels (uncapped)', () => {
-      service.addGold(1_000_000_000);
-      for (let i = 0; i < 15; i++) {
-        service.purchaseUpgrade('click-power');
-      }
-      expect(service.getUpgradeLevel('click-power')).toBe(15);
-    });
-
-    it('should do nothing for unknown upgrade ID', () => {
-      service.addGold(1000);
-      const goldBefore = service.gold();
-      service.purchaseUpgrade('nonexistent');
-      expect(service.gold()).toBe(goldBefore);
+      expect(snapshot.version).toBe(9);
     });
   });
 
@@ -661,25 +566,12 @@ describe('GameStateService', () => {
       expect(service.boardCapacity()).toBeGreaterThan(baseCap);
     });
 
-    it('should increase board capacity with board-slots upgrade', () => {
-      service.addGold(10_000);
-      const baseCap = service.boardCapacity();
-      service.purchaseUpgrade('board-slots');
-      expect(service.boardCapacity()).toBeGreaterThan(baseCap);
-    });
-
     it('should increase active slots with minions', () => {
       const baseSlots = service.activeSlots(); // 3
       setupGameWithMinions(service, 2, 10_000);
       expect(service.activeSlots()).toBe(baseSlots + 2);
     });
 
-    it('should increase active slots with active-slots upgrade', () => {
-      service.addGold(10_000);
-      const baseSlots = service.activeSlots();
-      service.purchaseUpgrade('active-slots');
-      expect(service.activeSlots()).toBe(baseSlots + 1);
-    });
   });
 
   describe('name pool exhaustion', () => {
@@ -690,16 +582,6 @@ describe('GameStateService', () => {
       }
       // Should have 26 minions without error
       expect(service.minions().length).toBe(26);
-    });
-  });
-
-  describe('hire discount', () => {
-    it('should reduce hire cost with hire-discount upgrade', () => {
-      service.addGold(10_000);
-      const baseCost = service.nextMinionCost();
-      service.purchaseUpgrade('hire-discount');
-      const discountedCost = service.nextMinionCost();
-      expect(discountedCost).toBeLessThan(baseCost);
     });
   });
 
@@ -757,7 +639,7 @@ describe('GameStateService', () => {
       service.addGold(10_000);
       service.hireMinion();
       const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(8);
+      expect(snapshot.version).toBe(9);
       expect(snapshot.unlockedDepartments).toBeDefined();
       expect(snapshot.unlockedDepartments!.length).toBeGreaterThanOrEqual(1);
     });
@@ -909,25 +791,25 @@ describe('GameStateService', () => {
     });
   });
 
-  // ─── Phase 2B: Department Passives ──────────
+  // ─── Department local multiplier on gold ──────────
 
-  describe('department passives', () => {
-    it('should apply Heists loot bonus to gold awards', () => {
-      // Grab board from existing initialized game, then reload with custom depts
+  describe('department local gold multiplier', () => {
+    it('should apply dept local mult when department level > 1', () => {
+      // getDeptLocalMult(level) = 1 + (level-1)*0.06
+      // At level 3: 1 + 2*0.06 = 1.12
       const board = service.missionBoard();
-      // Set heists dept to level 3 → getPassiveBonus('heists', 3) = (3-1)*4 = 8%
+      const category = board[0].template.category;
       const data = makeSaveData({
         departments: {
-          schemes: { category: 'schemes', xp: 0, level: 1 },
-          heists: { category: 'heists', xp: 100, level: 3 },
-          research: { category: 'research', xp: 0, level: 1 },
-          mayhem: { category: 'mayhem', xp: 0, level: 1 },
+          schemes: { category: 'schemes', xp: 0, level: category === 'schemes' ? 3 : 1 },
+          heists: { category: 'heists', xp: 0, level: category === 'heists' ? 3 : 1 },
+          research: { category: 'research', xp: 0, level: category === 'research' ? 3 : 1 },
+          mayhem: { category: 'mayhem', xp: 0, level: category === 'mayhem' ? 3 : 1 },
         },
         missionBoard: board,
       });
       service.loadSnapshot(data);
 
-      // Complete a task via clicking and compare gold to base reward
       const mission = service.missionBoard().find(m => m.goldReward > 0)!;
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
@@ -935,13 +817,13 @@ describe('GameStateService', () => {
 
       completeTaskByClicking(service, task.id);
 
-      // With 8% heists bonus, gold = round(baseReward * 1.08)
-      const expected = Math.round(baseReward * 1.08);
+      // With dept level 3: gold = round(baseReward * 1.12)
+      const expected = Math.round(baseReward * 1.12);
       expect(service.gold()).toBe(expected);
     });
 
-    it('should not apply Heists loot bonus at level 1', () => {
-      // Departments start at level 1, so no bonus
+    it('should award exact base reward at dept level 1', () => {
+      // All departments at level 1 → getDeptLocalMult(1) = 1.0
       const mission = service.missionBoard().find(m => m.goldReward > 0)!;
       service.acceptMission(mission.id);
       const task = service.activeMissions().find(t => t.id === mission.id)!;
@@ -1026,7 +908,6 @@ describe('GameStateService', () => {
 
     it('should reset quarterly progress on resetGame', () => {
       service.addGold(10_000);
-      service.purchaseUpgrade('click-power');
 
       service.resetGame();
 
@@ -1204,19 +1085,6 @@ describe('GameStateService', () => {
       }
     });
 
-    it('should emit UpgradePurchased when buying an upgrade', () => {
-      service.addGold(500);
-      const upgrades = service.upgrades();
-      const upgrade = upgrades[0];
-      service.purchaseUpgrade(upgrade.id);
-      const purchased = emitted.filter(e => e.type === 'UpgradePurchased');
-      expect(purchased.length).toBe(1);
-      if (purchased[0].type === 'UpgradePurchased') {
-        expect(purchased[0].upgradeId).toBe(upgrade.id);
-        expect(purchased[0].newLevel).toBe(1);
-      }
-    });
-
     it('should emit MinionHired when hiring a minion', () => {
       service.addGold(500);
       service.hireMinion();
@@ -1258,7 +1126,6 @@ describe('GameStateService', () => {
       expect(assigned.length).toBeGreaterThanOrEqual(1);
       if (assigned[0].type === 'TaskAssigned') {
         expect(assigned[0].minionId).toBe(minion.id);
-        expect(assigned[0].durationMs).toBeGreaterThan(0);
       }
     });
 
@@ -1523,16 +1390,6 @@ describe('GameStateService', () => {
       expect(service.minions().length).toBe(0);
     });
 
-    it('should block upgrades when upgradesDisabled is active', () => {
-      enterReview();
-      (service as any)._upgradesDisabled.set(true);
-
-      service.addGold(10_000);
-      const levelBefore = service.getUpgradeLevel('click-power');
-      service.purchaseUpgrade('click-power');
-      expect(service.getUpgradeLevel('click-power')).toBe(levelBefore);
-    });
-
     it('should block board refresh when boardFrozen is active', () => {
       enterReview();
       (service as any)._boardFrozen.set(true);
@@ -1616,7 +1473,6 @@ describe('GameStateService', () => {
       enterReview();
       // Set up some constraints
       (service as any)._hiringDisabled.set(true);
-      (service as any)._upgradesDisabled.set(true);
       (service as any)._boardFrozen.set(true);
 
       // Simulate Q4 completion and pass
@@ -1635,66 +1491,9 @@ describe('GameStateService', () => {
       service.advanceQuarter();
 
       expect(service.hiringDisabled()).toBe(false);
-      expect(service.upgradesDisabled()).toBe(false);
       expect(service.boardFrozen()).toBe(false);
       expect(service.lockedCategory()).toBeNull();
     });
   });
 
-  describe('shiftTaskTiming', () => {
-    const makeTask = (overrides: Partial<any> = {}): any => ({
-      id: 't1',
-      template: { name: 'Test', description: 'desc', category: 'schemes', tier: 'petty' },
-      status: 'in-progress',
-      tier: 'petty',
-      goldReward: 10,
-      timeToComplete: 10,
-      timeRemaining: 10,
-      clicksRequired: 0,
-      clicksRemaining: 0,
-      assignedMinionId: null,
-      queuedAt: Date.now(),
-      assignedQueue: 'schemes',
-      ...overrides,
-    });
-
-    it('should shift assignedAt and completesAt forward by the given duration', () => {
-      const now = Date.now();
-      const data = makeSaveData({
-        minions: [makeMinion({ id: 'm1', assignedDepartment: 'schemes' })],
-        departmentQueues: {
-          schemes: [makeTask({ assignedMinionId: 'm1', assignedAt: now, completesAt: now + 10000 })],
-          heists: [],
-          research: [],
-          mayhem: [],
-        },
-      });
-      service.loadSnapshot(data);
-
-      service.shiftTaskTiming(5000);
-
-      const task = service.departmentQueues().schemes[0];
-      expect(task.assignedAt).toBe(now + 5000);
-      expect(task.completesAt).toBe(now + 15000);
-    });
-
-    it('should not shift tasks that are not in-progress', () => {
-      const now = Date.now();
-      const data = makeSaveData({
-        departmentQueues: {
-          schemes: [makeTask({ status: 'pending', assignedMinionId: null, assignedAt: undefined, completesAt: undefined })],
-          heists: [],
-          research: [],
-          mayhem: [],
-        },
-      });
-      service.loadSnapshot(data);
-
-      service.shiftTaskTiming(5000);
-
-      const task = service.departmentQueues().schemes[0];
-      expect(task.assignedAt).toBeUndefined();
-      expect(task.completesAt).toBeUndefined();
-    });
-  });
 });

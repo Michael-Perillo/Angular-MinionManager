@@ -11,9 +11,8 @@ import { GameNotification } from '../models/game-state.model';
 import { TASK_POOL } from '../models/task-pool';
 import {
   Department, DEPT_TIER_XP, deptLevelFromXp, deptXpForLevel, availableTiersForDeptLevel,
-  DEPARTMENT_LABELS, getPassiveBonus,
+  DEPARTMENT_LABELS, getPassiveBonus, getDeptLocalMult,
 } from '../models/department.model';
-import { Upgrade, upgradeCost, upgradeEffect, createDefaultUpgrades } from '../models/upgrade.model';
 import {
   QuarterProgress, createInitialProgress, getQuarterTarget,
   isQuarterBudgetExhausted, evaluateQuarter,
@@ -48,7 +47,6 @@ export class GameStateService {
     mayhem: { category: 'mayhem', xp: 0, level: 1 },
   });
 
-  private readonly _upgrades = signal<Upgrade[]>(createDefaultUpgrades());
   private readonly _lastSaved = signal(0);
 
   // ─── Kanban queue signals ──────────────────
@@ -84,7 +82,6 @@ export class GameStateService {
   readonly totalGoldEarned = this._totalGoldEarned.asReadonly();
   readonly notifications = this._notifications.asReadonly();
   readonly departments = this._departments.asReadonly();
-  readonly upgrades = this._upgrades.asReadonly();
   readonly lastSaved = this._lastSaved.asReadonly();
   readonly departmentQueues = this._departmentQueues.asReadonly();
   readonly playerQueue = this._playerQueue.asReadonly();
@@ -151,11 +148,9 @@ export class GameStateService {
     this._minions().filter(m => m.status === 'working')
   );
 
-  readonly nextMinionCost = computed(() => {
-    const base = Math.floor(75 * Math.pow(1.6, this._minions().length));
-    const discount = this.getUpgradeEffect('hire-discount');
-    return Math.floor(base * (1 - discount));
-  });
+  readonly nextMinionCost = computed(() =>
+    Math.floor(75 * Math.pow(1.6, this._minions().length))
+  );
 
   readonly canHireMinion = computed(() =>
     this._gold() >= this.nextMinionCost()
@@ -169,24 +164,21 @@ export class GameStateService {
     this.activeMissions().filter(t => t.status === 'in-progress')
   );
 
-  /** Mission board capacity: base 12, scales with minions + upgrades. Clamped to 2 by board-limited modifier. */
+  /** Mission board capacity: base 12, scales with minions. Clamped to 2 by board-limited modifier. */
   readonly boardCapacity = computed(() => {
     if (this._boardLimited()) return 2;
     const base = 12;
     const minionBonus = Math.min(8, this._minions().length * 2);
-    const upgradeBonus = this.getUpgradeEffect('board-slots');
-    return base + minionBonus + upgradeBonus;
+    return base + minionBonus;
   });
 
-  /** Active mission slots: base 3 + 1 per minion + upgrades */
+  /** Active mission slots: base 3 + 1 per minion */
   readonly activeSlots = computed(() =>
-    3 + this._minions().length + this.getUpgradeEffect('active-slots')
+    3 + this._minions().length
   );
 
-  /** Click power: 1 + upgrade level */
-  readonly clickPower = computed(() =>
-    1 + this.getUpgradeEffect('click-power')
-  );
+  /** Click power: base 1 (will be expanded by vouchers in Phase 2) */
+  readonly clickPower = computed(() => 1);
 
   /** Minions grouped by assigned department */
   readonly minionsByDepartment = computed(() => {
@@ -255,7 +247,6 @@ export class GameStateService {
       research: { category: 'research', xp: 0, level: 1 },
       mayhem: { category: 'mayhem', xp: 0, level: 1 },
     });
-    this._upgrades.set(createDefaultUpgrades());
     this._departmentQueues.set({
       schemes: [], heists: [], research: [], mayhem: [],
     });
@@ -287,14 +278,13 @@ export class GameStateService {
   // ─── Snapshot (persistence) ─────────────────
   getSnapshot(): SaveData {
     return {
-      version: 8,
+      version: 9,
       savedAt: Date.now(),
       gold: this._gold(),
       completedCount: this._completedCount(),
       totalGoldEarned: this._totalGoldEarned(),
       minions: this._minions(),
       departments: this._departments(),
-      upgradeLevels: this._upgrades().map(u => ({ id: u.id, currentLevel: u.currentLevel })),
       activeMissions: [], // kept empty for v3+; all tasks live in department/player queues
       missionBoard: this._missionBoard(),
       usedNameIndices: [...this.usedNameIndices],
@@ -373,14 +363,6 @@ export class GameStateService {
     // Legacy flat list cleared
     this._activeMissions.set([]);
 
-    // Upgrades: start from defaults, merge saved levels
-    const upgrades = createDefaultUpgrades();
-    for (const saved of data.upgradeLevels) {
-      const match = upgrades.find(u => u.id === saved.id);
-      if (match) match.currentLevel = saved.currentLevel;
-    }
-    this._upgrades.set(upgrades);
-
     // Load unlocked departments (v4+), or derive from current minions for older saves
     if (data.unlockedDepartments && data.unlockedDepartments.length > 0) {
       this._unlockedDepartments.set(new Set(data.unlockedDepartments as TaskCategory[]));
@@ -399,38 +381,6 @@ export class GameStateService {
 
   addGold(amount: number): void {
     this._gold.update(g => g + amount);
-  }
-
-  // ─── Upgrades ──────────────────────────────
-  purchaseUpgrade(upgradeId: string): void {
-    if (this._upgradesDisabled()) return;
-    const upgrade = this._upgrades().find(u => u.id === upgradeId);
-    if (!upgrade) return;
-    const cost = upgradeCost(upgrade);
-    if (this._gold() < cost) return;
-
-    this._gold.update(g => g - cost);
-    const newLevel = upgrade.currentLevel + 1;
-    this._upgrades.update(list =>
-      list.map(u =>
-        u.id === upgradeId
-          ? { ...u, currentLevel: newLevel }
-          : u
-      )
-    );
-    this.addNotification(`Upgraded ${upgrade.name} to level ${newLevel}!`, 'task');
-    this.events.emit({ type: 'UpgradePurchased', upgradeId, newLevel });
-  }
-
-  /** Get the current level of an upgrade by ID */
-  getUpgradeLevel(id: string): number {
-    return this._upgrades().find(u => u.id === id)?.currentLevel ?? 0;
-  }
-
-  /** Get the computed effect of an upgrade by ID */
-  private getUpgradeEffect(id: string): number {
-    const upgrade = this._upgrades().find(u => u.id === id);
-    return upgrade ? upgradeEffect(upgrade) : 0;
   }
 
   // ─── Mission Board actions ─────────────────
@@ -565,7 +515,6 @@ export class GameStateService {
   // ─── Manual work (clicking) ────────────────
   clickTask(taskId: string): void {
     const power = this.clickPower();
-    const clickGoldBonus = 1 + this.getUpgradeEffect('click-gold');
 
     // Check player queue first
     const playerTask = this._playerQueue().find(t => t.id === taskId);
@@ -577,8 +526,7 @@ export class GameStateService {
 
           const newClicks = task.clicksRemaining - power;
           if (newClicks <= 0) {
-            const bonusGold = Math.round(task.goldReward * clickGoldBonus);
-            this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
+            this.awardGold(task.goldReward, task.template.name, task.tier, task.template.category, 'click');
             return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
           }
           return {
@@ -610,8 +558,7 @@ export class GameStateService {
 
             const newClicks = task.clicksRemaining - power;
             if (newClicks <= 0) {
-              const bonusGold = Math.round(task.goldReward * clickGoldBonus);
-              this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
+              this.awardGold(task.goldReward, task.template.name, task.tier, task.template.category, 'click');
               return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
             }
             return {
@@ -707,51 +654,49 @@ export class GameStateService {
     this.autoAssignMinions();
   }
 
-  /** Complete a task by timer (event-driven path from GameTimerService) */
-  completeTaskByTimer(taskId: string, dept: TaskCategory): void {
-    const task = this._departmentQueues()[dept].find(t => t.id === taskId);
-    if (!task || task.status !== 'in-progress') return;
+  /**
+   * Process one tick of minion auto-clicks.
+   * Each assigned minion applies floor(speed) clicks to their task per tick.
+   * Called once per second by GameTimerService.
+   */
+  processMinionClicks(): void {
+    const completedTasks: { taskId: string; dept: TaskCategory; minionId: string }[] = [];
 
-    const minionId = task.assignedMinionId;
-
-    const minion = minionId ? this._minions().find(m => m.id === minionId) : null;
-    const effMult = minion ? this.getMinionEfficiencyMultiplier(minion, task.template.category) : 1;
-    const bonusGold = Math.round(task.goldReward * effMult);
-    this.awardGold(bonusGold, task.template.name, task.tier, task.template.category);
-
-    if (minionId) {
-      this.freeMinionFromTask(minionId, task.tier, task.template.category);
-    }
-
-    // Remove the completed task from the queue
-    this._departmentQueues.update(queues => ({
-      ...queues,
-      [dept]: queues[dept].filter(t => t.id !== taskId),
-    }));
-  }
-
-  /** Set timing info for a task being resumed from save (called by GameTimerService on load) */
-  setTaskTimingInfo(taskId: string, dept: TaskCategory, assignedAt: number, completesAt: number): void {
-    this._departmentQueues.update(queues => ({
-      ...queues,
-      [dept]: queues[dept].map(t => t.id === taskId ? { ...t, assignedAt, completesAt } : t),
-    }));
-  }
-
-  /** Shift assignedAt/completesAt forward on all in-progress tasks (preserves progress bar ratio after a pause) */
-  shiftTaskTiming(pauseDuration: number): void {
     this._departmentQueues.update(queues => {
-      const updated: Record<string, any[]> = {};
-      for (const dept of ALL_CATEGORIES) {
-        updated[dept] = queues[dept].map(t => {
-          if (t.status === 'in-progress' && t.assignedAt != null && t.completesAt != null) {
-            return { ...t, assignedAt: t.assignedAt + pauseDuration, completesAt: t.completesAt + pauseDuration };
+      const updated = { ...queues };
+      for (const cat of ALL_CATEGORIES) {
+        updated[cat] = queues[cat].map(task => {
+          if (task.status !== 'in-progress' || !task.assignedMinionId) return task;
+
+          const minion = this._minions().find(m => m.id === task.assignedMinionId);
+          if (!minion) return task;
+
+          const clicks = Math.max(1, Math.floor(minion.stats.speed));
+          const newRemaining = task.clicksRemaining - clicks;
+
+          if (newRemaining <= 0) {
+            completedTasks.push({ taskId: task.id, dept: cat, minionId: minion.id });
+            return { ...task, clicksRemaining: 0, status: 'complete' as TaskStatus };
           }
-          return t;
+          return { ...task, clicksRemaining: newRemaining };
         });
       }
-      return updated as typeof queues;
+      return updated;
     });
+
+    // Process completions outside the signal update
+    for (const { taskId, dept, minionId } of completedTasks) {
+      const task = this._departmentQueues()[dept].find(t => t.id === taskId);
+      if (task) {
+        this.awardGold(task.goldReward, task.template.name, task.tier, task.template.category, 'minion');
+        this.freeMinionFromTask(minionId, task.tier, task.template.category);
+      }
+      // Remove completed task
+      this._departmentQueues.update(qs => ({
+        ...qs,
+        [dept]: qs[dept].filter(t => t.id !== taskId),
+      }));
+    }
   }
 
   // ─── Tick step methods ────────────────
@@ -771,12 +716,11 @@ export class GameStateService {
     });
   }
 
-  /** Get the effective board refresh interval in ms (factoring upgrades and passives) */
+  /** Get the effective board refresh interval in ms (factoring passives) */
   getEffectiveBoardRefreshInterval(): number {
-    const refreshSpeedMult = this.getUpgradeEffect('board-refresh') || 1;
     const schemesPassive = getPassiveBonus('schemes', this._departments().schemes.level);
     const schemesRefreshBonus = 1 - schemesPassive * 0.01;
-    return this.BOARD_REFRESH_INTERVAL * Math.max(0.2, refreshSpeedMult * schemesRefreshBonus);
+    return this.BOARD_REFRESH_INTERVAL * Math.max(0.2, schemesRefreshBonus);
   }
 
   /** Clean old notifications */
@@ -796,25 +740,14 @@ export class GameStateService {
   }
 
   // ─── Minion stat helpers ───────────────────
-  private getMinionSpeedMultiplier(minion: Minion, taskCategory: TaskCategory): number {
-    let speed = minion.stats.speed;
-    speed += (minion.level - 1) * 0.02;
-    if (minion.specialty === taskCategory) {
-      speed += SPECIALTY_BONUS;
-    }
-    // Global speed upgrade
-    speed *= 1 + this.getUpgradeEffect('minion-speed');
-    return speed;
-  }
 
+  /** Efficiency multiplier used for dept XP bonus (not gold) */
   private getMinionEfficiencyMultiplier(minion: Minion, taskCategory: TaskCategory): number {
     let eff = minion.stats.efficiency;
     eff += (minion.level - 1) * 0.03;
     if (minion.specialty === taskCategory) {
       eff += SPECIALTY_BONUS;
     }
-    // Global efficiency upgrade
-    eff *= 1 + this.getUpgradeEffect('minion-efficiency');
     return eff;
   }
 
@@ -838,17 +771,24 @@ export class GameStateService {
     const template = this.pickRandomTemplate();
     const config = TIER_CONFIG[template.tier];
 
-    const levelBonus = 1 + (this.villainLevel() - 1) * VILLAIN_SCALE_PER_LEVEL;
-    let scaledGold = Math.round(config.gold * levelBonus);
-    const scaledTime = Math.round(config.time * levelBonus);
-    const scaledClicks = Math.round(config.clicks * levelBonus);
+    // Gold scales with VL
+    const vlBonus = 1 + (this.villainLevel() - 1) * VILLAIN_SCALE_PER_LEVEL;
+    let scaledGold = Math.round(config.gold * vlBonus);
+
+    // Clicks are fixed per tier, reduced by Research passive
+    const researchBonus = getPassiveBonus('research', this._departments().research.level);
+    const clickReduction = 1 - researchBonus * 0.01;
+    const scaledClicks = Math.max(1, Math.round(config.clicks * clickReduction));
 
     // Mayhem passive: increased Special Op appearance rate
     const mayhemBonus = getPassiveBonus('mayhem', this._departments().mayhem.level);
     const specialOpChance = this.SPECIAL_OP_CHANCE + mayhemBonus * 0.01;
     const isSpecialOp = Math.random() < specialOpChance;
     if (isSpecialOp) {
-      scaledGold = Math.round(scaledGold * 1.5);
+      // Heists passive: increased Special Op gold bonus (base 1.5×)
+      const heistsBonus = getPassiveBonus('heists', this._departments().heists.level);
+      const specialOpMult = 1.5 + heistsBonus * 0.01;
+      scaledGold = Math.round(scaledGold * specialOpMult);
     }
 
     const mission: Task = {
@@ -857,8 +797,6 @@ export class GameStateService {
       status: 'queued',
       tier: template.tier,
       goldReward: scaledGold,
-      timeToComplete: scaledTime,
-      timeRemaining: scaledTime,
       clicksRequired: scaledClicks,
       clicksRemaining: scaledClicks,
       assignedMinionId: null,
@@ -958,23 +896,11 @@ export class GameStateService {
   }
 
   private assignMinionToTask(minionId: string, taskId: string, dept: TaskCategory): void {
-    const task = this._departmentQueues()[dept].find(t => t.id === taskId);
-    const minion = this._minions().find(m => m.id === minionId);
-
-    let completesAt: number | null = null;
-    let durationMs = 0;
-    const now = Date.now();
-    if (task && minion) {
-      const speedMult = this.getMinionSpeedMultiplier(minion, dept);
-      durationMs = Math.round((task.timeRemaining / speedMult) * 1000);
-      completesAt = now + durationMs;
-    }
-
     this._departmentQueues.update(queues => ({
       ...queues,
       [dept]: queues[dept].map(t =>
         t.id === taskId
-          ? { ...t, status: 'in-progress' as TaskStatus, assignedMinionId: minionId, assignedAt: now, completesAt }
+          ? { ...t, status: 'in-progress' as TaskStatus, assignedMinionId: minionId }
           : t
       ),
     }));
@@ -986,15 +912,12 @@ export class GameStateService {
       )
     );
 
-    if (task && minion) {
-      this.events.emit({ type: 'TaskAssigned', taskId, minionId, department: dept, durationMs });
-    }
+    this.events.emit({ type: 'TaskAssigned', taskId, minionId, department: dept, durationMs: 0 });
   }
 
   private freeMinionFromTask(minionId: string, taskTier: TaskTier, taskCategory: TaskCategory): void {
     const baseXp = this.TIER_XP[taskTier];
-    const xpBonus = 1 + this.getUpgradeEffect('minion-xp');
-    const xpGain = Math.round(baseXp * xpBonus);
+    const xpGain = baseXp;
 
     this._minions.update(list =>
       list.map(m => {
@@ -1025,13 +948,29 @@ export class GameStateService {
     });
   }
 
-  private awardGold(amount: number, taskName: string, taskTier?: TaskTier, taskCategory?: TaskCategory): void {
-    // Apply Heists passive: +gold from all tasks
-    const heistsBonus = getPassiveBonus('heists', this._departments().heists.level);
-    let finalAmount = Math.round(amount * (1 + heistsBonus * 0.01));
+  /**
+   * Award gold using the new Base × Mult formula.
+   * Base = goldReward (already includes tier × VL × specialOpMult from createBoardMission)
+   * Mult = deptLocalMult × bossModifierMult
+   */
+  private awardGold(
+    baseGold: number,
+    taskName: string,
+    taskTier?: TaskTier,
+    taskCategory?: TaskCategory,
+    source: 'minion' | 'click' = 'minion'
+  ): void {
+    let mult = 1.0;
 
-    // Apply modifier effects
-    finalAmount = Math.round(finalAmount * this._goldRewardMultiplier());
+    // Dept local mult (minion tasks in a department)
+    if (taskCategory) {
+      mult *= getDeptLocalMult(this._departments()[taskCategory].level);
+    }
+
+    // Boss modifier
+    mult *= this._goldRewardMultiplier();
+
+    let finalAmount = Math.round(baseGold * mult);
     finalAmount = Math.max(0, finalAmount - this._goldDrainPerTask());
 
     this._gold.update(g => g + finalAmount);
@@ -1045,9 +984,9 @@ export class GameStateService {
 
     this.addNotification(`+${finalAmount}g from "${taskName}"`, 'gold');
 
-    // Award department XP
+    // Award department XP (efficiency bonus as XP multiplier)
     if (taskTier && taskCategory) {
-      this.awardDeptXp(taskCategory, taskTier);
+      this.awardDeptXp(taskCategory, taskTier, source);
     }
 
     // Track quarterly progress
@@ -1070,10 +1009,9 @@ export class GameStateService {
     this.checkQuarterCompletion();
   }
 
-  private awardDeptXp(category: TaskCategory, tier: TaskTier): void {
+  private awardDeptXp(category: TaskCategory, tier: TaskTier, source: 'minion' | 'click' = 'minion'): void {
     const baseXp = DEPT_TIER_XP[tier];
-    const deptBonus = 1 + this.getUpgradeEffect('dept-xp-boost');
-    const xpGain = Math.round(baseXp * deptBonus);
+    const xpGain = baseXp;
     this._departments.update(depts => {
       const dept = depts[category];
       const newXp = dept.xp + xpGain;

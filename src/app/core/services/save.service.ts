@@ -4,7 +4,7 @@ import { SaveData } from '../models/save-data.model';
 import { STORAGE_BACKEND } from './storage-backend';
 
 const STORAGE_KEY = 'minion-manager-save';
-const CURRENT_VERSION = 8;
+const CURRENT_VERSION = 9;
 
 @Injectable({ providedIn: 'root' })
 export class SaveService {
@@ -98,11 +98,11 @@ export class SaveService {
       }
       data.playerQueue = stripOps(data.playerQueue);
 
-      // Remove notoriety upgrades from saved upgrade levels
+      // Remove notoriety upgrades from saved upgrade levels (legacy field)
       const notorietyUpgradeIds = ['bribe-network', 'shadow-ops', 'cover-spawn', 'lay-low'];
-      if (data.upgradeLevels) {
-        data.upgradeLevels = data.upgradeLevels.filter(
-          u => !notorietyUpgradeIds.includes(u.id)
+      if ((data as any).upgradeLevels) {
+        (data as any).upgradeLevels = (data as any).upgradeLevels.filter(
+          (u: any) => !notorietyUpgradeIds.includes(u.id)
         );
       }
 
@@ -123,6 +123,29 @@ export class SaveService {
       data.activeModifiers = data.activeModifiers ?? [];
       data.isRunOver = data.isRunOver ?? false;
       data.version = 8;
+    }
+    if (data.version < 9) {
+      // v8 → v9: Remove upgrades, remove task time fields (scoring overhaul)
+      delete (data as any).upgradeLevels;
+
+      // Strip time fields from tasks in all queues
+      const stripTimeFields = (tasks: any[]) =>
+        (tasks ?? []).map((t: any) => {
+          const { timeToComplete, timeRemaining, assignedAt, completesAt, ...rest } = t;
+          // Ensure click fields exist
+          rest.clicksRemaining = rest.clicksRemaining ?? rest.clicksRequired ?? 12;
+          rest.clicksRequired = rest.clicksRequired ?? 12;
+          return rest;
+        });
+      data.missionBoard = stripTimeFields(data.missionBoard);
+      data.activeMissions = stripTimeFields(data.activeMissions);
+      if (data.departmentQueues) {
+        for (const cat of ['schemes', 'heists', 'research', 'mayhem'] as const) {
+          data.departmentQueues[cat] = stripTimeFields(data.departmentQueues[cat]);
+        }
+      }
+      data.playerQueue = stripTimeFields(data.playerQueue);
+      data.version = 9;
     }
     return data;
   }

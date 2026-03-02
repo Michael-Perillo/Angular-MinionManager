@@ -66,14 +66,12 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
                   }
                 </div>
                 <app-progress-bar
-                  [progress]="task.timeRemaining"
-                  [total]="task.timeToComplete"
-                  [assignedAt]="task.assignedAt ?? null"
-                  [completesAt]="task.completesAt ?? null"
+                  [progress]="task.clicksRemaining"
+                  [total]="task.clicksRequired"
                   [tier]="task.tier" />
                 <div class="flex items-center justify-between text-xs text-text-secondary mt-1">
                   <span>{{ getProgressPercent(task) }}%</span>
-                  <span>{{ getTimeRemaining(task) }}s</span>
+                  <span>{{ task.clicksRemaining }} clicks</span>
                 </div>
               </div>
             </div>
@@ -115,7 +113,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
             </div>
             <div class="flex items-center justify-between mt-0.5">
               <span class="text-xs text-text-muted">
-                {{ task.timeToComplete }}s / {{ task.clicksRequired }} clicks
+                {{ task.clicksRequired }} clicks
               </span>
               @if (dragDisabled()) {
                 <div class="flex items-center gap-1">
@@ -182,7 +180,6 @@ export class DepartmentColumnComponent {
   dragDisabled = input<boolean>(false);
   fullWidth = input<boolean>(false);
   allMinions = input<Minion[]>([]);
-  currentTime = input<number>(Date.now());
 
   taskDropped = output<CdkDragDrop<any>>();
   taskReordered = output<string[]>();
@@ -228,22 +225,9 @@ export class DepartmentColumnComponent {
     }
   }
 
-  getTimeRemaining(task: Task): number {
-    if (task.completesAt) {
-      return Math.max(0, Math.ceil((task.completesAt - this.currentTime()) / 1000));
-    }
-    return task.timeRemaining;
-  }
-
   getProgressPercent(task: Task): number {
-    if (task.assignedAt && task.completesAt) {
-      const totalMs = task.completesAt - task.assignedAt;
-      if (totalMs <= 0) return 100;
-      const elapsed = this.currentTime() - task.assignedAt;
-      return Math.min(100, Math.max(0, Math.round((elapsed / totalMs) * 100)));
-    }
-    if (task.timeToComplete <= 0) return 0;
-    return Math.round((1 - this.getTimeRemaining(task) / task.timeToComplete) * 100);
+    if (task.clicksRequired <= 0) return 100;
+    return Math.min(100, Math.max(0, Math.round(((task.clicksRequired - task.clicksRemaining) / task.clicksRequired) * 100)));
   }
 
   onMoveUp(taskId: string): void {

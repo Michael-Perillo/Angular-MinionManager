@@ -133,16 +133,16 @@ describe('Department Model', () => {
       expect(getPassiveBonus('schemes', 5)).toBe(32);
     });
 
-    it('should return correct scaling for Heists (Loot Bonus, 4% per level)', () => {
-      expect(getPassiveBonus('heists', 2)).toBe(4);
-      expect(getPassiveBonus('heists', 3)).toBe(8);
-      expect(getPassiveBonus('heists', 5)).toBe(16);
+    it('should return correct scaling for Heists (Payday, 5% per level)', () => {
+      expect(getPassiveBonus('heists', 2)).toBe(5);
+      expect(getPassiveBonus('heists', 3)).toBe(10);
+      expect(getPassiveBonus('heists', 5)).toBe(20);
     });
 
-    it('should return correct scaling for Research (Covert Ops, 5% per level)', () => {
-      expect(getPassiveBonus('research', 2)).toBe(5);
-      expect(getPassiveBonus('research', 3)).toBe(10);
-      expect(getPassiveBonus('research', 5)).toBe(20);
+    it('should return correct scaling for Research (Efficiency Lab, 3% per level)', () => {
+      expect(getPassiveBonus('research', 2)).toBe(3);
+      expect(getPassiveBonus('research', 3)).toBe(6);
+      expect(getPassiveBonus('research', 5)).toBe(12);
     });
 
     it('should return correct scaling for Mayhem (Intimidation, 3% per level)', () => {
@@ -161,16 +161,16 @@ describe('Department Model', () => {
 
   describe('DEPARTMENT_PASSIVES', () => {
     it('should define passives for all 4 categories', () => {
-      expect(DEPARTMENT_PASSIVES.research.name).toBe('Covert Ops');
+      expect(DEPARTMENT_PASSIVES.research.name).toBe('Efficiency Lab');
       expect(DEPARTMENT_PASSIVES.schemes.name).toBe('Intel Network');
-      expect(DEPARTMENT_PASSIVES.heists.name).toBe('Loot Bonus');
+      expect(DEPARTMENT_PASSIVES.heists.name).toBe('Payday');
       expect(DEPARTMENT_PASSIVES.mayhem.name).toBe('Intimidation');
     });
 
     it('should have correct scaling values', () => {
-      expect(DEPARTMENT_PASSIVES.research.scalingPerLevel).toBe(5);
+      expect(DEPARTMENT_PASSIVES.research.scalingPerLevel).toBe(3);
       expect(DEPARTMENT_PASSIVES.schemes.scalingPerLevel).toBe(8);
-      expect(DEPARTMENT_PASSIVES.heists.scalingPerLevel).toBe(4);
+      expect(DEPARTMENT_PASSIVES.heists.scalingPerLevel).toBe(5);
       expect(DEPARTMENT_PASSIVES.mayhem.scalingPerLevel).toBe(3);
     });
 

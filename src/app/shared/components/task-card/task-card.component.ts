@@ -48,20 +48,18 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
       }
 
       @if (task().status === 'in-progress' && task().assignedMinionId) {
-        <!-- Minion is working it -->
+        <!-- Minion is working it (click-based) -->
         <div class="flex flex-col gap-2">
           <app-progress-bar
-            [progress]="task().timeRemaining"
-            [total]="task().timeToComplete"
-            [assignedAt]="task().assignedAt ?? null"
-            [completesAt]="task().completesAt ?? null"
+            [progress]="task().clicksRemaining"
+            [total]="task().clicksRequired"
             [tier]="task().tier" />
           <div class="flex items-center justify-between text-xs text-text-secondary">
             <span class="flex items-center gap-1">
               <span class="inline-block w-2 h-2 rounded-full bg-tier-petty animate-pulse"></span>
               Minion working...
             </span>
-            <span>{{ timeRemaining() }}s</span>
+            <span>{{ task().clicksRemaining }} clicks left</span>
           </div>
         </div>
       }
@@ -75,17 +73,7 @@ import { ProgressBarComponent } from '../progress-bar/progress-bar.component';
 })
 export class TaskCardComponent {
   task = input.required<Task>();
-  currentTime = input<number>(Date.now());
   workClicked = output<string>();
-
-  timeRemaining = computed(() => {
-    const t = this.task();
-    if (t.completesAt) {
-      return Math.max(0, Math.ceil((t.completesAt - this.currentTime()) / 1000));
-    }
-    return t.timeRemaining;
-  });
-
 
   categoryIcon = computed(() => {
     switch (this.task().template.category) {

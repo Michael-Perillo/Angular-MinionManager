@@ -114,8 +114,8 @@ export const REVIEWERS: Reviewer[] = [
 
 // ─── Year-scaling for reviewer gold targets ──
 
-/** Gold target scale per year (same as quarter model) */
-const REVIEWER_GOLD_SCALE_PER_YEAR = 1.8;
+/** Gold target scale per year */
+const REVIEWER_GOLD_SCALE_PER_YEAR = 2.2;
 
 // ─── Pure functions ────────────────────────
 
