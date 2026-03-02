@@ -1022,7 +1022,7 @@ export class GameStateService {
     this.addNotification(`+${finalAmount}g from "${taskName}"`, 'gold');
 
     // Award department XP (efficiency bonus as XP multiplier)
-    if (taskTier && taskCategory) {
+    if (taskTier && taskCategory && this._unlockedDepartments().has(taskCategory)) {
       this.awardDeptXp(taskCategory, taskTier, source);
     }
 
