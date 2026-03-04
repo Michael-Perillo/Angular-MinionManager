@@ -33,6 +33,9 @@ const lateProgress: QuarterProgress = {
   isComplete: false,
   missedQuarters: 1,
   quarterResults: [],
+  dismissalsRemaining: 5,
+  researchCompleted: 0,
+  activeBreakthroughs: 0,
 };
 
 export const EarlyGame: Story = {
@@ -40,20 +43,18 @@ export const EarlyGame: Story = {
     gold: 15,
     completedCount: 3,
     minionCount: 0,
-    villainLevel: 1,
-    villainTitle: 'Petty Troublemaker',
     quarterProgress: earlyProgress,
     quarterGold: 35,
     taskBudget: 30,
     goldTarget: 75,
+    dismissalsRemaining: 5,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
     // Verify key stat values render
     expect(canvas.getByText(/15/)).toBeTruthy();
-    expect(canvas.getByText(/Petty Troublemaker/)).toBeTruthy();
-    expect(canvas.getByText(/Lv\. ?1/)).toBeTruthy();
+    expect(canvas.getByText(/Evil Empire/)).toBeTruthy();
     // Verify quarter indicator renders
     expect(canvas.getByText(/Y1Q1/)).toBeTruthy();
   },
@@ -64,8 +65,6 @@ export const MidGame: Story = {
     gold: 120,
     completedCount: 25,
     minionCount: 2,
-    villainLevel: 4,
-    villainTitle: 'Aspiring Villain',
     quarterProgress: midProgress,
     quarterGold: 520,
     taskBudget: 40,
@@ -78,8 +77,6 @@ export const LateGame: Story = {
     gold: 1250,
     completedCount: 150,
     minionCount: 5,
-    villainLevel: 8,
-    villainTitle: 'Criminal Mastermind',
     quarterProgress: lateProgress,
     quarterGold: 3200,
     taskBudget: 70,
@@ -92,8 +89,6 @@ export const JustSaved: Story = {
     gold: 500,
     completedCount: 50,
     minionCount: 3,
-    villainLevel: 5,
-    villainTitle: 'Notorious Scoundrel',
     quarterProgress: earlyProgress,
     quarterGold: 35,
     taskBudget: 30,

@@ -13,10 +13,10 @@ type Story = StoryObj<DepartmentPanelComponent>;
 export const EarlyGame: Story = {
   args: {
     departments: {
-      schemes: { category: 'schemes', xp: 8, level: 1 },
-      heists: { category: 'heists', xp: 0, level: 1 },
-      research: { category: 'research', xp: 3, level: 1 },
-      mayhem: { category: 'mayhem', xp: 12, level: 1 },
+      schemes: { category: 'schemes', level: 1, workerSlots: 1, hasManager: false },
+      heists: { category: 'heists', level: 1, workerSlots: 0, hasManager: false },
+      research: { category: 'research', level: 1, workerSlots: 0, hasManager: false },
+      mayhem: { category: 'mayhem', level: 1, workerSlots: 0, hasManager: false },
     },
   },
 };
@@ -24,10 +24,10 @@ export const EarlyGame: Story = {
 export const MidGame: Story = {
   args: {
     departments: {
-      schemes: { category: 'schemes', xp: 85, level: 4 },
-      heists: { category: 'heists', xp: 45, level: 3 },
-      research: { category: 'research', xp: 120, level: 5 },
-      mayhem: { category: 'mayhem', xp: 30, level: 2 },
+      schemes: { category: 'schemes', level: 4, workerSlots: 2, hasManager: true },
+      heists: { category: 'heists', level: 3, workerSlots: 2, hasManager: false },
+      research: { category: 'research', level: 5, workerSlots: 1, hasManager: false },
+      mayhem: { category: 'mayhem', level: 2, workerSlots: 1, hasManager: false },
     },
   },
 };
@@ -35,10 +35,10 @@ export const MidGame: Story = {
 export const LateGame: Story = {
   args: {
     departments: {
-      schemes: { category: 'schemes', xp: 500, level: 8 },
-      heists: { category: 'heists', xp: 350, level: 7 },
-      research: { category: 'research', xp: 600, level: 9 },
-      mayhem: { category: 'mayhem', xp: 280, level: 6 },
+      schemes: { category: 'schemes', level: 8, workerSlots: 4, hasManager: true },
+      heists: { category: 'heists', level: 7, workerSlots: 3, hasManager: true },
+      research: { category: 'research', level: 8, workerSlots: 4, hasManager: true },
+      mayhem: { category: 'mayhem', level: 6, workerSlots: 3, hasManager: true },
     },
   },
 };

@@ -12,27 +12,28 @@ export class MissionBoardPage {
   }
 
   get sortButton() {
-    return this.page.locator('app-mission-board button').filter({ hasText: /Default|Tier|Gold|Time/ });
+    return this.page.locator('app-mission-board button').filter({ hasText: /Default|Tier|Gold|Clicks/ });
   }
 
   get tierBadges() {
     return this.page.locator('app-mission-board app-tier-badge');
   }
 
-  async sendFirstMissionToQueue(): Promise<void> {
+  /** Execute first scheme — auto-routes to Schemes queue (no router popup) */
+  async executeFirstScheme(): Promise<void> {
     await this.nav.goToMissions();
-    const sendBtn = this.page.locator('app-mission-board button').filter({ hasText: /Send to Queue/ }).first();
-    await sendBtn.waitFor({ state: 'visible', timeout: 5_000 });
-    await sendBtn.click();
+    const execBtn = this.page.locator('app-mission-board button').filter({ hasText: /Execute/ }).first();
+    await execBtn.waitFor({ state: 'visible', timeout: 5_000 });
+    await execBtn.click();
+    // Wait for 350ms exit animation + event emission before navigating away
+    // (mobile tab switch destroys the component, severing the output binding)
+    await this.page.waitForTimeout(500);
+    await this.nav.goToWorkbench();
   }
 
-  async routeToWorkbench(): Promise<void> {
-    const router = this.page.locator('app-mission-router');
-    const workbenchOption = router.locator('button').filter({ hasText: /My Workbench/ });
-    await workbenchOption.waitFor({ state: 'visible', timeout: 3_000 });
-    await workbenchOption.click();
-    await router.waitFor({ state: 'hidden', timeout: 5_000 });
-    await this.nav.goToWorkbench();
+  /** @deprecated Use executeFirstScheme() instead */
+  async sendFirstMissionToQueue(): Promise<void> {
+    await this.executeFirstScheme();
   }
 
   async cardCount(): Promise<number> {
@@ -55,17 +56,8 @@ export class MissionBoardPage {
     return text?.trim() ?? '';
   }
 
-  /** Get the mission router popup locator */
-  get router() {
-    return this.page.locator('app-mission-router');
-  }
-
-  get routerButtons() {
-    return this.router.locator('button').filter({ hasNotText: /CANCEL|✕/ });
-  }
-
   private previousMode(mode: string): string {
-    const order = ['Default', 'Tier', 'Gold', 'Time'];
+    const order = ['Default', 'Tier', 'Gold', 'Clicks'];
     const idx = order.indexOf(mode);
     return idx > 0 ? order[idx - 1] : order[order.length - 1];
   }

@@ -1,4 +1,4 @@
-import { Minion, MINION_NAMES } from '../../app/core/models/minion.model';
+import { Minion, MinionRole, ALL_ARCHETYPE_IDS } from '../../app/core/models/minion.model';
 import { TaskCategory } from '../../app/core/models/task.model';
 
 let _minionCounter = 0;
@@ -7,15 +7,11 @@ export function makeMinion(overrides: Partial<Minion> = {}): Minion {
   _minionCounter++;
   return {
     id: `minion-${_minionCounter}`,
-    name: MINION_NAMES[(_minionCounter - 1) % MINION_NAMES.length],
-    appearance: { color: '#6c3483', accessory: 'goggles' },
+    archetypeId: ALL_ARCHETYPE_IDS[(_minionCounter - 1) % ALL_ARCHETYPE_IDS.length],
+    role: 'worker' as MinionRole,
     status: 'idle',
     assignedTaskId: null,
-    stats: { speed: 1.0, efficiency: 1.0 },
-    specialty: 'schemes' as TaskCategory,
-    assignedDepartment: 'schemes' as TaskCategory,
-    xp: 0,
-    level: 1,
+    assignedDepartment: null,
     ...overrides,
   };
 }

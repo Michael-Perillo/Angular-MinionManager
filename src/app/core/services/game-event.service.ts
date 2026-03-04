@@ -19,9 +19,15 @@ export interface MinionIdleEvent {
   department: TaskCategory;
 }
 
-export interface BoardRefreshedEvent {
-  type: 'BoardRefreshed';
-  missionCount: number;
+export interface TaskScoutedEvent {
+  type: 'TaskScouted';
+  source: 'workbench' | TaskCategory;
+  taskId: string;
+}
+
+export interface BacklogLowEvent {
+  type: 'BacklogLow';
+  count: number;
 }
 
 export interface LevelUpEvent {
@@ -53,6 +59,12 @@ export interface TaskAssignedEvent {
 
 export interface MinionHiredEvent {
   type: 'MinionHired';
+  minionId: string;
+  department: TaskCategory | null;
+}
+
+export interface MinionAssignedEvent {
+  type: 'MinionAssigned';
   minionId: string;
   department: TaskCategory;
 }
@@ -95,12 +107,14 @@ export interface RunEndedEvent {
 export type GameEvent =
   | TaskCompletedEvent
   | MinionIdleEvent
-  | BoardRefreshedEvent
+  | TaskScoutedEvent
+  | BacklogLowEvent
   | LevelUpEvent
   | SpecialOpSpawnedEvent
   | TaskQueuedEvent
   | TaskAssignedEvent
   | MinionHiredEvent
+  | MinionAssignedEvent
   | MinionReassignedEvent
   | UpgradePurchasedEvent
   | QuarterCompletedEvent

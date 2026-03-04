@@ -1,5 +1,5 @@
 import { Component, ChangeDetectionStrategy, input, computed } from '@angular/core';
-import { Minion, xpForLevel, getMinionRank, getMinionStars, getMinionRankColor } from '../../../core/models';
+import { Minion, getMinionDisplay, getRarityColor, getRarityBorderColor } from '../../../core/models/minion.model';
 import { TooltipDirective } from '../../directives/tooltip.directive';
 
 @Component({
@@ -8,57 +8,44 @@ import { TooltipDirective } from '../../directives/tooltip.directive';
   imports: [TooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="game-card p-3 flex items-center gap-3 min-w-0">
-      <!-- Minion avatar -->
+    <div class="game-card p-3 flex items-center gap-3 min-w-0 border-2"
+         [class]="rarityBorderClass()">
+      <!-- Archetype icon -->
       <div
         class="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0"
         [class]="avatarAnimClass()"
-        [style.background-color]="minion().appearance.color">
-        {{ accessoryEmoji() }}
+        [style.background-color]="archetype().color">
+        {{ archetype().icon }}
       </div>
 
       <!-- Info -->
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
           <span class="text-sm font-semibold text-text-primary truncate">
-            {{ minion().name }}
+            {{ archetype().name }}
           </span>
-          <span class="text-xs" [class]="rankColor()">
-            Lv.{{ minion().level }} {{ rank() }}
+          <span class="text-xs font-bold uppercase" [class]="rarityColorClass()">
+            {{ archetype().rarity }}
           </span>
-          <span class="text-xs text-gold">{{ starDisplay() }}</span>
         </div>
         <div class="flex items-center gap-2 text-xs text-text-muted mt-0.5">
           <span
-            [appTooltip]="'How fast this minion completes missions'"
-            [appTooltipPosition]="'bottom'">
-            S:{{ minion().stats.speed.toFixed(1) }}
+            [appTooltip]="archetype().description"
+            [appTooltipPosition]="'bottom'"
+            class="px-1 rounded bg-white/5">
+            {{ archetype().description }}
           </span>
-          <span
-            [appTooltip]="'Gold bonus when this minion completes a mission'"
-            [appTooltipPosition]="'bottom'">
-            E:{{ minion().stats.efficiency.toFixed(1) }}
-          </span>
-          <span
-            class="px-1 rounded text-xs"
-            [class]="specialtyClasses()"
-            [appTooltip]="specialtyTooltip()"
-            [appTooltipPosition]="'bottom'">
-            {{ specialtyIcon() }} {{ specialtyLabel() }}
-          </span>
+          @if (deptLabel(); as dept) {
+            <span class="text-[10px] text-text-muted">📍 {{ dept }}</span>
+          } @else {
+            <span class="text-[10px] text-text-muted">📍 Pool</span>
+          }
         </div>
-        <!-- XP bar -->
-        <div class="mt-1 flex items-center gap-1.5">
-          <div class="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
-            <div
-              class="h-full rounded-full bg-accent/60 transition-all duration-300"
-              [style.width.%]="xpPercent()">
-            </div>
-          </div>
-          <span class="text-xs text-text-secondary tabular-nums">{{ xpDisplay() }}</span>
-        </div>
+        <!-- Role badge -->
         <div class="text-xs truncate mt-0.5" [class]="statusClasses()">
-          @if (minion().status === 'idle') {
+          @if (minion().role === 'manager') {
+            👔 Managing
+          } @else if (minion().status === 'idle') {
             Awaiting orders...
           } @else {
             Working on task
@@ -83,60 +70,15 @@ export class MinionCardComponent {
   minion = input.required<Minion>();
   taskName = input<string | null>(null);
 
-  accessoryEmoji = computed(() => {
-    switch (this.minion().appearance.accessory) {
-      case 'goggles': return '🥽';
-      case 'helmet': return '⛑️';
-      case 'cape': return '🦹';
-      case 'horns': return '😈';
-      case 'none': return '👾';
-    }
-  });
+  archetype = computed(() => getMinionDisplay(this.minion()));
 
-  specialtyIcon = computed(() => {
-    switch (this.minion().specialty) {
-      case 'schemes': return '🗝️';
-      case 'heists': return '💎';
-      case 'research': return '🧪';
-      case 'mayhem': return '💥';
-    }
-  });
+  rarityColorClass = computed(() => getRarityColor(this.archetype().rarity));
+  rarityBorderClass = computed(() => getRarityBorderColor(this.archetype().rarity));
 
-  specialtyLabel = computed(() => {
-    const s = this.minion().specialty;
-    return s.charAt(0).toUpperCase() + s.slice(1);
-  });
-
-  specialtyTooltip = computed(() =>
-    `+25% speed & efficiency on ${this.minion().specialty} missions`
-  );
-
-  specialtyClasses = computed(() => {
-    switch (this.minion().specialty) {
-      case 'schemes': return 'bg-purple-500/20 text-purple-400';
-      case 'heists': return 'bg-blue-500/20 text-blue-400';
-      case 'research': return 'bg-green-500/20 text-green-400';
-      case 'mayhem': return 'bg-red-500/20 text-red-400';
-    }
-  });
-
-  rank = computed(() => getMinionRank(this.minion().level));
-  rankColor = computed(() => getMinionRankColor(this.minion().level));
-  starDisplay = computed(() => '★'.repeat(getMinionStars(this.minion().level)));
-
-  xpPercent = computed(() => {
-    const m = this.minion();
-    const currentLevelXp = xpForLevel(m.level);
-    const nextLevelXp = xpForLevel(m.level + 1);
-    const range = nextLevelXp - currentLevelXp;
-    if (range <= 0) return 100;
-    return Math.min(100, ((m.xp - currentLevelXp) / range) * 100);
-  });
-
-  xpDisplay = computed(() => {
-    const m = this.minion();
-    const nextXp = xpForLevel(m.level + 1);
-    return `${m.xp}/${nextXp}`;
+  deptLabel = computed(() => {
+    const dept = this.minion().assignedDepartment;
+    if (!dept) return null;
+    return dept.charAt(0).toUpperCase() + dept.slice(1);
   });
 
   avatarAnimClass = computed(() =>
@@ -144,12 +86,15 @@ export class MinionCardComponent {
   );
 
   statusClasses = computed(() =>
+    this.minion().role === 'manager' ? 'text-gold' :
     this.minion().status === 'idle' ? 'text-text-muted' : 'text-tier-petty'
   );
 
   dotClasses = computed(() =>
-    this.minion().status === 'idle'
-      ? 'bg-text-muted'
-      : 'bg-tier-petty animate-pulse'
+    this.minion().role === 'manager'
+      ? 'bg-gold'
+      : this.minion().status === 'idle'
+        ? 'bg-text-muted'
+        : 'bg-tier-petty animate-pulse'
   );
 }

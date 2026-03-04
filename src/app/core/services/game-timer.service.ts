@@ -2,31 +2,26 @@ import { Injectable, OnDestroy, inject } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { GameStateService } from './game-state.service';
 import { GameEventService, GameEvent } from './game-event.service';
-import { RuleEngineService } from './rule-engine.service';
 import { SaveService } from './save.service';
 
 @Injectable({ providedIn: 'root' })
 export class GameTimerService implements OnDestroy {
   private readonly gameState = inject(GameStateService);
   private readonly events = inject(GameEventService);
-  private readonly ruleEngine = inject(RuleEngineService);
   private readonly saveService = inject(SaveService);
 
   private notificationCleanupInterval: ReturnType<typeof setInterval> | null = null;
   private autoSaveInterval: ReturnType<typeof setInterval> | null = null;
-  private boardRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
   private minionClickInterval: ReturnType<typeof setInterval> | null = null;
   private specialOpTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   private specialOpSub: Subscription | null = null;
-  private levelUpSub: Subscription | null = null;
   private autoAssignSubs: Subscription[] = [];
   private autoAssignPending = false;
 
   start(): void {
     this.startNotificationCleanup();
     this.startAutoSave();
-    this.scheduleBoardRefresh();
     this.scheduleExistingSpecialOps();
     this.startMinionClickInterval();
 
@@ -35,38 +30,28 @@ export class GameTimerService implements OnDestroy {
       this.scheduleSpecialOpExpiry(e.missionId);
     });
 
-    // Auto-assign on relevant events via rule engine (debounced via microtask)
-    const ruleEvents: Array<GameEvent['type']> = [
-      'MinionIdle', 'TaskQueued', 'MinionHired', 'MinionReassigned',
-      'TaskCompleted', 'LevelUp',
+    // Auto-assign on relevant events (debounced via microtask)
+    const assignEvents: Array<GameEvent['type']> = [
+      'MinionIdle', 'TaskQueued', 'MinionHired', 'MinionAssigned', 'MinionReassigned',
+      'TaskCompleted', 'LevelUp', 'BacklogLow',
     ];
-    for (const eventType of ruleEvents) {
+    for (const eventType of assignEvents) {
       this.autoAssignSubs.push(
-        this.events.on(eventType).subscribe(event => this.debouncedRuleEvaluation(event))
+        this.events.on(eventType).subscribe(() => this.debouncedAutoAssign())
       );
     }
 
-    // Recalculate board refresh when Schemes dept levels up
-    this.levelUpSub = this.events.on('LevelUp').subscribe(e => {
-      if (e.target === 'department' && e.targetId === 'schemes') {
-        this.rescheduleBoardRefresh();
-      }
-    });
-
-    // Run initial rule evaluation to assign any pre-existing idle minions
-    this.debouncedRuleEvaluation({ type: 'MinionIdle', minionId: '', department: 'schemes' });
+    // Run initial auto-assign to assign any pre-existing idle minions
+    this.debouncedAutoAssign();
   }
 
   stop(): void {
     this.stopNotificationCleanup();
     this.stopAutoSave();
-    this.stopBoardRefresh();
     this.stopMinionClickInterval();
     this.clearAllSpecialOpTimers();
     this.specialOpSub?.unsubscribe();
     this.specialOpSub = null;
-    this.levelUpSub?.unsubscribe();
-    this.levelUpSub = null;
     for (const sub of this.autoAssignSubs) sub.unsubscribe();
     this.autoAssignSubs = [];
   }
@@ -80,30 +65,9 @@ export class GameTimerService implements OnDestroy {
     this.stop();
   }
 
-  // ─── Board refresh ────────────────────
-  private scheduleBoardRefresh(): void {
-    this.stopBoardRefresh();
-    const interval = this.gameState.getEffectiveBoardRefreshInterval();
-    this.boardRefreshTimeout = setTimeout(() => {
-      this.gameState.refreshBoard();
-      this.scheduleBoardRefresh(); // self-reschedule
-    }, interval);
-  }
-
-  private rescheduleBoardRefresh(): void {
-    this.scheduleBoardRefresh();
-  }
-
-  private stopBoardRefresh(): void {
-    if (this.boardRefreshTimeout) {
-      clearTimeout(this.boardRefreshTimeout);
-      this.boardRefreshTimeout = null;
-    }
-  }
-
   // ─── Special op expiry ────────────────
   private scheduleSpecialOpExpiry(missionId: string): void {
-    const board = this.gameState.missionBoard();
+    const board = this.gameState.backlog();
     const mission = board.find(m => m.id === missionId);
     if (!mission?.specialOpExpiry) return;
 
@@ -121,7 +85,7 @@ export class GameTimerService implements OnDestroy {
   }
 
   private scheduleExistingSpecialOps(): void {
-    const board = this.gameState.missionBoard();
+    const board = this.gameState.backlog();
     for (const mission of board) {
       if (mission.isSpecialOp && mission.specialOpExpiry) {
         this.scheduleSpecialOpExpiry(mission.id);
@@ -151,30 +115,13 @@ export class GameTimerService implements OnDestroy {
     }
   }
 
-  // ─── Rule engine dispatch (debounced) ──
-  private lastEvent: GameEvent | null = null;
-
-  private debouncedRuleEvaluation(event: GameEvent): void {
-    this.lastEvent = event;
+  // ─── Auto-assign (debounced) ──────────
+  private debouncedAutoAssign(): void {
     if (this.autoAssignPending) return;
     this.autoAssignPending = true;
     queueMicrotask(() => {
       this.autoAssignPending = false;
-      const ev = this.lastEvent!;
-
-      // If automation disabled by boss modifier, fall back to default auto-assign
-      if (this.gameState.automationDisabled()) {
-        this.gameState.autoAssignMinions();
-        return;
-      }
-
-      const actions = this.ruleEngine.evaluateRules(ev);
-      for (const action of actions) {
-        if (action.taskId) {
-          this.gameState.executeAssignment(action.minionId, action.taskId, action.department);
-        }
-        // 'hold' action = intentionally do nothing
-      }
+      this.gameState.defaultAutoAssign();
     });
   }
 
@@ -182,7 +129,8 @@ export class GameTimerService implements OnDestroy {
   private startNotificationCleanup(): void {
     if (this.notificationCleanupInterval) return;
     this.notificationCleanupInterval = setInterval(() => {
-      this.gameState.cleanNotifications(Date.now());
+      const now = Date.now();
+      this.gameState.cleanNotifications(now);
     }, 1000);
   }
 

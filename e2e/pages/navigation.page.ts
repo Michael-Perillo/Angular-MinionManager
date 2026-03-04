@@ -1,7 +1,7 @@
 import { Page } from '@playwright/test';
 
 /** Must match SAVE_VERSION in src/app/core/models/save-data.model.ts */
-const SAVE_VERSION = 11;
+const SAVE_VERSION = 20;
 
 export interface NavigationPage {
   resetGame(): Promise<void>;
@@ -11,12 +11,14 @@ export interface NavigationPage {
   goToDepartments(): Promise<void>;
   goToHirePanel(): Promise<void>;
   goToDepartmentPanel(): Promise<void>;
+  /** Open the shop modal (for testing hire/upgrades between quarters) */
+  openShop(): Promise<void>;
   readonly isMobile: boolean;
 }
 
 /** Minimal valid SaveData that loadSnapshot accepts. */
 function baseSaveData(): Record<string, unknown> {
-  const defaultDept = (category: string) => ({ category, xp: 0, level: 1 });
+  const defaultDept = (category: string, workerSlots = 0) => ({ category, level: 1, workerSlots, hasManager: false });
   return {
     version: SAVE_VERSION,
     savedAt: Date.now(),
@@ -25,7 +27,7 @@ function baseSaveData(): Record<string, unknown> {
     totalGoldEarned: 0,
     minions: [],
     departments: {
-      schemes: defaultDept('schemes'),
+      schemes: defaultDept('schemes', 1),
       heists: defaultDept('heists'),
       research: defaultDept('research'),
       mayhem: defaultDept('mayhem'),
@@ -35,13 +37,18 @@ function baseSaveData(): Record<string, unknown> {
     usedNameIndices: [],
     lastBoardRefresh: 0,
     departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
-    playerQueue: [],
-    unlockedDepartments: [],
     ownedVouchers: {},
-    ownedCards: [],
-    ownedJokers: [],
-    equippedJokers: [],
-    rules: [],
+    hireOptions: ['penny-pincher', 'tip-jar', 'iron-grip'],
+    schemeDeck: [],
+    dismissalsRemaining: 5,
+    researchCompleted: 0,
+    activeBreakthroughs: 0,
+    deptTierUnlocks: {
+      schemes: ['petty'],
+      heists: ['petty'],
+      research: ['petty'],
+      mayhem: ['petty'],
+    },
   };
 }
 
@@ -82,27 +89,18 @@ export class DesktopNavigation implements NavigationPage {
   }
 
   async goToHirePanel(): Promise<void> {
-    const drawer = this.page.locator('app-drawer-panel');
-    const isOpen = await drawer.isVisible().catch(() => false);
-    if (!isOpen) {
-      await this.page.locator('app-header button').filter({ hasText: '⚙️' }).click();
-      await drawer.waitFor({ state: 'visible', timeout: 3_000 });
-    }
-    const minionsTab = this.page.locator('app-drawer-panel button').filter({ hasText: /Minions/ });
-    await minionsTab.waitFor({ state: 'visible', timeout: 3_000 });
-    await minionsTab.click();
+    // Hiring is now shop-only — open the shop
+    await this.openShop();
   }
 
   async goToDepartmentPanel(): Promise<void> {
-    const drawer = this.page.locator('app-drawer-panel');
-    const isOpen = await drawer.isVisible().catch(() => false);
-    if (!isOpen) {
-      await this.page.locator('app-header button').filter({ hasText: '⚙️' }).click();
-      await drawer.waitFor({ state: 'visible', timeout: 3_000 });
-    }
-    const deptsTab = this.page.locator('app-drawer-panel button').filter({ hasText: /Depts/ });
-    await deptsTab.waitFor({ state: 'visible', timeout: 3_000 });
-    await deptsTab.click();
+    // Department info is always visible in column headers — no navigation needed
+  }
+
+  async openShop(): Promise<void> {
+    await this.page.locator('app-header').waitFor({ state: 'visible', timeout: 10_000 });
+    await this.page.evaluate(() => (window as any).dev.openShop());
+    await this.page.waitForTimeout(200);
   }
 }
 
@@ -133,7 +131,8 @@ export class MobileNavigation implements NavigationPage {
   }
 
   async goToWorkbench(): Promise<void> {
-    await this.page.locator('app-mobile-bottom-nav button').filter({ hasText: 'Click' }).click();
+    // Work tab shows department columns (click buttons are in dept columns now)
+    await this.page.locator('app-mobile-bottom-nav button').filter({ hasText: 'Work' }).click();
     await this.page.waitForTimeout(100);
   }
 
@@ -143,14 +142,19 @@ export class MobileNavigation implements NavigationPage {
   }
 
   async goToHirePanel(): Promise<void> {
-    await this.page.locator('app-mobile-bottom-nav button').filter({ hasText: 'More' }).click();
-    await this.page.waitForTimeout(100);
-    await this.page.getByText('Hire Minions').click();
+    // Hiring is now shop-only — open the shop
+    await this.openShop();
   }
 
   async goToDepartmentPanel(): Promise<void> {
     await this.page.locator('app-mobile-bottom-nav button').filter({ hasText: 'More' }).click();
     await this.page.waitForTimeout(100);
     await this.page.getByText('Departments').click();
+  }
+
+  async openShop(): Promise<void> {
+    await this.page.locator('app-header').waitFor({ state: 'visible', timeout: 10_000 });
+    await this.page.evaluate(() => (window as any).dev.openShop());
+    await this.page.waitForTimeout(200);
   }
 }

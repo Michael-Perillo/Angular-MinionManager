@@ -27,7 +27,7 @@ test.describe('Kanban Board responsive', () => {
 
     // Verify the board renders
     await expect(page.locator('app-kanban-board')).toBeVisible();
-    await expect(page.getByText('Your Workbench')).toBeVisible();
+    await expect(page.locator('app-department-column').first()).toBeVisible();
     await context.close();
   });
 
@@ -68,30 +68,6 @@ test.describe('Mission Board responsive', () => {
   });
 });
 
-test.describe('Drawer Panel responsive', () => {
-  const storyId = 'minion-manager-organisms-drawerpanel--open';
-
-  test('desktop — drawer renders at full height', async ({ browser }) => {
-    const context = await browser.newContext({ viewport: DESKTOP });
-    const page = await context.newPage();
-    await page.goto(storyUrl(storyId));
-    await page.waitForSelector('app-drawer-panel', { timeout: 15_000 });
-
-    await expect(page.getByText('Lair')).toBeVisible();
-    await context.close();
-  });
-
-  test('mobile — drawer renders at narrow width', async ({ browser }) => {
-    const context = await browser.newContext({ viewport: MOBILE });
-    const page = await context.newPage();
-    await page.goto(storyUrl(storyId));
-    await page.waitForSelector('app-drawer-panel', { timeout: 15_000 });
-
-    await expect(page.getByText('Lair')).toBeVisible();
-    await context.close();
-  });
-});
-
 test.describe('Mobile Bottom Nav responsive', () => {
   const storyId = 'minion-manager-molecules-mobilebottomnav--missions-tab';
 
@@ -103,7 +79,6 @@ test.describe('Mobile Bottom Nav responsive', () => {
 
     await expect(page.getByText('Missions')).toBeVisible();
     await expect(page.getByText('Work')).toBeVisible();
-    await expect(page.getByText('Click')).toBeVisible();
     await expect(page.getByText('More')).toBeVisible();
     await context.close();
   });
@@ -116,30 +91,6 @@ test.describe('Mobile Bottom Nav responsive', () => {
 
     // Component renders at any width (hidden in full app via media query, but visible in isolation)
     await expect(page.getByText('Missions')).toBeVisible();
-    await context.close();
-  });
-});
-
-test.describe('Mission Router responsive', () => {
-  const storyId = 'minion-manager-molecules-missionrouter--all-queues-available';
-
-  test('desktop — centered dialog', async ({ browser }) => {
-    const context = await browser.newContext({ viewport: DESKTOP });
-    const page = await context.newPage();
-    await page.goto(storyUrl(storyId));
-
-    await expect(page.getByText('Send to...')).toBeVisible({ timeout: 15_000 });
-    await context.close();
-  });
-
-  test('mobile view — bottom sheet', async ({ browser }) => {
-    // MobileView story has isMobile=true
-    const mobileStoryId = 'minion-manager-molecules-missionrouter--mobile-view';
-    const context = await browser.newContext({ viewport: MOBILE });
-    const page = await context.newPage();
-    await page.goto(storyUrl(mobileStoryId));
-
-    await expect(page.getByText('Send to...')).toBeVisible({ timeout: 15_000 });
     await context.close();
   });
 });

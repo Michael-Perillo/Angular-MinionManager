@@ -4,10 +4,10 @@ import { Department } from '../../app/core/models/department.model';
 
 export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
   const defaultDepts: Record<TaskCategory, Department> = {
-    schemes: { category: 'schemes', xp: 0, level: 1 },
-    heists: { category: 'heists', xp: 0, level: 1 },
-    research: { category: 'research', xp: 0, level: 1 },
-    mayhem: { category: 'mayhem', xp: 0, level: 1 },
+    schemes: { category: 'schemes', level: 1, workerSlots: 1, hasManager: false },
+    heists: { category: 'heists', level: 1, workerSlots: 0, hasManager: false },
+    research: { category: 'research', level: 1, workerSlots: 0, hasManager: false },
+    mayhem: { category: 'mayhem', level: 1, workerSlots: 0, hasManager: false },
   };
 
   return {
@@ -21,18 +21,13 @@ export function makeSaveData(overrides: Partial<SaveData> = {}): SaveData {
     activeMissions: [],
     missionBoard: [],
     usedNameIndices: [],
-    lastBoardRefresh: 0,
     departmentQueues: {
       schemes: [],
       heists: [],
       research: [],
       mayhem: [],
     },
-    playerQueue: [],
-    ownedCards: [],
-    ownedJokers: [],
-    equippedJokers: [],
-    rules: [],
+    hireOptions: ['penny-pincher', 'tip-jar', 'iron-grip'],
     ...overrides,
   };
 }

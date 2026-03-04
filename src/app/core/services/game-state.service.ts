@@ -1,21 +1,28 @@
 import { Injectable, computed, signal, inject } from '@angular/core';
 import {
-  Task, TaskStatus, TaskTier, TaskCategory, TIER_CONFIG, TaskTemplate, VILLAIN_SCALE_PER_LEVEL,
-  QueueTarget,
+  Task, TaskStatus, TaskTier, TaskCategory, TIER_CONFIG, TaskTemplate,
+  QueueTarget, SCOUTING_TIER_WEIGHTS, TIER_UNLOCK_COSTS,
+  SchemeCard, SCHEME_TIER_CONFIG, rollOperationCount,
+  ComboState, createDefaultComboState, advanceComboState,
 } from '../models/task.model';
 import {
-  Minion, MinionAppearance, MinionStats, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES,
-  SPECIALTY_CATEGORIES, SPECIALTY_BONUS, levelFromXp, xpForLevel,
+  Minion, MinionRole, MinionArchetype, MINION_ARCHETYPES,
+  rollHireOptions, getActivePassives, aggregatePassiveFlat, aggregatePassiveMult,
+  getMinionDisplay,
 } from '../models/minion.model';
 import { GameNotification } from '../models/game-state.model';
 import { TASK_POOL } from '../models/task-pool';
 import {
-  Department, DEPT_TIER_XP, deptLevelFromXp, deptXpForLevel, availableTiersForDeptLevel,
-  DEPARTMENT_LABELS, getPassiveBonus, getDeptLocalMult,
+  Department,
+  DEPARTMENT_LABELS, getDeptMult, DeptTierUnlocks, createDefaultTierUnlocks, getUnlockedTiers,
+  rollHeistGold, getBreakthroughThreshold, getMayhemClicks, getMayhemGold,
+  MAYHEM_COMBO_THRESHOLD, MAYHEM_COMBO_TIMEOUT_MS, RESEARCH_DECK_GROWTH_INTERVAL,
+  getDeptLevelCost, getWorkerSlotCost, MANAGER_SLOT_COST,
+  getDeptQueueCapacity,
 } from '../models/department.model';
 import {
   QuarterProgress, createInitialProgress, getQuarterTarget,
-  isQuarterBudgetExhausted, evaluateQuarter,
+  isQuarterBudgetExhausted, evaluateQuarter, BASE_DISMISSALS,
 } from '../models/quarter.model';
 import {
   Reviewer, Modifier, selectReviewer, getReviewModifiers, getReviewerGoldTarget,
@@ -24,15 +31,6 @@ import {
   VoucherId, VOUCHERS, ALL_VOUCHER_IDS, createEmptyVoucherLevels,
   getVoucherCost, getVoucherEffect,
 } from '../models/voucher.model';
-import { CardId, AnyCard } from '../models/card.model';
-import {
-  JokerId, JokerDefinition, MAX_JOKER_SLOTS, JOKER_POOL,
-  aggregateJokerMult, aggregateJokerFlat, JokerContext,
-} from '../models/joker.model';
-import { Rule, DEFAULT_RULE, createRule, isDefaultRule, getCardsInUse, getCardsUsedByRule } from '../models/rule.model';
-import {
-  PackType, PackItem, PACK_DEFINITIONS, generatePackContents, getPackPickCount,
-} from '../models/card-pack.model';
 import { SaveData, SAVE_VERSION } from '../models/save-data.model';
 import { GameEventService } from './game-event.service';
 
@@ -48,16 +46,16 @@ export class GameStateService {
   // ─── State signals ─────────────────────────
   private readonly _gold = signal(0);
   private readonly _minions = signal<Minion[]>([]);
-  private readonly _missionBoard = signal<Task[]>([]);   // Available missions to choose from
+  private readonly _backlog = signal<Task[]>([]);   // Backlog: scheme cards to choose from
   private readonly _activeMissions = signal<Task[]>([]);  // Legacy flat list (kept for backwards compat)
   private readonly _completedCount = signal(0);
   private readonly _totalGoldEarned = signal(0);
   private readonly _notifications = signal<GameNotification[]>([]);
   private readonly _departments = signal<Record<TaskCategory, Department>>({
-    schemes: { category: 'schemes', xp: 0, level: 1 },
-    heists: { category: 'heists', xp: 0, level: 1 },
-    research: { category: 'research', xp: 0, level: 1 },
-    mayhem: { category: 'mayhem', xp: 0, level: 1 },
+    schemes: { category: 'schemes', level: 1, workerSlots: 1, hasManager: false },
+    heists: { category: 'heists', level: 1, workerSlots: 0, hasManager: false },
+    research: { category: 'research', level: 1, workerSlots: 0, hasManager: false },
+    mayhem: { category: 'mayhem', level: 1, workerSlots: 0, hasManager: false },
   });
 
   private readonly _lastSaved = signal(0);
@@ -69,7 +67,6 @@ export class GameStateService {
     research: [],
     mayhem: [],
   });
-  private readonly _playerQueue = signal<Task[]>([]);
   private readonly _quarterProgress = signal<QuarterProgress>(createInitialProgress());
 
   // ─── Reviewer signals ───────────────────────
@@ -81,8 +78,8 @@ export class GameStateService {
   // ─── Modifier constraint signals ────────────
   private readonly _hiringDisabled = signal(false);
   private readonly _upgradesDisabled = signal(false);
-  private readonly _boardFrozen = signal(false);
-  private readonly _boardLimited = signal(false);
+  private readonly _backlogFrozen = signal(false);
+  private readonly _backlogLimited = signal(false);
   private readonly _goldDrainPerTask = signal(0);
   private readonly _goldRewardMultiplier = signal(1);
   private readonly _lockedCategory = signal<TaskCategory | null>(null);
@@ -91,27 +88,33 @@ export class GameStateService {
   private readonly _ownedVouchers = signal<Record<VoucherId, number>>(createEmptyVoucherLevels());
   private readonly _showShop = signal(false);
 
-  // ─── Card/joker/rule signals ─────────────
-  private readonly _ownedCards = signal<Set<CardId>>(new Set());
-  private readonly _ownedJokers = signal<Set<JokerId>>(new Set());
-  private readonly _equippedJokers = signal<JokerId[]>([]);
-  private readonly _rules = signal<Rule[]>([DEFAULT_RULE]);
-  private readonly _pendingPack = signal<PackItem[] | null>(null);
-  private readonly _pendingPickCount = signal(0);
-  private readonly _showPackReward = signal(false);
-  private readonly _automationDisabled = signal(false);
+  // ─── Dept tier unlock signals ────────────
+  private readonly _deptTierUnlocks = signal<DeptTierUnlocks>(createDefaultTierUnlocks());
+
+  // ─── Scheme deck signals ───────────────
+  private readonly _schemeDeck = signal<SchemeCard[]>([]);
+  private readonly _mayhemComboCount = signal(0);
+  private readonly _lastMayhemCompletionTime = signal(0);
+
+  // ─── Hire draft signals ─────────────────────
+  private readonly _hireOptions = signal<string[]>([]);
+
+  // ─── Combo state signal ───────────────────
+  private readonly _comboState = signal<ComboState>(createDefaultComboState());
+  readonly comboState = this._comboState.asReadonly();
 
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
   readonly minions = this._minions.asReadonly();
-  readonly missionBoard = this._missionBoard.asReadonly();
+  readonly backlog = this._backlog.asReadonly();
+  /** @deprecated Alias for backlog — use backlog() instead */
+  readonly missionBoard = this._backlog.asReadonly();
   readonly completedCount = this._completedCount.asReadonly();
   readonly totalGoldEarned = this._totalGoldEarned.asReadonly();
   readonly notifications = this._notifications.asReadonly();
   readonly departments = this._departments.asReadonly();
   readonly lastSaved = this._lastSaved.asReadonly();
   readonly departmentQueues = this._departmentQueues.asReadonly();
-  readonly playerQueue = this._playerQueue.asReadonly();
   readonly quarterProgress = this._quarterProgress.asReadonly();
   readonly currentReviewer = this._currentReviewer.asReadonly();
   readonly activeModifiers = this._activeModifiers.asReadonly();
@@ -125,35 +128,46 @@ export class GameStateService {
   });
   readonly hiringDisabled = this._hiringDisabled.asReadonly();
   readonly upgradesDisabled = this._upgradesDisabled.asReadonly();
-  readonly boardFrozen = this._boardFrozen.asReadonly();
-  readonly boardLimited = this._boardLimited.asReadonly();
+  readonly backlogFrozen = this._backlogFrozen.asReadonly();
+  readonly backlogLimited = this._backlogLimited.asReadonly();
   readonly lockedCategory = this._lockedCategory.asReadonly();
   readonly ownedVouchers = this._ownedVouchers.asReadonly();
   readonly showShop = this._showShop.asReadonly();
-  readonly ownedCards = this._ownedCards.asReadonly();
-  readonly ownedJokers = this._ownedJokers.asReadonly();
-  readonly equippedJokers = this._equippedJokers.asReadonly();
-  readonly rules = this._rules.asReadonly();
-  readonly pendingPack = this._pendingPack.asReadonly();
-  readonly pendingPickCount = this._pendingPickCount.asReadonly();
-  readonly showPackReward = this._showPackReward.asReadonly();
-  readonly automationDisabled = this._automationDisabled.asReadonly();
+  readonly deptTierUnlocks = this._deptTierUnlocks.asReadonly();
+  readonly schemeDeck = this._schemeDeck.asReadonly();
+  readonly schemeDeckTierCounts = computed(() => {
+    const deck = this._schemeDeck();
+    const counts: Record<TaskTier, number> = { petty: 0, sinister: 0, diabolical: 0, legendary: 0 };
+    for (const card of deck) counts[card.tier]++;
+    return counts;
+  });
+  readonly mayhemComboCount = this._mayhemComboCount.asReadonly();
+  readonly dismissalsRemaining = computed(() => this._quarterProgress().dismissalsRemaining);
+  readonly researchCompleted = computed(() => this._quarterProgress().researchCompleted);
+  readonly activeBreakthroughs = computed(() => this._quarterProgress().activeBreakthroughs);
+  readonly hireOptions = this._hireOptions.asReadonly();
+
+  /** Per-department effective mult for UI display (click-completed, no worker passive) */
+  readonly deptEffectiveMults = computed(() => {
+    const result = {} as Record<TaskCategory, number>;
+    for (const cat of ALL_CATEGORIES) {
+      const passives = getActivePassives(this._minions(), cat);
+      const mgrMult = aggregatePassiveFlat(passives, 'gold-mult');
+      const dm = getDeptMult(this._departments()[cat].level);
+      const bt = this._quarterProgress().activeBreakthroughs;
+      result[cat] = Math.max(1, 1 + dm + mgrMult + bt + this.getBossMultPenalty());
+    }
+    return result;
+  });
+
+  readonly bossPenalty = computed(() => this.getBossMultPenalty());
 
   // ─── Voucher effect helpers (private computed) ──
   private readonly voucherClickPower = computed(() => getVoucherEffect('iron-fingers', this._ownedVouchers()['iron-fingers']));
   private readonly voucherBoardBonus = computed(() => getVoucherEffect('board-expansion', this._ownedVouchers()['board-expansion']));
   private readonly voucherSlotBonus = computed(() => getVoucherEffect('operations-desk', this._ownedVouchers()['operations-desk']));
-  private readonly voucherRefreshMult = computed(() => getVoucherEffect('rapid-intel', this._ownedVouchers()['rapid-intel']));
   private readonly voucherHireDiscount = computed(() => getVoucherEffect('hire-discount', this._ownedVouchers()['hire-discount']));
-  private readonly voucherXpMult = computed(() => getVoucherEffect('dept-funding', this._ownedVouchers()['dept-funding']));
-  private readonly voucherRuleMastery = computed(() => getVoucherEffect('rule-mastery', this._ownedVouchers()['rule-mastery']));
-
-  /** Max rule slots: base 1 + Rule Mastery voucher effect */
-  readonly maxRuleSlots = computed(() => 1 + this.voucherRuleMastery());
-
-  readonly activeRuleCount = computed(() =>
-    this._rules().filter(r => r.id !== '__default__').length
-  );
+  private readonly voucherDismissalBonus = computed(() => getVoucherEffect('dismissal-expert', this._ownedVouchers()['dismissal-expert']));
 
   readonly currentQuarterTarget = computed(() => {
     const p = this._quarterProgress();
@@ -161,37 +175,18 @@ export class GameStateService {
   });
   readonly quarterGold = computed(() => this._quarterProgress().grossGoldEarned);
 
-  // Backwards-compat: activeMissions merges all queues into a single flat list
+  // activeMissions merges all department queues into a single flat list
   readonly activeMissions = computed(() => {
     const deptQueues = this._departmentQueues();
-    const player = this._playerQueue();
     const all: Task[] = [];
     for (const cat of ALL_CATEGORIES) {
       all.push(...deptQueues[cat]);
     }
-    all.push(...player);
     return all;
   });
 
   // Backwards-compat: taskQueue = activeMissions
   readonly taskQueue = this.activeMissions;
-
-  // ─── Villain level ─────────────────────────
-  readonly villainLevel = computed(() => {
-    const completed = this._completedCount();
-    return Math.min(20, Math.floor(Math.sqrt(completed / 5)) + 1);
-  });
-
-  readonly villainTitle = computed(() => {
-    const level = this.villainLevel();
-    if (level <= 2) return 'Petty Troublemaker';
-    if (level <= 4) return 'Aspiring Villain';
-    if (level <= 6) return 'Notorious Scoundrel';
-    if (level <= 8) return 'Criminal Mastermind';
-    if (level <= 10) return 'Arch-Villain';
-    if (level <= 14) return 'Dark Overlord';
-    return 'Supreme Evil Genius';
-  });
 
   // ─── Computed signals ──────────────────────
   readonly idleMinions = computed(() =>
@@ -203,8 +198,11 @@ export class GameStateService {
   );
 
   readonly nextMinionCost = computed(() =>
-    Math.floor(75 * Math.pow(1.6, this._minions().length) * (1 - this.voucherHireDiscount()))
+    Math.floor(75 * Math.pow(1.5, this._minions().length) * (1 - this.voucherHireDiscount()))
   );
+
+  /** Reroll cost = 50% of hire cost */
+  readonly rerollCost = computed(() => Math.floor(this.nextMinionCost() * 0.5));
 
   readonly canHireMinion = computed(() =>
     this._gold() >= this.nextMinionCost()
@@ -218,52 +216,88 @@ export class GameStateService {
     this.activeMissions().filter(t => t.status === 'in-progress')
   );
 
-  /** Mission board capacity: base 12, scales with minions + voucher bonus. Clamped to 2 by board-limited modifier. */
-  readonly boardCapacity = computed(() => {
-    if (this._boardLimited()) return 2;
-    const base = 12;
-    const minionBonus = Math.min(8, this._minions().length * 2);
+  /** Backlog capacity: base 8 + min(4, minionCount) + voucher bonus. Reduced to 1 by board-frozen, 2 by board-limited. */
+  readonly backlogCapacity = computed(() => {
+    if (this._backlogFrozen()) return 1;
+    if (this._backlogLimited()) return 2;
+    const base = 8;
+    const minionBonus = Math.min(4, this._minions().length);
     return base + minionBonus + this.voucherBoardBonus();
   });
 
-  /** Active mission slots: base 3 + 1 per minion + voucher bonus */
-  readonly activeSlots = computed(() =>
-    3 + this._minions().length + this.voucherSlotBonus()
-  );
+  /** Per-department queue capacity: base 1 + workerSlots + operationsDesk bonus */
+  readonly deptQueueCapacity = computed(() => {
+    const depts = this._departments();
+    const opsBonus = this.voucherSlotBonus();
+    const result = {} as Record<TaskCategory, number>;
+    for (const cat of ALL_CATEGORIES) {
+      result[cat] = getDeptQueueCapacity(depts[cat].workerSlots, opsBonus);
+    }
+    return result;
+  });
 
-  /** Click power: base 1 + voucher bonus + joker bonus */
-  readonly clickPower = computed(() => 1 + this.voucherClickPower() + this.getJokerClickPowerBonus());
+  /** Click power: base 1 + voucher bonus + manager click-power passives (from all dept managers) */
+  readonly clickPower = computed(() => {
+    let power = 1 + this.voucherClickPower();
+    // Add click-power from all managers across all departments
+    for (const cat of ALL_CATEGORIES) {
+      const passives = getActivePassives(this._minions(), cat);
+      power += aggregatePassiveFlat(passives, 'click-power');
+    }
+    return power;
+  });
 
-  /** Minions grouped by assigned department */
+  /** Minions grouped by assigned department (excludes unassigned pool minions) */
   readonly minionsByDepartment = computed(() => {
     const result: Record<TaskCategory, Minion[]> = {
       schemes: [], heists: [], research: [], mayhem: [],
     };
     for (const m of this._minions()) {
-      result[m.assignedDepartment].push(m);
+      if (m.assignedDepartment !== null) {
+        result[m.assignedDepartment].push(m);
+      }
     }
     return result;
   });
 
-  // ─── Progressive department unlocking ────
-  /**
-   * Tracks which departments have been unlocked (have or had a minion assigned).
-   * Persisted so departments stay unlocked even if the minion is lost.
-   */
-  private readonly _unlockedDepartments = signal<Set<TaskCategory>>(new Set());
+  /** Managers by department */
+  readonly managersByDepartment = computed(() => {
+    const result: Record<TaskCategory, Minion | null> = {
+      schemes: null, heists: null, research: null, mayhem: null,
+    };
+    for (const m of this._minions()) {
+      if (m.assignedDepartment !== null && m.role === 'manager') {
+        result[m.assignedDepartment] = m;
+      }
+    }
+    return result;
+  });
 
-  /** Departments the player has unlocked (computed from persisted set) */
-  readonly unlockedDepartments = computed(() => this._unlockedDepartments());
+  /** Minions not assigned to any department */
+  readonly unassignedMinions = computed(() =>
+    this._minions().filter(m => m.assignedDepartment === null)
+  );
+
+  // ─── Progressive department unlocking (derived from vouchers) ────
+  /** Departments the player has unlocked. Schemes is always unlocked. */
+  readonly unlockedDepartments = computed(() => {
+    const v = this._ownedVouchers();
+    const set = new Set<TaskCategory>(['schemes']); // Schemes always unlocked
+    if (v['unlock-heists'] > 0) set.add('heists');
+    if (v['unlock-research'] > 0) set.add('research');
+    if (v['unlock-mayhem'] > 0) set.add('mayhem');
+    return set;
+  });
 
   /** Ordered list of unlocked department categories */
   readonly unlockedDepartmentList = computed(() =>
-    ALL_CATEGORIES.filter(cat => this._unlockedDepartments().has(cat))
+    ALL_CATEGORIES.filter(cat => this.unlockedDepartments().has(cat))
   );
 
   /** Department queues filtered to only unlocked departments */
   readonly unlockedDepartmentQueues = computed(() => {
     const queues = this._departmentQueues();
-    const unlocked = this._unlockedDepartments();
+    const unlocked = this.unlockedDepartments();
     const result = {} as Record<TaskCategory, Task[]>;
     for (const cat of ALL_CATEGORIES) {
       result[cat] = unlocked.has(cat) ? queues[cat] : [];
@@ -271,40 +305,44 @@ export class GameStateService {
     return result;
   });
 
+  /** Count of workers (non-manager) per department */
+  readonly workerCountByDept = computed(() => {
+    const result: Record<TaskCategory, number> = { schemes: 0, heists: 0, research: 0, mayhem: 0 };
+    for (const m of this._minions()) {
+      if (m.assignedDepartment !== null && m.role === 'worker') {
+        result[m.assignedDepartment]++;
+      }
+    }
+    return result;
+  });
+
+  // ─── Scouting signals ───────────────────────
+
+  private readonly BACKLOG_LOW_THRESHOLD = 5;
+
   // ─── Constants ─────────────────────────────
-  private readonly BOARD_REFRESH_INTERVAL = 3_000;
   private readonly SPECIAL_OP_CHANCE = 0.15;
   private readonly SPECIAL_OP_DURATION = 30_000;
-  /** XP earned per task tier */
-  private readonly TIER_XP: Record<TaskTier, number> = {
-    petty: 3,
-    sinister: 8,
-    diabolical: 15,
-    legendary: 25,
-  };
-
-  private lastBoardRefresh = 0;
   private usedNameIndices = new Set<number>();
 
   // ─── Game lifecycle ────────────────────────
   initializeGame(): void {
     this._gold.set(0);
     this._minions.set([]);
-    this._missionBoard.set([]);
+    this._backlog.set([]);
     this._activeMissions.set([]);
     this._completedCount.set(0);
     this._totalGoldEarned.set(0);
     this._notifications.set([]);
     this._departments.set({
-      schemes: { category: 'schemes', xp: 0, level: 1 },
-      heists: { category: 'heists', xp: 0, level: 1 },
-      research: { category: 'research', xp: 0, level: 1 },
-      mayhem: { category: 'mayhem', xp: 0, level: 1 },
+      schemes: { category: 'schemes', level: 1, workerSlots: 1, hasManager: false },
+      heists: { category: 'heists', level: 1, workerSlots: 0, hasManager: false },
+      research: { category: 'research', level: 1, workerSlots: 0, hasManager: false },
+      mayhem: { category: 'mayhem', level: 1, workerSlots: 0, hasManager: false },
     });
     this._departmentQueues.set({
       schemes: [], heists: [], research: [], mayhem: [],
     });
-    this._playerQueue.set([]);
     this._quarterProgress.set(createInitialProgress());
     this._currentReviewer.set(null);
     this._activeModifiers.set([]);
@@ -312,27 +350,23 @@ export class GameStateService {
     this._showReviewerIntro.set(false);
     this._hiringDisabled.set(false);
     this._upgradesDisabled.set(false);
-    this._boardFrozen.set(false);
-    this._boardLimited.set(false);
+    this._backlogFrozen.set(false);
+    this._backlogLimited.set(false);
     this._goldDrainPerTask.set(0);
     this._goldRewardMultiplier.set(1);
     this._lockedCategory.set(null);
     this._ownedVouchers.set(createEmptyVoucherLevels());
     this._showShop.set(false);
-    this._ownedCards.set(new Set());
-    this._ownedJokers.set(new Set());
-    this._equippedJokers.set([]);
-    this._rules.set([DEFAULT_RULE]);
-    this._pendingPack.set(null);
-    this._pendingPickCount.set(0);
-    this._showPackReward.set(false);
-    this._automationDisabled.set(false);
-    this._unlockedDepartments.set(new Set());
+    this._deptTierUnlocks.set(createDefaultTierUnlocks());
+    this._schemeDeck.set(this.generateQuarterlyDeck(25, 1));
+    this._mayhemComboCount.set(0);
+    this._lastMayhemCompletionTime.set(0);
+    this._hireOptions.set(rollHireOptions(3));
+    this._comboState.set(createDefaultComboState());
     this.usedNameIndices.clear();
-    this.lastBoardRefresh = 0;
 
-    // Fill the board immediately
-    this.fillBoard();
+    // Draw initial hand of scheme cards
+    this.drawSchemeHand();
   }
 
   resetGame(): void {
@@ -349,22 +383,21 @@ export class GameStateService {
       totalGoldEarned: this._totalGoldEarned(),
       minions: this._minions(),
       departments: this._departments(),
-      activeMissions: [], // kept empty for v3+; all tasks live in department/player queues
-      missionBoard: this._missionBoard(),
+      activeMissions: [], // kept empty for v3+; all tasks live in department queues
+      missionBoard: this._backlog(),
       usedNameIndices: [...this.usedNameIndices],
-      lastBoardRefresh: this.lastBoardRefresh,
       departmentQueues: this._departmentQueues(),
-      playerQueue: this._playerQueue(),
       quarterProgress: this._quarterProgress(),
-      unlockedDepartments: [...this._unlockedDepartments()],
       currentReviewer: this._currentReviewer(),
       activeModifiers: this._activeModifiers(),
       isRunOver: this._isRunOver(),
       ownedVouchers: this._ownedVouchers(),
-      ownedCards: [...this._ownedCards()],
-      ownedJokers: [...this._ownedJokers()],
-      equippedJokers: this._equippedJokers(),
-      rules: this._rules(),
+      deptTierUnlocks: Object.fromEntries(
+        Object.entries(this._deptTierUnlocks()).map(([cat, set]) => [cat, [...set]])
+      ) as Record<TaskCategory, string[]>,
+      schemeDeck: this._schemeDeck(),
+      hireOptions: this._hireOptions(),
+      comboState: this._comboState(),
     };
   }
 
@@ -373,11 +406,15 @@ export class GameStateService {
     this._completedCount.set(data.completedCount);
     this._totalGoldEarned.set(data.totalGoldEarned);
     this._minions.set(data.minions.map(m => ({
-      ...m,
-      assignedDepartment: m.assignedDepartment ?? m.specialty,
+      id: m.id,
+      archetypeId: m.archetypeId,
+      role: m.role ?? 'worker',
+      status: m.status,
+      assignedTaskId: m.assignedTaskId,
+      assignedDepartment: m.assignedDepartment ?? null,
     })));
     this._departments.set(data.departments);
-    this._missionBoard.set(data.missionBoard);
+    this._backlog.set(data.missionBoard);
     this._notifications.set([]);
 
     // Load kanban queues (v3+)
@@ -386,15 +423,11 @@ export class GameStateService {
     } else {
       this._departmentQueues.set({ schemes: [], heists: [], research: [], mayhem: [] });
     }
-    if (data.playerQueue) {
-      this._playerQueue.set(data.playerQueue);
-    } else {
-      this._playerQueue.set([]);
-    }
 
     // Load quarterly progress (v7+)
     if (data.quarterProgress) {
-      this._quarterProgress.set(data.quarterProgress);
+      const defaults = createInitialProgress();
+      this._quarterProgress.set({ ...defaults, ...data.quarterProgress });
     } else {
       this._quarterProgress.set(createInitialProgress());
     }
@@ -419,15 +452,6 @@ export class GameStateService {
     }
     this._showShop.set(false);
 
-    // Load card/joker/rule state (v11+)
-    this._ownedCards.set(new Set(data.ownedCards ?? []));
-    this._ownedJokers.set(new Set(data.ownedJokers ?? []));
-    this._equippedJokers.set(data.equippedJokers ?? []);
-    this._rules.set(data.rules?.length ? data.rules : [DEFAULT_RULE]);
-    this._pendingPack.set(null);
-    this._pendingPickCount.set(0);
-    this._showPackReward.set(false);
-
     // Re-apply modifier constraints if in review
     this.revertModifiers();
     if (data.activeModifiers && data.activeModifiers.length > 0) {
@@ -442,12 +466,8 @@ export class GameStateService {
       }
       for (const task of data.activeMissions) {
         const target = task.assignedQueue ?? task.template.category;
-        if (target === 'player') {
-          this._playerQueue.update(q => [...q, { ...task, assignedQueue: 'player' }]);
-        } else {
-          const cat = target as TaskCategory;
-          deptQueues[cat] = [...deptQueues[cat], { ...task, assignedQueue: cat }];
-        }
+        const cat = ((target as string) === 'player' ? 'schemes' : target) as TaskCategory;
+        deptQueues[cat] = [...deptQueues[cat], { ...task, assignedQueue: cat }];
       }
       this._departmentQueues.set(deptQueues);
     }
@@ -455,38 +475,60 @@ export class GameStateService {
     // Legacy flat list cleared
     this._activeMissions.set([]);
 
-    // Load unlocked departments (v4+), or derive from current minions for older saves
-    if (data.unlockedDepartments && data.unlockedDepartments.length > 0) {
-      this._unlockedDepartments.set(new Set(data.unlockedDepartments as TaskCategory[]));
-    } else {
-      // Backwards compat: derive from minion assignments
-      const unlocked = new Set<TaskCategory>();
-      for (const m of this._minions()) {
-        unlocked.add(m.assignedDepartment);
+    // Load dept tier unlocks (v14+)
+    if (data.deptTierUnlocks) {
+      const unlocks = createDefaultTierUnlocks();
+      for (const cat of ALL_CATEGORIES) {
+        const tiers = (data.deptTierUnlocks as Record<string, string[]>)[cat];
+        if (tiers) {
+          unlocks[cat] = new Set(tiers as TaskTier[]);
+        }
       }
-      this._unlockedDepartments.set(unlocked);
+      this._deptTierUnlocks.set(unlocks);
+    } else {
+      this._deptTierUnlocks.set(createDefaultTierUnlocks());
     }
 
+    // Load scheme deck (v15+)
+    if (data.schemeDeck && data.schemeDeck.length > 0) {
+      this._schemeDeck.set(data.schemeDeck);
+    } else {
+      // Generate starter deck for saves that don't have one
+      this._schemeDeck.set(this.generateQuarterlyDeck(25, 1));
+    }
+
+    // If board is empty after loading, draw a hand from the deck
+    if (this._backlog().length === 0 && this._schemeDeck().length > 0) {
+      this.drawSchemeHand();
+    }
+
+    this._mayhemComboCount.set(0);
+    this._lastMayhemCompletionTime.set(0);
+
+    // Load hire options (v17+)
+    this._hireOptions.set(data.hireOptions && data.hireOptions.length > 0 ? data.hireOptions : rollHireOptions(3));
+
+    // Load combo state (v18+)
+    this._comboState.set(data.comboState ?? createDefaultComboState());
+
     this.usedNameIndices = new Set(data.usedNameIndices);
-    this.lastBoardRefresh = data.lastBoardRefresh;
   }
 
   addGold(amount: number): void {
     this._gold.update(g => g + amount);
   }
 
-  // ─── Mission Board actions ─────────────────
-  /** Legacy: Player accepts a mission from the board into the old flat list (still used by old UI) */
+  // ─── Backlog actions ─────────────────
+  /** Accept a mission from the backlog into its category queue */
   acceptMission(missionId: string): void {
-    // Route to the mission's category queue by default
-    const mission = this._missionBoard().find(m => m.id === missionId);
+    const mission = this._backlog().find(m => m.id === missionId);
     if (!mission) return;
 
-    const totalActive = this.activeMissions().length;
-    if (totalActive >= this.activeSlots()) return;
-
-    this._missionBoard.update(board => board.filter(m => m.id !== missionId));
     const target = mission.template.category;
+    const currentCount = this._departmentQueues()[target].length;
+    if (currentCount >= this.deptQueueCapacity()[target]) return;
+
+    this._backlog.update(board => board.filter(m => m.id !== missionId));
     this._departmentQueues.update(queues => ({
       ...queues,
       [target]: [...queues[target], { ...mission, status: 'queued' as TaskStatus, assignedQueue: target }],
@@ -494,95 +536,49 @@ export class GameStateService {
     this.events.emit({ type: 'TaskQueued', taskId: missionId, department: target });
   }
 
-  /** Route a mission from the board to a specific queue */
+  /** Route a mission from the backlog to a specific department queue */
   routeMission(missionId: string, target: QueueTarget): void {
-    const mission = this._missionBoard().find(m => m.id === missionId);
+    const mission = this._backlog().find(m => m.id === missionId);
     if (!mission) return;
 
-    const totalActive = this.activeMissions().length;
-    if (totalActive >= this.activeSlots()) return;
+    const currentCount = this._departmentQueues()[target].length;
+    if (currentCount >= this.deptQueueCapacity()[target]) return;
 
     // Prevent routing to a locked department (unlocking or modifier-locked)
-    if (target !== 'player' && !this._unlockedDepartments().has(target as TaskCategory)) return;
-    if (target !== 'player' && this._lockedCategory() === target) return;
+    if (!this.unlockedDepartments().has(target)) return;
+    if (this._lockedCategory() === target) return;
 
-    this._missionBoard.update(board => board.filter(m => m.id !== missionId));
+    this._backlog.update(board => board.filter(m => m.id !== missionId));
 
     const routed: Task = { ...mission, status: 'queued' as TaskStatus, assignedQueue: target };
 
-    if (target === 'player') {
-      this._playerQueue.update(q => [...q, routed]);
-    } else {
-      this._departmentQueues.update(queues => ({
-        ...queues,
-        [target]: [...queues[target], routed],
-      }));
-    }
+    this._departmentQueues.update(queues => ({
+      ...queues,
+      [target]: [...queues[target], routed],
+    }));
     this.events.emit({ type: 'TaskQueued', taskId: missionId, department: target });
-  }
 
-  /** Move a task between queues (e.g., from one department to another, or to player workbench) */
-  moveTaskToQueue(taskId: string, fromQueue: QueueTarget, toQueue: QueueTarget): void {
-    if (fromQueue === toQueue) return;
-
-    let task: Task | undefined;
-
-    // Remove from source queue
-    if (fromQueue === 'player') {
-      const q = this._playerQueue();
-      task = q.find(t => t.id === taskId);
-      if (!task) return;
-      // Don't move tasks that are in-progress with a minion
-      if (task.assignedMinionId) return;
-      this._playerQueue.update(queue => queue.filter(t => t.id !== taskId));
-    } else {
-      const cat = fromQueue as TaskCategory;
-      const q = this._departmentQueues()[cat];
-      task = q.find(t => t.id === taskId);
-      if (!task) return;
-      if (task.assignedMinionId) return;
-      this._departmentQueues.update(queues => ({
-        ...queues,
-        [cat]: queues[cat].filter(t => t.id !== taskId),
-      }));
+    // Draw a replacement scheme card to keep the board full
+    if (mission.template.category === 'schemes' && !mission.isOperation) {
+      this.drawSchemeCard();
     }
-
-    const moved: Task = { ...task, assignedQueue: toQueue };
-
-    // Add to target queue
-    if (toQueue === 'player') {
-      this._playerQueue.update(q => [...q, moved]);
-    } else {
-      this._departmentQueues.update(queues => ({
-        ...queues,
-        [toQueue]: [...queues[toQueue as TaskCategory], moved],
-      }));
-    }
-    this.events.emit({ type: 'TaskQueued', taskId, department: toQueue });
   }
 
   /** Reorder tasks within a queue (drag to reorder priority) */
   reorderQueue(queue: QueueTarget, taskIds: string[]): void {
-    if (queue === 'player') {
-      this._playerQueue.update(current => {
-        const byId = new Map(current.map(t => [t.id, t]));
-        return taskIds.map(id => byId.get(id)!).filter(Boolean);
-      });
-    } else {
-      const cat = queue as TaskCategory;
-      this._departmentQueues.update(queues => {
-        const current = queues[cat];
-        const byId = new Map(current.map(t => [t.id, t]));
-        return {
-          ...queues,
-          [cat]: taskIds.map(id => byId.get(id)!).filter(Boolean),
-        };
-      });
-    }
+    const cat = queue as TaskCategory;
+    this._departmentQueues.update(queues => {
+      const current = queues[cat];
+      const byId = new Map(current.map(t => [t.id, t]));
+      return {
+        ...queues,
+        [cat]: taskIds.map(id => byId.get(id)!).filter(Boolean),
+      };
+    });
   }
 
-  /** Reassign a minion to a different department */
-  reassignMinion(minionId: string, newDept: TaskCategory): void {
+  /** Reassign a minion to a different department (or null for unassigned pool) */
+  reassignMinion(minionId: string, newDept: TaskCategory | null): void {
     const minion = this._minions().find(m => m.id === minionId);
     if (!minion) return;
     if (minion.assignedDepartment === newDept) return;
@@ -590,57 +586,90 @@ export class GameStateService {
     // If working, can't reassign
     if (minion.status === 'working') return;
 
+    // Enforce worker slot limit on target department
+    if (newDept !== null) {
+      const deptData = this._departments()[newDept];
+      const currentWorkers = this.workerCountByDept()[newDept];
+      // If already in this dept, don't double-count
+      const alreadyHere = minion.assignedDepartment === newDept;
+      if (!alreadyHere && currentWorkers >= deptData.workerSlots) return;
+    }
+
     const fromDepartment = minion.assignedDepartment;
     this._minions.update(list =>
       list.map(m =>
         m.id === minionId
-          ? { ...m, assignedDepartment: newDept }
+          ? { ...m, assignedDepartment: newDept, role: 'worker' as const }
           : m
       )
     );
 
-    // Unlock the department if this is the first minion in it
-    this.unlockDepartment(newDept, minion.name);
-    this.events.emit({ type: 'MinionReassigned', minionId, fromDepartment, toDepartment: newDept });
+    if (fromDepartment !== null && newDept !== null) {
+      this.events.emit({ type: 'MinionReassigned', minionId, fromDepartment, toDepartment: newDept });
+    }
+  }
+
+  /** Assign a minion from the unassigned pool to a department with a specific role */
+  assignMinionToDepartment(minionId: string, dept: TaskCategory, role: MinionRole): void {
+    const minion = this._minions().find(m => m.id === minionId);
+    if (!minion) return;
+    if (minion.status === 'working') return;
+
+    const deptData = this._departments()[dept];
+
+    // Enforce manager slot purchased
+    if (role === 'manager') {
+      if (!deptData.hasManager) return; // No manager slot purchased
+      const existing = this._minions().find(m =>
+        m.assignedDepartment === dept && m.role === 'manager' && m.id !== minionId
+      );
+      if (existing) return; // Already has a manager
+    }
+
+    // Enforce worker slot limit
+    if (role === 'worker') {
+      const currentWorkers = this.workerCountByDept()[dept];
+      // If this minion is already a worker in this dept, don't double-count
+      const alreadyHere = minion.assignedDepartment === dept && minion.role === 'worker';
+      if (!alreadyHere && currentWorkers >= deptData.workerSlots) return;
+    }
+
+    this._minions.update(list =>
+      list.map(m =>
+        m.id === minionId
+          ? { ...m, assignedDepartment: dept, role }
+          : m
+      )
+    );
+
+    this.events.emit({ type: 'MinionAssigned', minionId, department: dept });
+  }
+
+  /** Unassign a minion back to the unassigned pool */
+  unassignMinion(minionId: string): void {
+    const minion = this._minions().find(m => m.id === minionId);
+    if (!minion) return;
+    if (minion.status === 'working') return;
+
+    this._minions.update(list =>
+      list.map(m =>
+        m.id === minionId
+          ? { ...m, assignedDepartment: null, role: 'worker' as const }
+          : m
+      )
+    );
   }
 
   // ─── Manual work (clicking) ────────────────
   clickTask(taskId: string): void {
     const power = this.clickPower();
 
-    // Check player queue first
-    const playerTask = this._playerQueue().find(t => t.id === taskId);
-    if (playerTask) {
-      this._playerQueue.update(queue =>
-        queue.map(task => {
-          if (task.id !== taskId) return task;
-          if (task.status === 'complete') return task;
-
-          const newClicks = task.clicksRemaining - power;
-          if (newClicks <= 0) {
-            this.awardGold(task.goldReward, task.template.name, task.tier, task.template.category, 'click');
-            return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
-          }
-          return {
-            ...task,
-            status: 'in-progress' as TaskStatus,
-            clicksRemaining: newClicks,
-          };
-        })
-      );
-      if (this.clickCompleteDelay > 0) {
-        setTimeout(() => this.cleanPlayerQueue(), this.clickCompleteDelay);
-      } else {
-        this.cleanPlayerQueue();
-      }
-      return;
-    }
-
     // Check department queues
     for (const cat of ALL_CATEGORIES) {
       const queue = this._departmentQueues()[cat];
       const deptTask = queue.find(t => t.id === taskId);
       if (deptTask) {
+        let completedTask: Task | null = null;
         this._departmentQueues.update(queues => ({
           ...queues,
           [cat]: queues[cat].map(task => {
@@ -650,7 +679,8 @@ export class GameStateService {
 
             const newClicks = task.clicksRemaining - power;
             if (newClicks <= 0) {
-              this.awardGold(task.goldReward, task.template.name, task.tier, task.template.category, 'click');
+              completedTask = task;
+              this.awardGold(task.goldReward, task.template.name, task.tier, task.template.category, 'click', null, task.isSpecialOp, task.isOperation, task.comboMult);
               return { ...task, status: 'complete' as TaskStatus, clicksRemaining: 0 };
             }
             return {
@@ -660,6 +690,10 @@ export class GameStateService {
             };
           }),
         }));
+        // If this was a scheme task, generate operations
+        if (completedTask) {
+          this.handleSchemeCompletion(completedTask);
+        }
         if (this.clickCompleteDelay > 0) {
           setTimeout(() => this.cleanDeptQueue(cat), this.clickCompleteDelay);
         } else {
@@ -670,75 +704,132 @@ export class GameStateService {
     }
   }
 
-  // ─── Hire minion ───────────────────────────
-  hireMinion(): void {
-    if (this._hiringDisabled()) return;
-    const cost = this.nextMinionCost();
-    if (this._gold() < cost) return;
+  /** Handle scheme completion: if the task was a scheme, generate operations and draw replacement */
+  private handleSchemeCompletion(task: Task): void {
+    if (task.template.category !== 'schemes' || task.isOperation) return;
 
-    this._gold.update(g => g - cost);
-    const minion = this.createMinion();
-    this._minions.update(list => [...list, minion]);
+    // Reconstruct scheme card from stored task metadata
+    if (task.schemeTargetDept && task.schemeOperationCount && task.schemeOperationTiers) {
+      // Advance combo state before generating operations
+      const comboResult = advanceComboState(this._comboState(), task.schemeTargetDept, task.tier);
+      this._comboState.set(comboResult.newState);
 
-    // Unlock the department if this is the first minion in it
-    this.unlockDepartment(minion.assignedDepartment, minion.name);
+      if (comboResult.totalComboMult > 0) {
+        const parts: string[] = [];
+        if (comboResult.deptFocusBonus > 0) parts.push(`Focus +${comboResult.deptFocusBonus}`);
+        if (comboResult.tierEscalationBonus > 0) parts.push(`Ladder +${comboResult.tierEscalationBonus}`);
+        this.addNotification(`Combo! ${parts.join(' | ')} → +${comboResult.totalComboMult} mult on ops`, 'gold');
+      }
 
-    const specialtyLabel = minion.specialty.charAt(0).toUpperCase() + minion.specialty.slice(1);
-    this.addNotification(
-      `${minion.name} joined! Spd:${minion.stats.speed.toFixed(1)} Eff:${minion.stats.efficiency.toFixed(1)} [${specialtyLabel}]`,
-      'minion'
-    );
-    this.events.emit({ type: 'MinionHired', minionId: minion.id, department: minion.assignedDepartment });
-  }
-
-  /** Hire a specific pre-generated minion (from the pick-one-of-two choice) */
-  hireChosenMinion(minion: Minion): void {
-    if (this._hiringDisabled()) return;
-    const cost = this.nextMinionCost();
-    if (this._gold() < cost) return;
-
-    this._gold.update(g => g - cost);
-    this._minions.update(list => [...list, minion]);
-
-    this.unlockDepartment(minion.assignedDepartment, minion.name);
-
-    const specialtyLabel = minion.specialty.charAt(0).toUpperCase() + minion.specialty.slice(1);
-    this.addNotification(
-      `${minion.name} joined! Spd:${minion.stats.speed.toFixed(1)} Eff:${minion.stats.efficiency.toFixed(1)} [${specialtyLabel}]`,
-      'minion'
-    );
-    this.events.emit({ type: 'MinionHired', minionId: minion.id, department: minion.assignedDepartment });
-  }
-
-  /** Generate 2 hiring candidates. If not all depts unlocked, at least one opens a new dept. */
-  generateHiringCandidates(): [Minion, Minion] {
-    const unlocked = this._unlockedDepartments();
-    const lockedDepts = ALL_CATEGORIES.filter(cat => !unlocked.has(cat));
-
-    if (lockedDepts.length > 0) {
-      // Guarantee at least one candidate is from a locked department
-      const newDept = lockedDepts[Math.floor(Math.random() * lockedDepts.length)];
-      const candidate1 = this.createMinion(newDept);
-      const candidate2 = this.createMinion();
-      // Randomize order so the "new dept" candidate isn't always first
-      return Math.random() < 0.5 ? [candidate1, candidate2] : [candidate2, candidate1];
+      const schemeCard: SchemeCard = {
+        id: task.id,
+        templateId: task.template.name,
+        tier: task.tier,
+        targetDept: task.schemeTargetDept,
+        operationCount: task.schemeOperationCount,
+        operationTiers: task.schemeOperationTiers,
+        clicksRequired: task.clicksRequired,
+        directGold: task.goldReward,
+        isSpecialOp: task.isSpecialOp,
+      };
+      this.generateOperations(schemeCard, comboResult.totalComboMult);
     }
-
-    return [this.createMinion(), this.createMinion()];
   }
 
-  /** Unlock a department, firing a notification if it was newly unlocked */
-  private unlockDepartment(dept: TaskCategory, minionName: string): void {
-    const current = this._unlockedDepartments();
-    if (current.has(dept)) return;
-    const updated = new Set(current);
-    updated.add(dept);
-    this._unlockedDepartments.set(updated);
-    const label = DEPARTMENT_LABELS[dept];
+  // ─── Hire minion (draft pick) ─────────────
+  hireMinion(archetypeId: string): void {
+    if (this._hiringDisabled()) return;
+    if (!this._showShop()) return; // Can only hire in the shop
+    const cost = this.nextMinionCost();
+    if (this._gold() < cost) return;
+
+    // Validate the archetype is in current options
+    if (!this._hireOptions().includes(archetypeId)) return;
+
+    this._gold.update(g => g - cost);
+    const minion = this.createMinion(archetypeId);
+    this._minions.update(list => [...list, minion]);
+
+    const arch = getMinionDisplay(minion);
     this.addNotification(
-      `${label.icon} ${label.label} Department opened! ${minionName} is ready to work.`,
-      'task'
+      `${arch.icon} ${arch.name} joined! — assign to a department`,
+      'minion'
     );
+    this.events.emit({ type: 'MinionHired', minionId: minion.id, department: minion.assignedDepartment });
+
+    // Roll new hire options
+    this._hireOptions.set(rollHireOptions(3));
+  }
+
+  /** Reroll the hire draft options for gold */
+  rerollHireOptions(): void {
+    const cost = this.rerollCost();
+    if (this._gold() < cost) return;
+    this._gold.update(g => g - cost);
+    this._hireOptions.set(rollHireOptions(3));
+  }
+
+  // ─── Shop purchase methods ──────────────────
+
+  /** Purchase a department level upgrade. Returns true if successful. */
+  purchaseDeptLevel(category: TaskCategory): boolean {
+    const dept = this._departments()[category];
+    const cost = getDeptLevelCost(dept.level);
+    if (cost <= 0) return false; // Already max level
+    if (this._gold() < cost) return false;
+    if (!this._showShop()) return false;
+
+    this._gold.update(g => g - cost);
+    this._departments.update(depts => ({
+      ...depts,
+      [category]: { ...depts[category], level: depts[category].level + 1 },
+    }));
+
+    const newLevel = dept.level + 1;
+    this.addNotification(
+      `${DEPARTMENT_LABELS[category].icon} ${DEPARTMENT_LABELS[category].label} upgraded to Lv.${newLevel}! (+${getDeptMult(newLevel)} mult)`,
+      'task');
+    this.events.emit({ type: 'LevelUp', target: 'department', targetId: category, newLevel });
+    return true;
+  }
+
+  /** Purchase a worker slot for a department. Returns true if successful. */
+  purchaseWorkerSlot(category: TaskCategory): boolean {
+    const dept = this._departments()[category];
+    const cost = getWorkerSlotCost(dept.workerSlots);
+    if (cost <= 0) return false; // Already max slots
+    if (this._gold() < cost) return false;
+    if (!this._showShop()) return false;
+
+    this._gold.update(g => g - cost);
+    this._departments.update(depts => ({
+      ...depts,
+      [category]: { ...depts[category], workerSlots: depts[category].workerSlots + 1 },
+    }));
+
+    this.addNotification(
+      `${DEPARTMENT_LABELS[category].icon} ${DEPARTMENT_LABELS[category].label} gained a worker slot!`,
+      'task');
+    return true;
+  }
+
+  /** Purchase a manager slot for a department. Returns true if successful. */
+  purchaseManagerSlot(category: TaskCategory): boolean {
+    const dept = this._departments()[category];
+    if (dept.hasManager) return false; // Already has manager slot
+    if (this._gold() < MANAGER_SLOT_COST) return false;
+    if (!this._showShop()) return false;
+
+    this._gold.update(g => g - MANAGER_SLOT_COST);
+    this._departments.update(depts => ({
+      ...depts,
+      [category]: { ...depts[category], hasManager: true },
+    }));
+
+    this.addNotification(
+      `${DEPARTMENT_LABELS[category].icon} ${DEPARTMENT_LABELS[category].label} gained a manager slot!`,
+      'task');
+    return true;
   }
 
   /** @deprecated All tick logic migrated to GameTimerService. Retained for test compatibility. */
@@ -748,7 +839,7 @@ export class GameStateService {
 
   /**
    * Process one tick of minion auto-clicks.
-   * Each assigned minion applies floor(speed) clicks to their task per tick.
+   * Each assigned worker applies 1 click per tick (base), multiplied by passive speed-mult.
    * Called once per second by GameTimerService.
    */
   processMinionClicks(): void {
@@ -763,7 +854,10 @@ export class GameStateService {
           const minion = this._minions().find(m => m.id === task.assignedMinionId);
           if (!minion) return task;
 
-          const clicks = Math.max(1, Math.floor(minion.stats.speed * this.getJokerSpeedMult()));
+          // Base speed = 1, multiplied by passive speed-mult from manager + self
+          const passives = getActivePassives(this._minions(), cat, minion.id);
+          const speedMult = aggregatePassiveMult(passives, 'speed-mult');
+          const clicks = Math.max(1, Math.floor(1 * speedMult));
           const newRemaining = task.clicksRemaining - clicks;
 
           if (newRemaining <= 0) {
@@ -780,40 +874,21 @@ export class GameStateService {
     for (const { taskId, dept, minionId } of completedTasks) {
       const task = this._departmentQueues()[dept].find(t => t.id === taskId);
       if (task) {
-        this.awardGold(task.goldReward, task.template.name, task.tier, task.template.category, 'minion');
+        this.awardGold(task.goldReward, task.template.name, task.tier, task.template.category, 'minion', minionId, task.isSpecialOp, task.isOperation, task.comboMult);
         this.freeMinionFromTask(minionId, task.tier, task.template.category);
+        this.handleSchemeCompletion(task);
       }
-      // Remove completed task
-      this._departmentQueues.update(qs => ({
-        ...qs,
-        [dept]: qs[dept].filter(t => t.id !== taskId),
-      }));
+      // Remove completed task immediately (minion progress shown via component-local tracking)
+      this.cleanDeptQueue(dept);
     }
+    this.checkBacklogLow();
   }
 
   // ─── Tick step methods ────────────────
 
   /** Step 3: Remove a specific expired special op from the board */
   removeExpiredSpecialOp(missionId: string): void {
-    this._missionBoard.update(board => board.filter(m => m.id !== missionId));
-  }
-
-  /** Step 4: Refill mission board and emit BoardRefreshed */
-  refreshBoard(): void {
-    if (this._boardFrozen()) return;
-    this.fillBoard();
-    this.lastBoardRefresh = Date.now();
-    this.events.emit({
-      type: 'BoardRefreshed', missionCount: this._missionBoard().length,
-    });
-  }
-
-  /** Get the effective board refresh interval in ms (factoring passives + voucher) */
-  getEffectiveBoardRefreshInterval(): number {
-    const schemesPassive = getPassiveBonus('schemes', this._departments().schemes.level);
-    const schemesRefreshBonus = 1 - schemesPassive * 0.01;
-    const voucherMult = this.voucherRefreshMult() || 1;
-    return this.BOARD_REFRESH_INTERVAL * Math.max(0.2, schemesRefreshBonus * voucherMult);
+    this._backlog.update(board => board.filter(m => m.id !== missionId));
   }
 
   /** Clean old notifications */
@@ -822,6 +897,7 @@ export class GameStateService {
       list.filter(n => now - n.timestamp < 4000)
     );
   }
+
 
   /** Mark the game as just saved (updates the lastSaved timestamp) */
   markSaved(): void {
@@ -832,71 +908,32 @@ export class GameStateService {
     this._notifications.update(list => list.filter(n => n.id !== id));
   }
 
-  // ─── Minion stat helpers ───────────────────
-
-  /** Efficiency multiplier used for dept XP bonus (not gold) */
-  private getMinionEfficiencyMultiplier(minion: Minion, taskCategory: TaskCategory): number {
-    let eff = minion.stats.efficiency;
-    eff += (minion.level - 1) * 0.03;
-    if (minion.specialty === taskCategory) {
-      eff += SPECIALTY_BONUS;
-    }
-    return eff;
-  }
-
   // ─── Board management ─────────────────────
-  /** Fill the mission board up to capacity */
-  private fillBoard(): void {
-    const capacity = this.boardCapacity();
-    const current = this._missionBoard().length;
-    const toSpawn = capacity - current;
-
-    if (toSpawn <= 0) return;
-
-    const newMissions: Task[] = [];
-    for (let i = 0; i < toSpawn; i++) {
-      newMissions.push(this.createBoardMission());
-    }
-    this._missionBoard.update(board => [...board, ...newMissions]);
-  }
-
-  private createBoardMission(): Task {
-    const template = this.pickRandomTemplate();
+  createBoardMission(forcedCategory?: TaskCategory): Task {
+    const template = this.pickRandomTemplate(forcedCategory);
     const config = TIER_CONFIG[template.tier];
 
-    // Gold scales with VL
-    const vlBonus = 1 + (this.villainLevel() - 1) * VILLAIN_SCALE_PER_LEVEL;
-    let scaledGold = Math.round(config.gold * vlBonus);
+    // Base gold = tier base (no VL scaling)
+    const baseGold = config.gold;
 
-    // Clicks are fixed per tier, reduced by Research passive + joker click-reduction
-    const researchBonus = getPassiveBonus('research', this._departments().research.level);
-    const jokerClickReduction = aggregateJokerFlat(this._equippedJokers(), 'click-reduction', {});
-    const clickReduction = 1 - researchBonus * 0.01 - jokerClickReduction;
-    const scaledClicks = Math.max(5, Math.round(config.clicks * Math.max(0.2, clickReduction)));
+    // Clicks fixed per tier, reduced by passive click-reduction from all managers
+    const passiveClickReduction = this.getPassiveClickReduction();
+    const scaledClicks = Math.max(3, config.clicks - passiveClickReduction);
 
-    // Mayhem passive: increased Special Op appearance rate
-    const mayhemBonus = getPassiveBonus('mayhem', this._departments().mayhem.level);
-    const specialOpChance = this.SPECIAL_OP_CHANCE + mayhemBonus * 0.01;
-    const isSpecialOp = Math.random() < specialOpChance;
-    if (isSpecialOp) {
-      // Heists passive: increased Special Op gold bonus (base 1.5×)
-      const heistsBonus = getPassiveBonus('heists', this._departments().heists.level);
-      const specialOpMult = 1.5 + heistsBonus * 0.01;
-      scaledGold = Math.round(scaledGold * specialOpMult);
-    }
+    // Special Op: 15% chance, adds +1 to mult (no timer/expiry)
+    const isSpecialOp = Math.random() < this.SPECIAL_OP_CHANCE;
 
     const mission: Task = {
       id: crypto.randomUUID(),
       template,
       status: 'queued',
       tier: template.tier,
-      goldReward: scaledGold,
+      goldReward: baseGold,
       clicksRequired: scaledClicks,
       clicksRemaining: scaledClicks,
       assignedMinionId: null,
       queuedAt: Date.now(),
       isSpecialOp,
-      specialOpExpiry: isSpecialOp ? Date.now() + this.SPECIAL_OP_DURATION : undefined,
       assignedQueue: null,
     };
 
@@ -907,34 +944,32 @@ export class GameStateService {
     return mission;
   }
 
-  private pickRandomTemplate(): TaskTemplate {
-    const level = this.villainLevel();
+  private pickRandomTemplate(forcedCategory?: TaskCategory): TaskTemplate {
+    // Pick category: forced, or random from unlocked
+    let category: TaskCategory;
+    if (forcedCategory) {
+      category = forcedCategory;
+    } else {
+      const unlocked = this.unlockedDepartmentList();
+      const categories = unlocked.length > 0 ? unlocked : ALL_CATEGORIES;
+      category = categories[Math.floor(Math.random() * categories.length)];
+    }
 
-    // Determine desired tier based on villain level weights
-    const pettyWeight = Math.max(10, 70 - (level - 1) * 5);
-    const legendaryWeight = level >= 8 ? Math.min(25, (level - 7) * 4) : 0;
-    const diabolicalWeight = Math.min(40, 5 + (level - 1) * 4);
-    const sinisterWeight = 100 - pettyWeight - diabolicalWeight - legendaryWeight;
+    // Get unlocked tiers for this department
+    const deptUnlocks = this._deptTierUnlocks()[category];
+    const unlockedTiers = getUnlockedTiers(deptUnlocks);
 
-    const roll = Math.random() * 100;
-    let desiredTier: TaskTier;
-    if (roll < pettyWeight) desiredTier = 'petty';
-    else if (roll < pettyWeight + sinisterWeight) desiredTier = 'sinister';
-    else if (roll < pettyWeight + sinisterWeight + diabolicalWeight) desiredTier = 'diabolical';
-    else desiredTier = 'legendary';
-
-    // Pick a random category from unlocked departments only
-    const unlocked = this.unlockedDepartmentList();
-    const categories = unlocked.length > 0 ? unlocked : ALL_CATEGORIES;
-    const category = categories[Math.floor(Math.random() * categories.length)];
-    const depts = this._departments();
-    const deptLevel = depts[category].level;
-    const allowedTiers = availableTiersForDeptLevel(deptLevel);
-
-    // If desired tier isn't unlocked for this dept, fall back to the highest available
-    let tier = desiredTier;
-    if (!allowedTiers.includes(tier)) {
-      tier = allowedTiers[allowedTiers.length - 1];
+    // Weight-based tier selection within unlocked tiers
+    const weights = unlockedTiers.map(t => SCOUTING_TIER_WEIGHTS[t]);
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let roll = Math.random() * totalWeight;
+    let tier: TaskTier = unlockedTiers[0];
+    for (let i = 0; i < unlockedTiers.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) {
+        tier = unlockedTiers[i];
+        break;
+      }
     }
 
     // Get candidates from the pool matching category + tier
@@ -950,43 +985,66 @@ export class GameStateService {
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  /** Per-department auto-assign: each department's idle minions pick from their department's queue */
-  autoAssignMinions(): void {
+  /** Default fallback auto-assign: workers get tasks. Used when automation disabled. */
+  defaultAutoAssign(): void {
     const minionsByDept = this.minionsByDepartment();
     const deptQueues = this._departmentQueues();
 
-    const tierPriority: Record<TaskTier, number> = {
-      legendary: 4,
-      diabolical: 3,
-      sinister: 2,
-      petty: 1,
-    };
-
     for (const cat of ALL_CATEGORIES) {
       const deptMinions = minionsByDept[cat];
-      const idle = deptMinions.filter(m => m.status === 'idle');
-      if (idle.length === 0) continue;
 
+      // Workers: assign to queued tasks (managers skip — they don't work tasks)
+      const idleWorkers = deptMinions.filter(m => m.status === 'idle' && m.role === 'worker');
       const queued = deptQueues[cat].filter(t => t.status === 'queued');
-      if (queued.length === 0) continue;
-
-      // Queued tasks are already in priority order (player reorders them)
-      // But we still prefer specialty matches among idle minions
       const assignedMinionIds = new Set<string>();
 
       for (const task of queued) {
-        if (assignedMinionIds.size >= idle.length) break;
-
-        const available = idle.filter(m => !assignedMinionIds.has(m.id));
+        if (assignedMinionIds.size >= idleWorkers.length) break;
+        const available = idleWorkers.filter(m => !assignedMinionIds.has(m.id));
         if (available.length === 0) break;
 
-        const specialtyMatch = available.find(m => m.specialty === task.template.category);
-        const chosen = specialtyMatch || available[0];
-
+        const chosen = available[0];
         assignedMinionIds.add(chosen.id);
         this.assignMinionToTask(chosen.id, task.id, cat);
       }
     }
+  }
+
+  /** Backward compat alias */
+  autoAssignMinions(): void {
+    this.defaultAutoAssign();
+  }
+
+  /** Check if backlog is low and emit event */
+  private checkBacklogLow(): void {
+    const count = this._backlog().length;
+    if (count < this.BACKLOG_LOW_THRESHOLD) {
+      this.events.emit({ type: 'BacklogLow', count });
+    }
+  }
+
+  // ─── Role management ──────────────────────
+
+  /** Change a minion's role (must be idle). Enforces 1 manager per department. */
+  assignMinionRole(minionId: string, role: MinionRole): void {
+    const minion = this._minions().find(m => m.id === minionId);
+    if (!minion) return;
+    if (minion.status === 'working') return;
+    if (minion.role === role) return;
+
+    // Enforce manager slot purchased + 1 manager per department
+    if (role === 'manager' && minion.assignedDepartment) {
+      const deptData = this._departments()[minion.assignedDepartment];
+      if (!deptData.hasManager) return; // No manager slot purchased
+      const existing = this._minions().find(m =>
+        m.assignedDepartment === minion.assignedDepartment && m.role === 'manager' && m.id !== minionId
+      );
+      if (existing) return; // Already has a manager
+    }
+
+    this._minions.update(list =>
+      list.map(m => m.id === minionId ? { ...m, role } : m)
+    );
   }
 
   private assignMinionToTask(minionId: string, taskId: string, dept: TaskCategory): void {
@@ -1010,29 +1068,14 @@ export class GameStateService {
   }
 
   private freeMinionFromTask(minionId: string, taskTier: TaskTier, taskCategory: TaskCategory): void {
-    const baseXp = this.TIER_XP[taskTier];
-    const xpGain = Math.round(baseXp * this.getJokerXpMult());
-
+    // No more minion XP/level/specialty — just free the minion
     this._minions.update(list =>
       list.map(m => {
         if (m.id !== minionId) return m;
-        const newXp = m.xp + xpGain;
-        const newLevel = levelFromXp(newXp);
-        const didLevelUp = newLevel > m.level;
-
-        if (didLevelUp) {
-          this.addNotification(`${m.name} reached level ${newLevel}!`, 'minion');
-          this.events.emit({
-            type: 'LevelUp', target: 'minion', targetId: minionId, newLevel,
-          });
-        }
-
         return {
           ...m,
           status: 'idle' as const,
           assignedTaskId: null,
-          xp: newXp,
-          level: newLevel,
         };
       })
     );
@@ -1043,57 +1086,107 @@ export class GameStateService {
   }
 
   /**
-   * Award gold using the new Base × Mult formula.
-   * Base = goldReward (already includes tier × VL × specialOpMult from createBoardMission)
-   * Mult = deptLocalMult × bossModifierMult
+   * Award gold using the integer additive Base × Mult formula.
+   * Base = tier base gold (from TIER_CONFIG or pre-rolled for heists)
+   * Mult = 1 + deptMult + specialOp + passiveMult + bossModifier + breakthroughs
+   * All additive bonuses are integers — trivial mental math.
    */
   private awardGold(
     baseGold: number,
     taskName: string,
     taskTier?: TaskTier,
     taskCategory?: TaskCategory,
-    source: 'minion' | 'click' = 'minion'
+    source: 'minion' | 'click' = 'minion',
+    minionId?: string | null,
+    isSpecialOp?: boolean,
+    isOperation?: boolean,
+    comboMult?: number,
   ): void {
-    let mult = 1.0;
+    let mult = 1;
 
-    // Dept local mult (minion tasks in a department)
+    // Dept level mult: +1 per level above 1
     if (taskCategory) {
-      mult *= getDeptLocalMult(this._departments()[taskCategory].level);
+      mult += getDeptMult(this._departments()[taskCategory].level);
     }
 
-    // Boss modifier
-    mult *= this._goldRewardMultiplier();
+    // Passive gold-mult from manager + completing worker
+    if (taskCategory) {
+      const passives = getActivePassives(this._minions(), taskCategory, minionId ?? undefined);
+      mult += aggregatePassiveFlat(passives, 'gold-mult');
+    }
 
-    // Joker gold multiplier
-    const jokerContext: JokerContext = { department: taskCategory, taskCategory };
-    mult *= this.getJokerGoldMult(jokerContext);
+    // Special Op: +1
+    if (isSpecialOp) {
+      mult += 1;
+    }
 
-    let finalAmount = Math.round(baseGold * mult);
-    finalAmount += this.getJokerFlatGold();
+    // Combo mult from scheme fishing (operations only)
+    if (comboMult && comboMult > 0) {
+      mult += comboMult;
+    }
+
+    // Active breakthroughs: +1 per breakthrough (research mechanic)
+    // Plus breakthrough bonus passive from eureka-catalyst
+    let breakthroughMult = this._quarterProgress().activeBreakthroughs;
+    if (taskCategory) {
+      const passives = getActivePassives(this._minions(), taskCategory, minionId ?? undefined);
+      breakthroughMult += aggregatePassiveFlat(passives, 'breakthrough-bonus');
+    }
+    mult += breakthroughMult > 0 ? breakthroughMult : this._quarterProgress().activeBreakthroughs;
+
+    // Mayhem combo: check and apply 2× gold if combo triggers
+    let mayhemComboGold = false;
+    if (isOperation && taskCategory) {
+      mayhemComboGold = this.checkMayhemCombo(taskCategory, minionId);
+    }
+
+    // Boss modifier penalty (integer: -1 or -2)
+    mult += this.getBossMultPenalty();
+
+    // Ensure mult is at least 1
+    mult = Math.max(1, mult);
+
+    let finalAmount = baseGold * mult;
+    if (mayhemComboGold) finalAmount *= 2;
+
+    // Add passive flat gold from manager + completing worker
+    if (taskCategory) {
+      const passives = getActivePassives(this._minions(), taskCategory, minionId ?? undefined);
+      finalAmount += aggregatePassiveFlat(passives, 'gold-flat');
+    }
+
     finalAmount = Math.max(0, finalAmount - this._goldDrainPerTask());
 
     this._gold.update(g => g + finalAmount);
     this._totalGoldEarned.update(g => g + finalAmount);
-    const oldVillainLevel = this.villainLevel();
     this._completedCount.update(c => c + 1);
-    const newVillainLevel = this.villainLevel();
-    if (newVillainLevel > oldVillainLevel) {
-      this.events.emit({ type: 'LevelUp', target: 'villain', targetId: 'player', newLevel: newVillainLevel });
+
+    const multLabel = mult > 1 ? ` (${baseGold}g ×${mult})` : '';
+    this.addNotification(`+${finalAmount}g${multLabel} from "${taskName}"`, 'gold');
+
+    // Track quarterly progress — operations don't cost budget
+    if (isOperation) {
+      this._quarterProgress.update(p => ({
+        ...p,
+        grossGoldEarned: p.grossGoldEarned + finalAmount,
+      }));
+
+      // Track research completions for breakthrough mechanic
+      if (taskCategory === 'research') {
+        this._quarterProgress.update(p => ({
+          ...p,
+          researchCompleted: p.researchCompleted + 1,
+        }));
+        this.checkBreakthrough(taskCategory);
+      }
+    } else {
+      // Scheme/board task — costs budget
+      this._quarterProgress.update(p => ({
+        ...p,
+        grossGoldEarned: p.grossGoldEarned + finalAmount,
+        tasksCompleted: p.tasksCompleted + 1,
+      }));
     }
-
-    this.addNotification(`+${finalAmount}g from "${taskName}"`, 'gold');
-
-    // Award department XP (efficiency bonus as XP multiplier)
-    if (taskTier && taskCategory && this._unlockedDepartments().has(taskCategory)) {
-      this.awardDeptXp(taskCategory, taskTier, source);
-    }
-
-    // Track quarterly progress
-    this._quarterProgress.update(p => ({
-      ...p,
-      grossGoldEarned: p.grossGoldEarned + finalAmount,
-      tasksCompleted: p.tasksCompleted + 1,
-    }));
 
     // Emit task completed event
     if (taskTier && taskCategory) {
@@ -1108,34 +1201,6 @@ export class GameStateService {
     this.checkQuarterCompletion();
   }
 
-  private awardDeptXp(category: TaskCategory, tier: TaskTier, source: 'minion' | 'click' = 'minion'): void {
-    const baseXp = DEPT_TIER_XP[tier];
-    const jokerDeptXpMult = this.getJokerDeptXpMult(category);
-    const xpGain = Math.round(baseXp * (1 + this.voucherXpMult()) * jokerDeptXpMult);
-    this._departments.update(depts => {
-      const dept = depts[category];
-      const newXp = dept.xp + xpGain;
-      const newLevel = deptLevelFromXp(newXp);
-      const didLevelUp = newLevel > dept.level;
-
-      if (didLevelUp) {
-        const unlocked = availableTiersForDeptLevel(newLevel);
-        const highest = unlocked[unlocked.length - 1];
-        this.addNotification(
-          `${category.charAt(0).toUpperCase() + category.slice(1)} dept reached level ${newLevel}! (${highest} unlocked)`,
-          'task');
-        this.events.emit({
-          type: 'LevelUp', target: 'department', targetId: category, newLevel,
-        }
-        );
-      }
-
-      return {
-        ...depts,
-        [category]: { ...dept, xp: newXp, level: newLevel },
-      };
-    });
-  }
 
   // ─── Queue cleanup ─────────────────────────
   private cleanDeptQueue(cat: TaskCategory): void {
@@ -1145,47 +1210,16 @@ export class GameStateService {
     }));
   }
 
-  private cleanPlayerQueue(): void {
-    this._playerQueue.update(queue =>
-      queue.filter(t => t.status !== 'complete')
-    );
-  }
 
-  private createMinion(forceSpecialty?: TaskCategory): Minion {
-    const name = this.pickMinionName();
-    const color = MINION_COLORS[Math.floor(Math.random() * MINION_COLORS.length)];
-    const accessory = MINION_ACCESSORIES[Math.floor(Math.random() * MINION_ACCESSORIES.length)];
-    const specialty = forceSpecialty ?? SPECIALTY_CATEGORIES[Math.floor(Math.random() * SPECIALTY_CATEGORIES.length)];
-
-    const randStat = () => {
-      const r = (Math.random() + Math.random()) / 2;
-      return Math.round((0.7 + r * 0.6) * 100) / 100;
-    };
-
+  private createMinion(archetypeId: string): Minion {
     return {
       id: crypto.randomUUID(),
-      name,
-      appearance: { color, accessory } as MinionAppearance,
+      archetypeId,
+      role: 'worker',
       status: 'idle',
       assignedTaskId: null,
-      stats: { speed: randStat(), efficiency: randStat() },
-      specialty,
-      assignedDepartment: specialty, // default to their specialty
-      xp: 0,
-      level: 1,
+      assignedDepartment: null,
     };
-  }
-
-  private pickMinionName(): string {
-    if (this.usedNameIndices.size >= MINION_NAMES.length) {
-      this.usedNameIndices.clear();
-    }
-    let idx: number;
-    do {
-      idx = Math.floor(Math.random() * MINION_NAMES.length);
-    } while (this.usedNameIndices.has(idx));
-    this.usedNameIndices.add(idx);
-    return MINION_NAMES[idx];
   }
 
   private addNotification(message: string, type: GameNotification['type']): void {
@@ -1198,13 +1232,375 @@ export class GameStateService {
     this._notifications.update(list => [...list, notification]);
   }
 
+  // ─── Dept tier unlocking ──────────────────
+
+  /** Unlock a tier in a department (costs gold) */
+  unlockDeptTier(category: TaskCategory, tier: TaskTier): boolean {
+    const unlocks = this._deptTierUnlocks();
+    if (unlocks[category].has(tier)) return false; // already unlocked
+    const cost = TIER_UNLOCK_COSTS[tier];
+    if (cost === 0) return false; // petty is always free
+    if (this._gold() < cost) return false;
+
+    this._gold.update(g => g - cost);
+    this._deptTierUnlocks.update(u => {
+      const updated = { ...u };
+      updated[category] = new Set(u[category]);
+      updated[category].add(tier);
+      return updated;
+    });
+
+    const label = DEPARTMENT_LABELS[category].label;
+    this.addNotification(`Unlocked ${tier} tier in ${label}!`, 'task');
+    return true;
+  }
+
+  // ─── Scheme deck system ──────────────────
+
+  /** Generate a quarterly deck based on budget and Schemes dept level.
+   *  Card count = budget + 5 (dismiss buffer). Tier distribution scales with level. */
+  generateQuarterlyDeck(budget: number, schemesLevel: number): SchemeCard[] {
+    const deck: SchemeCard[] = [];
+    const executionDepts: TaskCategory[] = ['heists', 'research', 'mayhem'];
+    const cardCount = budget + 5;
+
+    // Tier distribution based on Schemes dept level
+    let tierWeights: { tier: TaskTier; weight: number }[];
+    if (schemesLevel >= 8) {
+      tierWeights = [
+        { tier: 'petty', weight: 10 },
+        { tier: 'sinister', weight: 30 },
+        { tier: 'diabolical', weight: 35 },
+        { tier: 'legendary', weight: 25 },
+      ];
+    } else if (schemesLevel >= 5) {
+      tierWeights = [
+        { tier: 'petty', weight: 30 },
+        { tier: 'sinister', weight: 40 },
+        { tier: 'diabolical', weight: 20 },
+        { tier: 'legendary', weight: 10 },
+      ];
+    } else if (schemesLevel >= 3) {
+      tierWeights = [
+        { tier: 'petty', weight: 60 },
+        { tier: 'sinister', weight: 30 },
+        { tier: 'diabolical', weight: 10 },
+      ];
+    } else {
+      tierWeights = [
+        { tier: 'petty', weight: 90 },
+        { tier: 'sinister', weight: 10 },
+      ];
+    }
+
+    const totalWeight = tierWeights.reduce((a, w) => a + w.weight, 0);
+
+    for (let i = 0; i < cardCount; i++) {
+      // Pick tier from weighted distribution
+      let roll = Math.random() * totalWeight;
+      let tier: TaskTier = 'petty';
+      for (const tw of tierWeights) {
+        roll -= tw.weight;
+        if (roll <= 0) { tier = tw.tier; break; }
+      }
+
+      // Evenly distribute target depts
+      const targetDept = executionDepts[i % executionDepts.length];
+      deck.push(this.generateSchemeCard(tier, targetDept));
+    }
+
+    return this.shuffleDeck(deck);
+  }
+
+  /** Generate a single scheme card with pre-rolled operation data */
+  generateSchemeCard(tier: TaskTier, targetDept: TaskCategory): SchemeCard {
+    const config = SCHEME_TIER_CONFIG[tier];
+    let opCount = rollOperationCount(tier);
+
+    // Check for ops-coordinator passive bonus (30% chance extra op)
+    // Only applies from managers in the schemes department
+    const schemesPassives = getActivePassives(this._minions(), 'schemes');
+    const opBonus = aggregatePassiveFlat(schemesPassives, 'op-count-bonus');
+    if (opBonus > 0 && Math.random() < opBonus) {
+      opCount += 1;
+    }
+
+    // Pre-roll operation tiers (same as scheme tier for now)
+    const operationTiers: TaskTier[] = [];
+    for (let i = 0; i < opCount; i++) {
+      operationTiers.push(tier);
+    }
+
+    // Pick a random template name for flavor
+    const templates = TASK_POOL.filter(t => t.tier === tier);
+    const templateId = templates.length > 0
+      ? templates[Math.floor(Math.random() * templates.length)].name
+      : `${tier}-scheme`;
+
+    const isSpecialOp = Math.random() < this.SPECIAL_OP_CHANCE;
+
+    return {
+      id: crypto.randomUUID(),
+      templateId,
+      tier,
+      targetDept,
+      operationCount: opCount,
+      operationTiers,
+      clicksRequired: config.clicks,
+      directGold: config.directGold,
+      isSpecialOp,
+    };
+  }
+
+  /** Draw a card from the deck to the board. Returns false if deck is empty (dead draw). */
+  drawSchemeCard(): boolean {
+    const deck = this._schemeDeck();
+    if (deck.length === 0) return false; // Dead draw — no reshuffle
+
+    const [card, ...remaining] = this._schemeDeck();
+    this._schemeDeck.set(remaining);
+
+    // Convert scheme card to a Task for the mission board
+    const task = this.schemeCardToTask(card);
+    this._backlog.update(board => [...board, task]);
+    return true;
+  }
+
+  /** Fill the board to capacity from the deck (replaces preseedBoard) */
+  drawSchemeHand(): void {
+    const capacity = Math.min(this.backlogCapacity(), 8); // Cap at 8 for initial hand
+    const currentCount = this._backlog().length;
+    const toAdd = Math.max(0, capacity - currentCount);
+    for (let i = 0; i < toAdd; i++) {
+      if (!this.drawSchemeCard()) break;
+    }
+  }
+
+  /** Dismiss a scheme card from the board and draw a replacement */
+  dismissScheme(taskId: string): boolean {
+    const progress = this._quarterProgress();
+    if (progress.dismissalsRemaining <= 0) return false;
+
+    const task = this._backlog().find(t => t.id === taskId);
+    if (!task) return false;
+
+    this._backlog.update(board => board.filter(t => t.id !== taskId));
+    this._quarterProgress.update(p => ({
+      ...p,
+      dismissalsRemaining: p.dismissalsRemaining - 1,
+    }));
+
+    // Draw a replacement
+    this.drawSchemeCard();
+
+    this.addNotification('Scheme dismissed — new intel incoming!', 'task');
+    return true;
+  }
+
+  /** Convert a SchemeCard to a Task for the mission board */
+  private schemeCardToTask(card: SchemeCard): Task {
+    const template: TaskTemplate = {
+      name: card.templateId,
+      description: `${card.tier} scheme → ${card.operationCount}× ${DEPARTMENT_LABELS[card.targetDept].label} ops`,
+      category: 'schemes', // Schemes are always category 'schemes'
+      tier: card.tier,
+    };
+
+    return {
+      id: card.id,
+      template,
+      status: 'queued',
+      tier: card.tier,
+      goldReward: card.directGold,
+      clicksRequired: card.clicksRequired,
+      clicksRemaining: card.clicksRequired,
+      assignedMinionId: null,
+      queuedAt: Date.now(),
+      isSpecialOp: card.isSpecialOp,
+      assignedQueue: null,
+      schemeTargetDept: card.targetDept,
+      schemeOperationCount: card.operationCount,
+      schemeOperationTiers: card.operationTiers,
+    };
+  }
+
+  /** Generate 1-3 operation Tasks from a completed scheme and route them to dept queues.
+   *  Operations are only generated if the target department is unlocked.
+   *  Overflow ops (beyond dept queue capacity) are silently dropped. */
+  generateOperations(schemeCard: SchemeCard, comboMult: number = 0): void {
+    const dept = schemeCard.targetDept;
+
+    // Only generate operations if the target department is unlocked
+    if (!this.unlockedDepartments().has(dept)) return;
+
+    const deptLevel = this._departments()[dept].level;
+    const capacity = this.deptQueueCapacity()[dept];
+    let currentCount = this._departmentQueues()[dept].length;
+    let opsAdded = 0;
+    let opsDropped = 0;
+
+    for (let i = 0; i < schemeCard.operationCount; i++) {
+      if (currentCount >= capacity) { opsDropped++; continue; }
+
+      const opTier = schemeCard.operationTiers[i] ?? schemeCard.tier;
+      const config = TIER_CONFIG[opTier];
+
+      // Apply department-specific modifiers to the operation
+      let opGold: number;
+      let opClicks: number;
+
+      switch (dept) {
+        case 'heists': {
+          // Check heist-floor passive for adjusted floor
+          const heistPassives = getActivePassives(this._minions(), 'heists');
+          const floorBonus = aggregatePassiveFlat(heistPassives, 'heist-floor');
+          opGold = rollHeistGold(config.gold, deptLevel, floorBonus);
+          opClicks = config.clicks;
+          break;
+        }
+        case 'mayhem':
+          opGold = getMayhemGold(config.gold);
+          opClicks = getMayhemClicks(config.clicks);
+          break;
+        default: // research and fallback
+          opGold = config.gold;
+          opClicks = config.clicks;
+          break;
+      }
+
+      // Apply passive click reduction from dept manager
+      const passiveClickReduction = this.getPassiveClickReductionForDept(dept);
+      opClicks = Math.max(3, opClicks - passiveClickReduction);
+
+      // Pick a template for flavor
+      const templates = TASK_POOL.filter(t => t.category === dept && t.tier === opTier);
+      const template: TaskTemplate = templates.length > 0
+        ? templates[Math.floor(Math.random() * templates.length)]
+        : { name: `${opTier} ${dept} op`, description: '', category: dept, tier: opTier };
+
+      const operation: Task = {
+        id: crypto.randomUUID(),
+        template,
+        status: 'queued',
+        tier: opTier,
+        goldReward: opGold,
+        clicksRequired: opClicks,
+        clicksRemaining: opClicks,
+        assignedMinionId: null,
+        queuedAt: Date.now(),
+        isSpecialOp: schemeCard.isSpecialOp,
+        assignedQueue: dept,
+        isOperation: true,
+        comboMult: comboMult > 0 ? comboMult : undefined,
+      };
+
+      // Route to the target department's queue
+      this._departmentQueues.update(queues => ({
+        ...queues,
+        [dept]: [...queues[dept], operation],
+      }));
+      currentCount++;
+      opsAdded++;
+    }
+
+    const deptLabel = DEPARTMENT_LABELS[dept].label;
+    if (opsDropped > 0) {
+      this.addNotification(
+        `Scheme done! ${opsAdded} ${deptLabel} op${opsAdded !== 1 ? 's' : ''} deployed, ${opsDropped} lost (queue full)`,
+        'task'
+      );
+    } else {
+      this.addNotification(
+        `Scheme complete! ${opsAdded} ${deptLabel} op${opsAdded !== 1 ? 's' : ''} deployed`,
+        'task'
+      );
+    }
+  }
+
+  /** Fisher-Yates shuffle */
+  private shuffleDeck(deck: SchemeCard[]): SchemeCard[] {
+    const shuffled = [...deck];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+
+  /** Add a scheme card to the deck (for research growth) */
+  addSchemeCardToDeck(tier: TaskTier, targetDept?: TaskCategory): void {
+    const executionDepts: TaskCategory[] = ['heists', 'research', 'mayhem'];
+    const dept = targetDept ?? executionDepts[Math.floor(Math.random() * executionDepts.length)];
+    const card = this.generateSchemeCard(tier, dept);
+    this._schemeDeck.update(deck => [...deck, card]);
+  }
+
+  /** Check and trigger research breakthrough mechanic */
+  private checkBreakthrough(category: TaskCategory): void {
+    if (category !== 'research') return;
+
+    const researchLevel = this._departments().research.level;
+    const threshold = getBreakthroughThreshold(researchLevel);
+    const researchCompleted = this._quarterProgress().researchCompleted;
+
+    if (researchCompleted > 0 && researchCompleted % threshold === 0) {
+      this._quarterProgress.update(p => ({
+        ...p,
+        activeBreakthroughs: p.activeBreakthroughs + 1,
+      }));
+      const breakthroughs = this._quarterProgress().activeBreakthroughs;
+      this.addNotification(`⚡ Research Breakthrough #${breakthroughs}! +1 mult to ALL departments`, 'task');
+    }
+
+    // Deck growth: every N research completions, add a card
+    if (researchCompleted > 0 && researchCompleted % RESEARCH_DECK_GROWTH_INTERVAL === 0) {
+      // Tier based on research dept level
+      const tierForGrowth: TaskTier = researchLevel >= 5 ? 'diabolical' : researchLevel >= 3 ? 'sinister' : 'petty';
+      this.addSchemeCardToDeck(tierForGrowth);
+      this.addNotification('Research added a new scheme to your deck!', 'task');
+    }
+  }
+
+  /** Check and update mayhem combo counter */
+  private checkMayhemCombo(category: TaskCategory, minionId?: string | null): boolean {
+    const now = Date.now();
+    let comboActive = false;
+
+    if (category === 'mayhem') {
+      const lastTime = this._lastMayhemCompletionTime();
+      if (lastTime > 0 && (now - lastTime) <= MAYHEM_COMBO_TIMEOUT_MS) {
+        this._mayhemComboCount.update(c => c + 1);
+      } else {
+        this._mayhemComboCount.set(1);
+      }
+      this._lastMayhemCompletionTime.set(now);
+
+      // Combo threshold may be reduced by demolitions-expert passive
+      const passives = getActivePassives(this._minions(), 'mayhem', minionId ?? undefined);
+      const thresholdReduction = aggregatePassiveFlat(passives, 'combo-threshold');
+      const effectiveThreshold = Math.max(2, MAYHEM_COMBO_THRESHOLD + thresholdReduction);
+
+      if (this._mayhemComboCount() >= effectiveThreshold) {
+        comboActive = true;
+        this._mayhemComboCount.set(0); // Reset after triggering
+        this.addNotification('🔥 Mayhem Combo! 2× gold on this operation!', 'task');
+      }
+    } else {
+      // Non-mayhem completion resets the combo
+      this._mayhemComboCount.set(0);
+    }
+
+    return comboActive;
+  }
+
   // ─── Voucher shop ─────────────────────────
 
   purchaseVoucher(id: VoucherId): boolean {
     const current = this._ownedVouchers()[id];
     const def = VOUCHERS[id];
     if (current >= def.maxLevel) return false;
-    const cost = getVoucherCost(id, current + 1);
+    const year = this._quarterProgress().year;
+    const cost = getVoucherCost(id, current + 1, year);
     if (this._gold() < cost) return false;
     this._gold.update(g => g - cost);
     this._ownedVouchers.update(v => ({ ...v, [id]: current + 1 }));
@@ -1299,14 +1695,6 @@ export class GameStateService {
       this.revertReview();
     }
 
-    // If quarter passed, show pack reward before shop
-    const latestResult = progress.quarterResults[progress.quarterResults.length - 1];
-    if (latestResult?.passed) {
-      this.openPack('quarterly-reward', progress.quarter as 1 | 2 | 3 | 4);
-      this._showPackReward.set(true);
-      return; // Pack → shop → advance
-    }
-
     // Show shop before advancing (Q1→Q2, Q2→Q3, Q4→Y+1 Q1)
     this._showShop.set(true);
   }
@@ -1319,6 +1707,14 @@ export class GameStateService {
       (progress.quarter + 1) as 1 | 2 | 3 | 4;
     const nextYear = progress.quarter === 4 ? progress.year + 1 : progress.year;
 
+    // Calculate dismissals with paper-shredder passive bonus
+    let dismissBonus = this.voucherDismissalBonus();
+    // Add dismiss-bonus from all managers
+    for (const cat of ALL_CATEGORIES) {
+      const passives = getActivePassives(this._minions(), cat);
+      dismissBonus += aggregatePassiveFlat(passives, 'dismiss-bonus');
+    }
+
     this._quarterProgress.set({
       year: nextYear,
       quarter: nextQuarter,
@@ -1327,7 +1723,26 @@ export class GameStateService {
       isComplete: false,
       missedQuarters: nextQuarter === 1 ? 0 : progress.missedQuarters,
       quarterResults: progress.quarterResults,
+      dismissalsRemaining: BASE_DISMISSALS + dismissBonus,
+      researchCompleted: 0,
+      activeBreakthroughs: 0,
     });
+
+    // Reset mayhem combo
+    this._mayhemComboCount.set(0);
+    this._lastMayhemCompletionTime.set(0);
+
+    // Reset combo state
+    this._comboState.set(createDefaultComboState());
+
+    // Generate new quarterly deck — leftover cards from previous quarter carry over
+    const target = getQuarterTarget(nextYear, nextQuarter);
+    const schemesLevel = this._departments().schemes.level;
+    const newCards = this.generateQuarterlyDeck(target.taskBudget, schemesLevel);
+    this._schemeDeck.update(deck => [...deck, ...newCards]);
+
+    // Draw a new hand of scheme cards from the deck
+    this.drawSchemeHand();
   }
 
   /** Dismiss the reviewer intro modal (called when player clicks "Begin Review") */
@@ -1370,19 +1785,17 @@ export class GameStateService {
           this._upgradesDisabled.set(true);
           break;
         case 'board-frozen':
-          this._boardFrozen.set(true);
+          this._backlogFrozen.set(true);
           break;
         case 'board-limited':
-          this._boardLimited.set(true);
+          this._backlogLimited.set(true);
           break;
         case 'gold-drain':
           this._goldDrainPerTask.set(5);
           break;
         case 'gold-halved':
-          this._goldRewardMultiplier.set(this._goldRewardMultiplier() * 0.5);
-          break;
         case 'gold-reduced-30':
-          this._goldRewardMultiplier.set(this._goldRewardMultiplier() * 0.7);
+          // Handled by getBossMultPenalty() as integer mult adjustments
           break;
         case 'starting-gold-zero':
           this._gold.set(0);
@@ -1400,7 +1813,7 @@ export class GameStateService {
           this._lockedCategory.set('mayhem');
           break;
         case 'automation-disabled':
-          this._automationDisabled.set(true);
+          // Automation engine removed — modifier has no effect
           break;
       }
     }
@@ -1409,12 +1822,11 @@ export class GameStateService {
   private revertModifiers(): void {
     this._hiringDisabled.set(false);
     this._upgradesDisabled.set(false);
-    this._boardFrozen.set(false);
-    this._boardLimited.set(false);
+    this._backlogFrozen.set(false);
+    this._backlogLimited.set(false);
     this._goldDrainPerTask.set(0);
     this._goldRewardMultiplier.set(1);
     this._lockedCategory.set(null);
-    this._automationDisabled.set(false);
   }
 
   private revertReview(): void {
@@ -1424,156 +1836,32 @@ export class GameStateService {
     this.revertModifiers();
   }
 
-  // ─── Card/joker collection ──────────────
+  // ─── Passive effect helpers (private) ──────
 
-  addCard(cardId: CardId): void {
-    this._ownedCards.update(s => { const n = new Set(s); n.add(cardId); return n; });
-  }
-
-  addJoker(jokerId: JokerId): void {
-    this._ownedJokers.update(s => { const n = new Set(s); n.add(jokerId); return n; });
-  }
-
-  // ─── Joker slots ────────────────────────
-
-  equipJoker(jokerId: JokerId): boolean {
-    if (!this._ownedJokers().has(jokerId)) return false;
-    if (this._equippedJokers().includes(jokerId)) return false;
-    if (this._equippedJokers().length >= MAX_JOKER_SLOTS) return false;
-    this._equippedJokers.update(list => [...list, jokerId]);
-    return true;
-  }
-
-  unequipJoker(jokerId: JokerId): void {
-    this._equippedJokers.update(list => list.filter(id => id !== jokerId));
-  }
-
-  // ─── Rule CRUD ──────────────────────────
-
-  addRule(rule: Rule): boolean {
-    if (this.activeRuleCount() >= this.maxRuleSlots()) return false;
-    // Check card uniqueness: no card already in use by another rule
-    const inUse = getCardsInUse(this._rules());
-    const needed = getCardsUsedByRule(rule);
-    for (const cardId of needed) {
-      if (inUse.has(cardId)) return false;
+  /** Aggregate click-reduction passives from all dept managers (global) */
+  private getPassiveClickReduction(): number {
+    let total = 0;
+    for (const cat of ALL_CATEGORIES) {
+      const passives = getActivePassives(this._minions(), cat);
+      total += aggregatePassiveFlat(passives, 'click-reduction');
     }
-    this._rules.update(list => {
-      const custom = list.filter(r => !isDefaultRule(r));
-      custom.push(rule);
-      // Sort by priority, default always last
-      custom.sort((a, b) => a.priority - b.priority);
-      return [...custom, DEFAULT_RULE];
-    });
-    return true;
+    return total;
   }
 
-  removeRule(ruleId: string): void {
-    if (ruleId === '__default__') return;
-    this._rules.update(list => list.filter(r => r.id !== ruleId));
+  /** Aggregate click-reduction passives for a specific department */
+  private getPassiveClickReductionForDept(dept: TaskCategory): number {
+    const passives = getActivePassives(this._minions(), dept);
+    return aggregatePassiveFlat(passives, 'click-reduction');
   }
 
-  updateRule(ruleId: string, updates: Partial<Rule>): void {
-    if (ruleId === '__default__') return;
-    this._rules.update(list =>
-      list.map(r => r.id === ruleId ? { ...r, ...updates, id: ruleId } : r)
-    );
-  }
-
-  reorderRules(ruleIds: string[]): void {
-    this._rules.update(list => {
-      const byId = new Map(list.map(r => [r.id, r]));
-      const ordered: Rule[] = [];
-      let priority = 1;
-      for (const id of ruleIds) {
-        const rule = byId.get(id);
-        if (rule && !isDefaultRule(rule)) {
-          ordered.push({ ...rule, priority: priority++ });
-        }
-      }
-      ordered.push(DEFAULT_RULE);
-      return ordered;
-    });
-  }
-
-  toggleRuleEnabled(ruleId: string): void {
-    if (ruleId === '__default__') return;
-    this._rules.update(list =>
-      list.map(r => r.id === ruleId ? { ...r, enabled: !r.enabled } : r)
-    );
-  }
-
-  // ─── Card packs ─────────────────────────
-
-  openPack(packType: PackType, quarter?: 1 | 2 | 3 | 4): void {
-    const items = generatePackContents(
-      packType,
-      this._ownedCards(),
-      this._ownedJokers(),
-      quarter,
-    );
-    this._pendingPack.set(items);
-    this._pendingPickCount.set(getPackPickCount(packType, quarter));
-  }
-
-  purchasePack(packType: PackType): boolean {
-    const cost = PACK_DEFINITIONS[packType].goldCost;
-    if (this._gold() < cost) return false;
-    this._gold.update(g => g - cost);
-    this.openPack(packType);
-    this._showPackReward.set(true);
-    return true;
-  }
-
-  pickFromPack(selectedIds: string[]): void {
-    for (const id of selectedIds) {
-      const item = this._pendingPack()?.find(i => i.id === id);
-      if (!item) continue;
-      if (item._itemType === 'card') {
-        this.addCard(id);
-      } else {
-        this.addJoker(id);
-      }
+  /** Get integer mult penalty from boss review modifiers.
+   *  gold-halved = -2, gold-reduced-30 = -1 */
+  private getBossMultPenalty(): number {
+    let penalty = 0;
+    for (const mod of this._activeModifiers()) {
+      if (mod.id === 'gold-halved') penalty -= 2;
+      if (mod.id === 'gold-reduced-30') penalty -= 1;
     }
-    this._pendingPack.set(null);
-    this._pendingPickCount.set(0);
-  }
-
-  /** Called after pack reward is dismissed to proceed to shop */
-  continueAfterPack(): void {
-    this._showPackReward.set(false);
-    this._showShop.set(true);
-  }
-
-  // ─── Public assignment (for rule engine) ──
-
-  executeAssignment(minionId: string, taskId: string, dept: TaskCategory): void {
-    this.assignMinionToTask(minionId, taskId, dept);
-  }
-
-  // ─── Joker effect helpers (private) ──────
-
-  private getJokerGoldMult(context: JokerContext): number {
-    return aggregateJokerMult(this._equippedJokers(), 'gold-mult', context);
-  }
-
-  private getJokerFlatGold(): number {
-    return aggregateJokerFlat(this._equippedJokers(), 'gold-flat', {});
-  }
-
-  private getJokerClickPowerBonus(): number {
-    return aggregateJokerFlat(this._equippedJokers(), 'click-power', {});
-  }
-
-  private getJokerSpeedMult(): number {
-    return aggregateJokerMult(this._equippedJokers(), 'speed-mult', {});
-  }
-
-  private getJokerXpMult(): number {
-    return aggregateJokerMult(this._equippedJokers(), 'xp-mult', {});
-  }
-
-  private getJokerDeptXpMult(category: TaskCategory): number {
-    return aggregateJokerMult(this._equippedJokers(), 'dept-xp-mult', { department: category });
+    return penalty;
   }
 }

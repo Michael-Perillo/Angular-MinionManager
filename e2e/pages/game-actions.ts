@@ -9,10 +9,9 @@ export class GameActions {
     private workbench: WorkbenchPage,
   ) {}
 
-  /** Accept a mission, route it to the workbench, click to completion, return gold. */
+  /** Execute a scheme (auto-routes to Schemes), click to completion, return gold. */
   async earnGold(): Promise<number> {
-    await this.missionBoard.sendFirstMissionToQueue();
-    await this.missionBoard.routeToWorkbench();
+    await this.missionBoard.executeFirstScheme();
     await this.workbench.clickUntilTaskComplete();
     return this.header.gold;
   }

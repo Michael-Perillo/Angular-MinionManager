@@ -4,15 +4,11 @@ import { Minion } from '../../../core/models';
 
 const makeMinion = (overrides: Partial<Minion> = {}): Minion => ({
   id: 'minion-1',
-  name: 'Grim',
-  appearance: { color: '#6c3483', accessory: 'goggles' },
+  archetypeId: 'penny-pincher',
+  role: 'worker',
   status: 'idle',
   assignedTaskId: null,
-  stats: { speed: 1.0, efficiency: 1.1 },
-  specialty: 'schemes',
   assignedDepartment: 'schemes',
-  xp: 0,
-  level: 1,
   ...overrides,
 });
 
@@ -38,53 +34,38 @@ export const Working: Story = {
   },
 };
 
-export const WithHelmet: Story = {
+export const UncommonMinion: Story = {
   args: {
     minion: makeMinion({
-      name: 'Skulk',
-      appearance: { color: '#1a5276', accessory: 'helmet' },
+      archetypeId: 'vault-cracker',
+      assignedDepartment: 'heists',
     }),
   },
 };
 
-export const WithCape: Story = {
+export const RareMinion: Story = {
   args: {
     minion: makeMinion({
-      name: 'Wraith',
-      appearance: { color: '#7b241c', accessory: 'cape' },
+      archetypeId: 'golden-touch',
     }),
   },
 };
 
-export const WithHorns: Story = {
+export const Manager: Story = {
   args: {
     minion: makeMinion({
-      name: 'Doom',
-      appearance: { color: '#1e8449', accessory: 'horns' },
+      archetypeId: 'drill-sergeant',
+      role: 'manager',
+      assignedDepartment: 'schemes',
     }),
   },
 };
 
-export const HighLevel: Story = {
+export const Unassigned: Story = {
   args: {
     minion: makeMinion({
-      name: 'Mortis',
-      appearance: { color: '#922b21', accessory: 'cape' },
-      level: 9,
-      xp: 800,
-      stats: { speed: 1.2, efficiency: 1.3 },
-    }),
-  },
-};
-
-export const Mastermind: Story = {
-  args: {
-    minion: makeMinion({
-      name: 'Wraith',
-      appearance: { color: '#4a235a', accessory: 'horns' },
-      level: 12,
-      xp: 2000,
-      stats: { speed: 1.3, efficiency: 1.3 },
+      archetypeId: 'overdriver',
+      assignedDepartment: null,
     }),
   },
 };

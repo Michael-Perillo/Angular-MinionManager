@@ -127,6 +127,13 @@ body {
   100% { transform: translateY(-60px) scale(0.5); opacity: 0; }
 }
 
+/* Rule fire glow */
+@keyframes rule-fire {
+  0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); }
+  50% { box-shadow: 0 0 8px 2px rgba(231, 76, 60, 0.3); }
+  100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+}
+
 /* Subtle pulse for interactive elements */
 @keyframes subtle-pulse {
   0%, 100% { opacity: 1; }
@@ -168,6 +175,55 @@ body {
 .animate-subtle-pulse {
   animation: subtle-pulse 2s ease-in-out infinite;
 }
+
+.animate-rule-fire {
+  animation: rule-fire 0.6s ease-out;
+}
+
+/* Slide-down for expandable panels */
+@keyframes slide-down {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 200px; }
+}
+
+.animate-slide-down {
+  animation: slide-down 0.15s ease-out forwards;
+  overflow: hidden;
+}
+
+/* Card exit animations for mission board */
+@keyframes card-exit-left {
+  0%   { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(-120%) scale(0.9); opacity: 0; }
+}
+@keyframes card-exit-right {
+  0%   { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(120%) scale(0.9); opacity: 0; }
+}
+.animate-card-dismiss { animation: card-exit-left 350ms ease-in forwards; }
+.animate-card-execute { animation: card-exit-right 350ms ease-in forwards; }
+
+/* Task completion flash (worker card, 350ms) */
+@keyframes task-complete {
+  0%   { box-shadow: 0 0 8px rgba(244, 162, 97, 0.6); opacity: 1; transform: scale(1); }
+  40%  { box-shadow: 0 0 20px rgba(244, 162, 97, 0.8); opacity: 1; transform: scale(1.02); }
+  100% { box-shadow: 0 0 0 rgba(244, 162, 97, 0); opacity: 0; transform: scale(0.95); }
+}
+.animate-task-complete { animation: task-complete 350ms ease-out forwards; }
+
+/* New task scale-in (worker card, 300ms) */
+@keyframes task-enter {
+  0%   { opacity: 0; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-task-enter { animation: task-enter 300ms ease-out forwards; }
+
+/* Queue grab — task slides up and fades (300ms) */
+@keyframes queue-grab {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-20px) scale(0.9); }
+}
+.animate-queue-grab { animation: queue-grab 300ms ease-in forwards; pointer-events: none; }
 
 /* Progress bar with shimmer */
 .progress-bar-shimmer {

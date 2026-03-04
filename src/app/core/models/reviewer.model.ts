@@ -23,14 +23,14 @@ export const ALL_MODIFIERS: Modifier[] = [
   { id: 'lock-mayhem', name: 'Mayhem Locked', description: 'Mayhem department is locked during review', category: 'task-constraint' },
   // Operational constraints
   { id: 'no-hiring', name: 'Hiring Freeze', description: 'No new hires during review', category: 'operational-constraint' },
-  { id: 'board-frozen', name: 'Board Frozen', description: 'Mission board does not refresh', category: 'operational-constraint' },
+  { id: 'board-frozen', name: 'Intel Blackout', description: 'Backlog reduced to 1 mission during review', category: 'operational-constraint' },
   { id: 'upgrades-disabled', name: 'Budget Cuts', description: 'Upgrades are disabled during review', category: 'operational-constraint' },
   { id: 'board-limited', name: 'Slim Pickings', description: 'Board shows only 2 missions at a time', category: 'operational-constraint' },
   { id: 'automation-disabled', name: 'Manual Override', description: 'Automation rules are disabled — only default auto-assign works', category: 'operational-constraint' },
   // Economic penalties
   { id: 'gold-drain', name: 'Overhead Tax', description: '5g deducted per completed task', category: 'economic-penalty' },
-  { id: 'gold-halved', name: 'Revenue Split', description: 'All gold rewards reduced by 50%', category: 'economic-penalty' },
-  { id: 'gold-reduced-30', name: 'Profit Sharing', description: 'All gold rewards reduced by 30%', category: 'economic-penalty' },
+  { id: 'gold-halved', name: 'Revenue Split', description: '-2 mult on all tasks', category: 'economic-penalty' },
+  { id: 'gold-reduced-30', name: 'Profit Sharing', description: '-1 mult on all tasks', category: 'economic-penalty' },
   { id: 'starting-gold-zero', name: 'Clean Slate', description: 'Gold set to 0 at start of review', category: 'economic-penalty' },
 ];
 

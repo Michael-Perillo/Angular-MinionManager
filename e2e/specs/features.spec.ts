@@ -7,85 +7,44 @@ test.beforeEach(async ({ nav }) => {
 // ─── Progressive Department Unlocking ──────────
 
 test.describe('Progressive Department Unlocking', () => {
-  test('New game starts with no department columns visible', async ({ kanban }) => {
+  test('New game starts with schemes department column visible', async ({ kanban }) => {
     await kanban.goToDepartments();
-    await expect(kanban.departmentColumns).toHaveCount(0);
+    await expect(kanban.departmentColumns).toHaveCount(1);
   });
 
-  test('Hiring a minion unlocks a department column', async ({ nav, hire, header, kanban }) => {
-    await nav.seedState({ gold: 200 });
-    await hire.scoutRecruits();
-    await hire.pickFirstCandidate();
-
-    expect(await header.minions).toBeGreaterThanOrEqual(1);
+  test('Seeded department unlock shows additional department columns', async ({ nav, kanban }) => {
+    await nav.seedState({
+      gold: 200,
+      ownedVouchers: { 'unlock-heists': 1 },
+    });
 
     await kanban.goToDepartments();
-    await expect(kanban.departmentColumns.first()).toBeVisible({ timeout: 5_000 });
-  });
-
-  test('Department opened notification appears after first hire', async ({ nav, hire, page }) => {
-    await nav.seedState({ gold: 200 });
-    await hire.scoutRecruits();
-    await hire.pickFirstCandidate();
-
-    await expect(page.getByText(/Department opened/)).toBeVisible({ timeout: 3_000 });
+    await expect(kanban.departmentColumns).toHaveCount(2);
   });
 });
 
-// ─── Minion Hiring Choice ──────────
+// ─── Minion Hiring ──────────
 
-test.describe('Minion Hiring Choice (Pick-one-of-two)', () => {
-  test('Scout Recruits shows two candidate cards', async ({ nav, hire }) => {
+test.describe('Minion Hiring', () => {
+  test('Hire Minion button hires and updates minion count', async ({ nav, hire, header }) => {
     await nav.seedState({ gold: 200 });
-    await hire.scoutRecruits();
-
-    await expect(hire.candidateCards).toHaveCount(2);
-
-    for (let i = 0; i < 2; i++) {
-      const card = hire.candidateCards.nth(i);
-      await expect(card.locator('text=Speed')).toBeVisible();
-      await expect(card.locator('text=Efficiency')).toBeVisible();
-    }
-  });
-
-  test('Cancel button dismisses candidate cards', async ({ nav, hire }) => {
-    await nav.seedState({ gold: 200 });
-    await hire.scoutRecruits();
-    await hire.cancelSelection();
-
-    await expect(hire.scoutButton).toBeVisible();
-  });
-
-  test('Choosing a candidate hires them and updates minion count', async ({ nav, hire, header }) => {
-    await nav.seedState({ gold: 200 });
-    await hire.scoutRecruits();
-    await hire.pickFirstCandidate();
+    await hire.hireMinion();
 
     expect(await header.minions).toBe(1);
-    await expect(hire.chooseText).not.toBeVisible();
   });
 
-  test('Candidate from locked dept shows "new!" badge', async ({ nav, hire }) => {
-    // Seed enough gold for two hires
+  test('Hired minion appears in unassigned pool', async ({ nav, hire, page }) => {
     await nav.seedState({ gold: 200 });
+    await hire.hireMinion();
 
-    // First hire
-    await hire.scoutRecruits();
-    await hire.pickFirstCandidate();
-    await hire.closePanel();
-
-    // Second hire
-    await hire.scoutRecruits();
-
-    // At least one candidate should show "new!" (since only 1 of 4 depts unlocked)
-    const badgeCount = await hire.newBadges.count();
-    expect(badgeCount).toBeGreaterThanOrEqual(1);
+    // The pool section or "Unassigned Pool" label should be visible
+    await expect(page.getByText(/assign/i).first()).toBeVisible({ timeout: 3_000 });
   });
 });
 
-// ─── Mission Board Sorting ──────────
+// ─── Scheme Board Sorting ──────────
 
-test.describe('Mission Board Sorting', () => {
+test.describe('Scheme Board Sorting', () => {
   test('Sort button is visible and shows "Default" initially', async ({ page, nav }) => {
     await nav.goToMissions();
     const sortBtn = page.locator('app-mission-board button').filter({ hasText: /Default/ });
@@ -139,61 +98,54 @@ test.describe('Mission Board Sorting', () => {
   });
 });
 
-// ─── Mission Router Guards ──────────
-
-test.describe('Mission Router guards', () => {
-  test('Mission router only shows My Workbench when no departments unlocked', async ({ missionBoard }) => {
-    await missionBoard.sendFirstMissionToQueue();
-
-    await expect(missionBoard.router).toBeVisible({ timeout: 3_000 });
-    await expect(missionBoard.routerButtons).toHaveCount(1);
-    await expect(missionBoard.routerButtons.first()).toContainText('My Workbench');
-  });
-});
-
 // ─── Year-End Boss Review ──────────
 
 test.describe('Year-End Boss Review', () => {
   test('Reviewer intro appears after Q3 completion', async ({ page, nav }) => {
-    // Seed at end of Q3: 59/60 tasks done, with a 1-click task in player queue
+    // Seed at end of Q3 with a 1-click task in schemes queue
     const taskId = 'e2e-q3-final';
     await nav.seedState({
       gold: 1500,
-      completedCount: 59,
+      completedCount: 44,
       totalGoldEarned: 1500,
-      unlockedDepartments: ['schemes'],
       missionBoard: [],
-      playerQueue: [
-        {
-          id: taskId,
-          template: { name: 'Q3 Final', description: 'Complete this.', category: 'schemes', tier: 'petty' },
-          status: 'queued',
-          tier: 'petty',
-          goldReward: 5,
-          clicksRequired: 1,
-          clicksRemaining: 1,
-          assignedMinionId: null,
-          queuedAt: Date.now(),
-          assignedQueue: 'player',
-        },
-      ],
+      departmentQueues: {
+        schemes: [
+          {
+            id: taskId,
+            template: { name: 'Q3 Final', description: 'Complete this.', category: 'schemes', tier: 'petty' },
+            status: 'queued',
+            tier: 'petty',
+            goldReward: 5,
+            clicksRequired: 1,
+            clicksRemaining: 1,
+            assignedMinionId: null,
+            queuedAt: Date.now(),
+            assignedQueue: 'schemes',
+          },
+        ],
+        heists: [], research: [], mayhem: [],
+      },
       quarterProgress: {
         year: 1,
         quarter: 3,
         grossGoldEarned: 1500,
-        tasksCompleted: 59,
+        tasksCompleted: 44,
         isComplete: false,
         missedQuarters: 0,
         quarterResults: [
           { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
           { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 300, tasksCompleted: 40 },
         ],
+        dismissalsRemaining: 5,
+        researchCompleted: 0,
+        activeBreakthroughs: 0,
       },
     });
 
     // Complete the final Q3 task
     await nav.goToWorkbench();
-    const clickBtn = page.locator('app-player-workbench button').filter({ hasText: /CLICK/ }).first();
+    const clickBtn = page.locator('app-department-column button').filter({ hasText: /Click/ }).first();
     await clickBtn.waitFor({ state: 'visible', timeout: 5_000 });
     await clickBtn.click();
 
@@ -212,13 +164,13 @@ test.describe('Year-End Boss Review', () => {
     await expect(reviewerIntro.getByRole('button', { name: 'Begin Review' })).toBeVisible();
   });
 
-  test('Hiring Frozen constraint visible during Q4 review', async ({ page, nav }) => {
+  test('Hiring Freeze modifier badge visible during Q4 review', async ({ page, nav }) => {
     // Seed directly in Q4 with Grimes (base: no-hiring) as reviewer
     await nav.seedState({
       gold: 200,
       completedCount: 130,
       totalGoldEarned: 2100,
-      unlockedDepartments: ['schemes', 'heists'],
+      ownedVouchers: { 'unlock-heists': 1 },
       missionBoard: [],
       currentReviewer: {
         id: 'grimes',
@@ -246,12 +198,14 @@ test.describe('Year-End Boss Review', () => {
           { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 300, tasksCompleted: 40 },
           { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 900, tasksCompleted: 60 },
         ],
+        dismissalsRemaining: 5,
+        researchCompleted: 0,
+        activeBreakthroughs: 0,
       },
     });
 
-    // Open hire panel and verify the constraint is shown
-    await nav.goToHirePanel();
-    await expect(page.getByText('Hiring Frozen')).toBeVisible({ timeout: 5_000 });
+    // Verify the modifier badge is shown in the header
+    await expect(page.getByText('Hiring Freeze')).toBeVisible({ timeout: 5_000 });
   });
 
   test('Run-over screen appears when game is over', async ({ page, nav }) => {
@@ -260,7 +214,6 @@ test.describe('Year-End Boss Review', () => {
       gold: 50,
       completedCount: 160,
       totalGoldEarned: 2200,
-      unlockedDepartments: ['schemes'],
       missionBoard: [],
       currentReviewer: {
         id: 'thornton',
@@ -289,6 +242,9 @@ test.describe('Year-End Boss Review', () => {
           { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 900, tasksCompleted: 60 },
           { year: 1, quarter: 4, passed: false, goldEarned: 100, target: 200, tasksCompleted: 30 },
         ],
+        dismissalsRemaining: 5,
+        researchCompleted: 0,
+        activeBreakthroughs: 0,
       },
     });
 
@@ -317,6 +273,9 @@ test.describe('Voucher Shop', () => {
         quarterResults: [
           { year: 1, quarter: 1, passed: true, goldEarned: 200, target: 75, tasksCompleted: 30 },
         ],
+        dismissalsRemaining: 5,
+        researchCompleted: 0,
+        activeBreakthroughs: 0,
       },
     });
 
@@ -327,22 +286,12 @@ test.describe('Voucher Shop', () => {
     await reviewContinue.click();
     await reviewModal.waitFor({ state: 'hidden', timeout: 3_000 });
 
-    // Pack reward modal should appear (passed quarter)
-    const packOpener = page.locator('app-card-pack-opener');
-    await packOpener.waitFor({ state: 'visible', timeout: 3_000 });
-
-    // Select first card and confirm
-    const firstCard = packOpener.locator('[data-testid^="pack-card-"]').first();
-    await firstCard.click();
-    const packConfirm = packOpener.getByTestId('pack-confirm-btn');
-    await packConfirm.click();
-    await packOpener.waitFor({ state: 'hidden', timeout: 3_000 });
-
-    // Shop modal should appear
+    // Shop modal should appear (no pack reward — jokers removed)
     const shop = page.locator('app-shop');
     await shop.waitFor({ state: 'visible', timeout: 3_000 });
 
-    // Buy Iron Fingers voucher
+    // Switch to Upgrades tab and buy Iron Fingers voucher
+    await shop.getByTestId('shop-tab-upgrades').click();
     const buyBtn = shop.getByTestId('buy-iron-fingers');
     await buyBtn.click();
 
@@ -373,6 +322,9 @@ test.describe('Voucher Shop', () => {
           { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 300, tasksCompleted: 40 },
           { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 900, tasksCompleted: 60 },
         ],
+        dismissalsRemaining: 5,
+        researchCompleted: 0,
+        activeBreakthroughs: 0,
       },
     });
 
@@ -388,242 +340,5 @@ test.describe('Voucher Shop', () => {
     await expect(shop).not.toBeVisible();
     const reviewerIntro = page.locator('app-reviewer-intro');
     await reviewerIntro.waitFor({ state: 'visible', timeout: 3_000 });
-  });
-});
-
-// ─── Rules & Jokers ──────────────────────────
-
-test.describe('Rules & Jokers', () => {
-  test('Rule editor opens from drawer and can create a rule', async ({ page, nav }) => {
-    test.skip(nav.isMobile, 'Drawer panel is desktop-only');
-
-    // Seed with owned cards and rule slots
-    await nav.seedState({
-      gold: 500,
-      unlockedDepartments: ['schemes'],
-      ownedCards: [
-        'when-idle', 'specialty-match', 'assign-to-work',
-        'when-task-appears', 'assign-highest-tier',
-      ],
-      ownedVouchers: { 'rule-mastery': 1 }, // 2 rule slots
-    });
-
-    // Open drawer and go to Rules tab
-    await nav.goToHirePanel(); // opens drawer
-    const rulesTab = page.locator('app-drawer-panel button').filter({ hasText: /Rules/ });
-    await rulesTab.click();
-
-    // Should see Edit button and joker slots
-    const editBtn = page.getByTestId('edit-rules-btn');
-    await editBtn.waitFor({ state: 'visible', timeout: 3_000 });
-    await editBtn.click();
-
-    // Rule editor modal should open
-    const ruleEditor = page.locator('app-rule-editor');
-    await ruleEditor.waitFor({ state: 'visible', timeout: 3_000 });
-
-    // Should show 0/2 slots used
-    await expect(ruleEditor.getByText('0/2')).toBeVisible();
-
-    // Click Add Rule
-    const addBtn = ruleEditor.getByTestId('add-rule-btn');
-    await addBtn.click();
-
-    // Builder should appear — select trigger, action
-    await expect(ruleEditor.getByText('New Rule')).toBeVisible();
-
-    // Select "When Idle" trigger (💤)
-    const triggerCard = ruleEditor.getByTestId('card-when-idle');
-    await triggerCard.click();
-
-    // Select "Assign to Work" action (⚒️)
-    const actionCard = ruleEditor.getByTestId('card-assign-to-work');
-    await actionCard.click();
-
-    // Create Rule button should be enabled now
-    const createBtn = ruleEditor.getByTestId('create-rule-btn');
-    await expect(createBtn).toBeEnabled();
-    await createBtn.click();
-
-    // Should show 1/2 slots used
-    await expect(ruleEditor.getByText('1/2')).toBeVisible();
-
-    // Close rule editor
-    const closeBtn = ruleEditor.getByTestId('rule-editor-close');
-    await closeBtn.click();
-    await ruleEditor.waitFor({ state: 'hidden', timeout: 3_000 });
-  });
-
-  test('Rule can be toggled and removed', async ({ page, nav }) => {
-    test.skip(nav.isMobile, 'Drawer panel is desktop-only');
-
-    // Seed with an existing custom rule
-    await nav.seedState({
-      gold: 500,
-      unlockedDepartments: ['schemes'],
-      ownedCards: [
-        'when-idle', 'specialty-match', 'assign-to-work',
-        'when-task-appears', 'assign-highest-tier',
-      ],
-      ownedVouchers: { 'rule-mastery': 1 },
-      rules: [
-        {
-          id: 'test-rule-1',
-          name: 'When Idle → Assign to Work',
-          priority: 0,
-          triggerId: 'when-idle',
-          conditionIds: [],
-          actionId: 'assign-to-work',
-          enabled: true,
-        },
-      ],
-    });
-
-    // Open drawer → Rules tab → Edit
-    await nav.goToHirePanel();
-    const rulesTab = page.locator('app-drawer-panel button').filter({ hasText: /Rules/ });
-    await rulesTab.click();
-    const editBtn = page.getByTestId('edit-rules-btn');
-    await editBtn.click();
-
-    const ruleEditor = page.locator('app-rule-editor');
-    await ruleEditor.waitFor({ state: 'visible', timeout: 3_000 });
-
-    // Should show 1/2 slots used
-    await expect(ruleEditor.getByText('1/2')).toBeVisible();
-
-    // Toggle the rule off
-    const ruleRow = ruleEditor.getByTestId('rule-test-rule-1');
-    const toggleBtn = ruleRow.locator('button').filter({ hasText: 'ON' });
-    await toggleBtn.click();
-
-    // Should now show OFF
-    await expect(ruleRow.locator('button').filter({ hasText: 'OFF' })).toBeVisible();
-
-    // Remove the rule
-    const removeBtn = ruleEditor.getByTestId('remove-test-rule-1');
-    await removeBtn.click();
-
-    // Should show 0/2 slots used
-    await expect(ruleEditor.getByText('0/2')).toBeVisible();
-
-    // Close
-    await ruleEditor.getByTestId('rule-editor-close').click();
-  });
-
-  test('Joker equip and unequip from drawer', async ({ page, nav }) => {
-    test.skip(nav.isMobile, 'Drawer panel is desktop-only');
-
-    // Seed with owned jokers
-    await nav.seedState({
-      gold: 500,
-      unlockedDepartments: ['schemes'],
-      ownedJokers: ['gold-rush', 'iron-fist', 'quick-study'],
-      equippedJokers: [],
-    });
-
-    // Open drawer → Rules tab
-    await nav.goToHirePanel();
-    const rulesTab = page.locator('app-drawer-panel button').filter({ hasText: /Rules/ });
-    await rulesTab.click();
-
-    // Should see 5 empty joker slots
-    const jokerSlots = page.getByTestId('joker-slots');
-    await jokerSlots.waitFor({ state: 'visible', timeout: 3_000 });
-    const emptySlots = jokerSlots.getByTestId('joker-empty-slot');
-    await expect(emptySlots).toHaveCount(5);
-
-    // Click an empty slot to open picker
-    await emptySlots.first().click();
-
-    // Picker should show available jokers
-    await expect(page.getByText('Choose a Joker')).toBeVisible();
-    const pickGoldRush = page.getByTestId('pick-gold-rush');
-    await pickGoldRush.click();
-
-    // Should now show 1 equipped + 4 empty slots
-    await expect(page.getByTestId('equipped-gold-rush')).toBeVisible();
-    await expect(emptySlots).toHaveCount(4);
-
-    // Click equipped joker to unequip
-    await page.getByTestId('equipped-gold-rush').click();
-    await expect(emptySlots).toHaveCount(5);
-  });
-
-  test('Pack reward appears after passing a quarter', async ({ page, nav }) => {
-    // Seed: Q1 complete with passed result
-    await nav.seedState({
-      gold: 500,
-      quarterProgress: {
-        year: 1,
-        quarter: 1,
-        grossGoldEarned: 200,
-        tasksCompleted: 30,
-        isComplete: true,
-        missedQuarters: 0,
-        quarterResults: [
-          { year: 1, quarter: 1, passed: true, goldEarned: 200, target: 75, tasksCompleted: 30 },
-        ],
-      },
-    });
-
-    // Quarter review → Continue
-    const reviewModal = page.locator('app-quarter-review');
-    await reviewModal.waitFor({ state: 'visible', timeout: 5_000 });
-    await page.getByRole('button', { name: /Continue to Q2/i }).click();
-    await reviewModal.waitFor({ state: 'hidden', timeout: 3_000 });
-
-    // Pack reward modal should appear
-    const packOpener = page.locator('app-card-pack-opener');
-    await packOpener.waitFor({ state: 'visible', timeout: 3_000 });
-    await expect(packOpener.getByText('Quarterly Bonus')).toBeVisible();
-
-    // Should show cards to pick from
-    const cards = packOpener.locator('[data-testid^="pack-card-"]');
-    const cardCount = await cards.count();
-    expect(cardCount).toBeGreaterThanOrEqual(3);
-
-    // Select first card
-    await cards.first().click();
-
-    // Confirm button should be enabled
-    const confirmBtn = packOpener.getByTestId('pack-confirm-btn');
-    await expect(confirmBtn).toBeEnabled();
-    await confirmBtn.click();
-
-    // Pack should dismiss and shop should appear
-    await packOpener.waitFor({ state: 'hidden', timeout: 3_000 });
-    const shop = page.locator('app-shop');
-    await shop.waitFor({ state: 'visible', timeout: 3_000 });
-  });
-
-  test('Pack reward does NOT appear after missing a quarter', async ({ page, nav }) => {
-    // Seed: Q1 complete but MISSED
-    await nav.seedState({
-      gold: 50,
-      quarterProgress: {
-        year: 1,
-        quarter: 1,
-        grossGoldEarned: 30,
-        tasksCompleted: 30,
-        isComplete: true,
-        missedQuarters: 1,
-        quarterResults: [
-          { year: 1, quarter: 1, passed: false, goldEarned: 30, target: 75, tasksCompleted: 30 },
-        ],
-      },
-    });
-
-    // Quarter review → Continue
-    const reviewModal = page.locator('app-quarter-review');
-    await reviewModal.waitFor({ state: 'visible', timeout: 5_000 });
-    await page.getByRole('button', { name: /Continue to Q2/i }).click();
-    await reviewModal.waitFor({ state: 'hidden', timeout: 3_000 });
-
-    // Pack reward should NOT appear — go straight to shop
-    const packOpener = page.locator('app-card-pack-opener');
-    await expect(packOpener).not.toBeVisible();
-    const shop = page.locator('app-shop');
-    await shop.waitFor({ state: 'visible', timeout: 3_000 });
   });
 });

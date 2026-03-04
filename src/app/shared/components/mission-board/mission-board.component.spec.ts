@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { MissionBoardComponent } from './mission-board.component';
 import {
   makeTask,
@@ -20,20 +20,18 @@ describe('MissionBoardComponent', () => {
 
   function setInputs(
     missions = [makeTask()],
-    activeCount = 0,
-    activeSlots = 3,
+    schemesQueueFull = false,
   ): void {
     fixture.componentRef.setInput('missions', missions);
-    fixture.componentRef.setInput('activeCount', activeCount);
-    fixture.componentRef.setInput('activeSlots', activeSlots);
+    fixture.componentRef.setInput('schemesQueueFull', schemesQueueFull);
     fixture.detectChanges();
   }
 
   it('renders mission cards from input', () => {
     const tasks = [
-      makeTask({ template: { name: 'Task A', description: 'd', category: 'schemes', tier: 'petty' } }),
-      makeTask({ template: { name: 'Task B', description: 'd', category: 'heists', tier: 'petty' } }),
-      makeTask({ template: { name: 'Task C', description: 'd', category: 'mayhem', tier: 'petty' } }),
+      makeTask({ template: { name: 'Task A', description: 'd', category: 'schemes', tier: 'petty' }, schemeTargetDept: 'heists' }),
+      makeTask({ template: { name: 'Task B', description: 'd', category: 'heists', tier: 'petty' }, schemeTargetDept: 'research' }),
+      makeTask({ template: { name: 'Task C', description: 'd', category: 'mayhem', tier: 'petty' }, schemeTargetDept: 'mayhem' }),
     ];
     setInputs(tasks);
 
@@ -44,23 +42,21 @@ describe('MissionBoardComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Task C');
   });
 
-  it('category filter tabs filter missions', () => {
+  it('category filter tabs filter by target dept', () => {
     const tasks = [
-      makeTask({ template: { name: 'Scheme1', description: 'd', category: 'schemes', tier: 'petty' } }),
-      makeTask({ template: { name: 'Heist1', description: 'd', category: 'heists', tier: 'petty' } }),
+      makeTask({ template: { name: 'HeistScheme', description: 'd', category: 'schemes', tier: 'petty' }, schemeTargetDept: 'heists', schemeOperationCount: 2 }),
+      makeTask({ template: { name: 'ResearchScheme', description: 'd', category: 'schemes', tier: 'petty' }, schemeTargetDept: 'research', schemeOperationCount: 1 }),
     ];
     setInputs(tasks);
 
-    // Click the schemes icon filter button
-    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
-    // The filter buttons have emoji icons; find the one that sets filter to 'schemes'
-    component.filterCategory.set('schemes');
+    // Filter by target dept 'heists'
+    component.filterCategory.set('heists');
     fixture.detectChanges();
 
     const cards = fixture.nativeElement.querySelectorAll('.game-card');
     expect(cards.length).toBe(1);
-    expect(fixture.nativeElement.textContent).toContain('Scheme1');
-    expect(fixture.nativeElement.textContent).not.toContain('Heist1');
+    expect(fixture.nativeElement.textContent).toContain('HeistScheme');
+    expect(fixture.nativeElement.textContent).not.toContain('ResearchScheme');
   });
 
   it('categoryCount returns correct counts', () => {
@@ -76,49 +72,64 @@ describe('MissionBoardComponent', () => {
     expect(component.categoryCount('research')).toBe(0);
   });
 
-  it('canAccept false when slots full', () => {
-    setInputs([makeTask()], 3, 3);
+  it('canAccept false when schemes queue full', () => {
+    setInputs([makeTask()], true);
     expect(component.canAccept()).toBe(false);
   });
 
-  it('shows "Queue slots full" text when slots full', () => {
-    setInputs([makeTask()], 3, 3);
-    expect(fixture.nativeElement.textContent).toContain('Queue slots full');
+  it('canAccept true when boardFrozen but queue not full (Intel Blackout does not block execution)', () => {
+    fixture.componentRef.setInput('missions', [makeTask()]);
+    fixture.componentRef.setInput('schemesQueueFull', false);
+    fixture.componentRef.setInput('boardFrozen', true);
+    fixture.detectChanges();
+    expect(component.canAccept()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Execute');
   });
 
-  it('shows Send to Queue button when slots available', () => {
-    setInputs([makeTask()], 0, 3);
-    expect(fixture.nativeElement.textContent).toContain('Send to Queue');
+  it('shows "Schemes queue full" text when queue full', () => {
+    setInputs([makeTask()], true);
+    expect(fixture.nativeElement.textContent).toContain('Schemes queue full');
   });
 
-  it('Send to Queue button emits missionRouteRequested', () => {
+  it('shows Execute button when queue not full', () => {
+    setInputs([makeTask()], false);
+    expect(fixture.nativeElement.textContent).toContain('Execute');
+  });
+
+  it('Execute button emits schemeExecuted with mission id', fakeAsync(() => {
     const task = makeTask();
-    setInputs([task], 0, 3);
+    setInputs([task], false);
 
-    const spy = jasmine.createSpy('missionRouteRequested');
-    component.missionRouteRequested.subscribe(spy);
-
-    // Find the "Send to Queue" button by text content
-    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
-    const sendBtn = buttons.find(b => b.textContent?.includes('Send to Queue'));
-    expect(sendBtn).toBeTruthy();
-    sendBtn!.click();
-
-    expect(spy).toHaveBeenCalledWith(task);
-  });
-
-  it('does NOT show Send to Queue when slots full', () => {
-    const task = makeTask();
-    setInputs([task], 3, 3);
+    const spy = jasmine.createSpy('schemeExecuted');
+    component.schemeExecuted.subscribe(spy);
 
     const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
-    const sendBtns = buttons.filter(b => b.textContent?.includes('Send to Queue'));
-    expect(sendBtns.length).toBe(0);
+    const execBtn = buttons.find(b => b.textContent?.includes('Execute'));
+    expect(execBtn).toBeTruthy();
+    execBtn!.click();
+
+    tick(350); // Wait for exit animation delay
+    expect(spy).toHaveBeenCalledWith(task.id);
+  }));
+
+  it('does NOT show Execute when queue full', () => {
+    const task = makeTask();
+    setInputs([task], true);
+
+    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
+    const execBtns = buttons.filter(b => b.textContent?.includes('Execute'));
+    expect(execBtns.length).toBe(0);
   });
 
   it('empty state when no missions', () => {
-    setInputs([], 0, 3);
-    expect(fixture.nativeElement.textContent).toContain('No missions available');
+    setInputs([], false);
+    expect(fixture.nativeElement.textContent).toContain('Deck empty');
+  });
+
+  it('heading says "Backlog"', () => {
+    setInputs();
+    const heading = fixture.nativeElement.querySelector('h2');
+    expect(heading.textContent.trim()).toBe('Backlog');
   });
 
   it('getMissionCardClass returns correct classes', () => {
@@ -138,31 +149,19 @@ describe('MissionBoardComponent', () => {
     expect(component.getCategoryIcon('other')).toBe('?');
   });
 
-  it('has cdkDropList with id="mission-board"', () => {
-    setInputs();
-    const dropList = fixture.nativeElement.querySelector('[id="mission-board"]');
-    expect(dropList).toBeTruthy();
+  it('getTargetDept reads schemeTargetDept from task', () => {
+    const task = makeTask({ schemeTargetDept: 'heists' });
+    expect(component.getTargetDept(task)).toBe('heists');
   });
 
-  it('mission cards have cdkDrag attribute', () => {
-    setInputs([makeTask()]);
-    const dragItems = fixture.nativeElement.querySelectorAll('[cdkDrag]');
-    expect(dragItems.length).toBeGreaterThanOrEqual(1);
+  it('getOpCount reads schemeOperationCount from task', () => {
+    const task = makeTask({ schemeOperationCount: 3 });
+    expect(component.getOpCount(task)).toBe(3);
   });
 
-  it('accepts connectedDropLists input', () => {
-    fixture.componentRef.setInput('missions', [makeTask()]);
-    fixture.componentRef.setInput('activeCount', 0);
-    fixture.componentRef.setInput('activeSlots', 3);
-    fixture.componentRef.setInput('connectedDropLists', ['schemes', 'heists', 'player']);
-    fixture.detectChanges();
-
-    expect(component.connectedDropLists()).toEqual(['schemes', 'heists', 'player']);
-  });
-
-  it('defaults connectedDropLists to empty array', () => {
-    setInputs();
-    expect(component.connectedDropLists()).toEqual([]);
+  it('getTargetDeptLabel capitalizes dept name', () => {
+    const task = makeTask({ schemeTargetDept: 'research' });
+    expect(component.getTargetDeptLabel(task)).toBe('Research');
   });
 
   // ─── Phase 3A: Mission Board Sorting ──────────
@@ -297,43 +296,46 @@ describe('MissionBoardComponent', () => {
     });
 
     it('should combine filter and sort correctly', () => {
-      setInputs(sortTasks);
-      component.filterCategory.set('schemes');
+      const schemeTasks = [
+        makeTask({
+          tier: 'petty', goldReward: 10, clicksRequired: 30,
+          template: { name: 'Heist Scheme', description: 'd', category: 'schemes', tier: 'petty' },
+          schemeTargetDept: 'heists',
+        }),
+        makeTask({
+          tier: 'legendary', goldReward: 500, clicksRequired: 5,
+          template: { name: 'Research Scheme', description: 'd', category: 'schemes', tier: 'legendary' },
+          schemeTargetDept: 'research',
+        }),
+      ];
+      setInputs(schemeTasks);
+      component.filterCategory.set('heists');
       component.cycleSort(); // → tier
 
       const result = component.filteredMissions();
       expect(result.length).toBe(1);
-      expect(result[0].template.category).toBe('schemes');
+      expect(result[0].template.name).toBe('Heist Scheme');
     });
   });
 
   describe('sort button in template', () => {
     it('should render the sort button', () => {
       setInputs([makeTask()]);
-      const buttons: HTMLButtonElement[] = Array.from(
-        fixture.nativeElement.querySelectorAll('button')
-      );
-      const sortBtn = buttons.find(b => b.textContent?.includes('Default'));
+      const sortBtn = fixture.nativeElement.querySelector('[title^="Sort:"]');
       expect(sortBtn).toBeTruthy();
+      expect(sortBtn.textContent).toContain('Default');
     });
 
     it('should cycle sort on button click', () => {
       setInputs([makeTask()]);
-      const buttons: HTMLButtonElement[] = Array.from(
-        fixture.nativeElement.querySelectorAll('button')
-      );
-      const sortBtn = buttons.find(b => b.textContent?.includes('Default'));
+      const sortBtn = fixture.nativeElement.querySelector('[title^="Sort:"]') as HTMLButtonElement;
       expect(sortBtn).toBeTruthy();
 
-      sortBtn!.click();
+      sortBtn.click();
       fixture.detectChanges();
 
       expect(component.sortMode()).toBe('tier');
-      const updatedBtns: HTMLButtonElement[] = Array.from(
-        fixture.nativeElement.querySelectorAll('button')
-      );
-      const tierBtn = updatedBtns.find(b => b.textContent?.includes('Tier'));
-      expect(tierBtn).toBeTruthy();
+      expect(sortBtn.textContent).toContain('Tier');
     });
   });
 });

@@ -18,7 +18,7 @@ import { ModifierBadgeComponent } from '../modifier-badge/modifier-badge.compone
             Minion Manager
           </h1>
           <p class="text-xs text-text-muted">
-            Lv.{{ villainLevel() }} {{ villainTitle() }}
+            Evil Empire
           </p>
         </div>
       </div>
@@ -58,6 +58,9 @@ import { ModifierBadgeComponent } from '../modifier-badge/modifier-badge.compone
                   [class]="quarterGold() >= goldTarget() ? 'text-green-400' : 'text-text-muted'">
               {{ quarterGold() }}g/{{ goldTarget() }}g
             </span>
+            <span class="text-[10px] text-text-muted tabular-nums" title="Dismissals remaining">
+              ✂️{{ dismissalsRemaining() }}
+            </span>
           </div>
         }
       </div>
@@ -70,16 +73,6 @@ import { ModifierBadgeComponent } from '../modifier-badge/modifier-badge.compone
           }
         </div>
       }
-
-      <!-- Right: Drawer toggle -->
-      <div class="flex items-center gap-2 shrink-0">
-        <button
-          (click)="drawerToggle.emit()"
-          class="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-card
-                 transition-all cursor-pointer border border-transparent hover:border-border">
-          ⚙️
-        </button>
-      </div>
     </header>
   `,
   styles: `
@@ -101,17 +94,15 @@ export class HeaderComponent {
   gold = input.required<number>();
   completedCount = input.required<number>();
   minionCount = input.required<number>();
-  villainLevel = input.required<number>();
-  villainTitle = input.required<string>();
   quarterProgress = input<QuarterProgress | null>(null);
   quarterGold = input<number>(0);
   taskBudget = input<number>(0);
   goldTarget = input<number>(0);
+  dismissalsRemaining = input<number>(5);
   lastSaved = input<number>(0);
   activeModifiers = input<Modifier[]>([]);
 
   reset = output<void>();
-  drawerToggle = output<void>();
 
   showSaveIndicator = computed(() => {
     const saved = this.lastSaved();

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/angular';
 import { expect, within, userEvent } from 'storybook/test';
 import { MissionBoardComponent } from './mission-board.component';
-import { Task, TaskTier, TaskCategory } from '../../../core/models';
+import { Task, TaskTier, TaskCategory, ComboState } from '../../../core/models';
 import { Department } from '../../../core/models/department.model';
 
 const makeTask = (overrides: Partial<Task> = {}): Task => ({
@@ -19,19 +19,23 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
 });
 
 const makeBoardMissions = (): Task[] => [
-  makeTask({ template: { name: 'Forge Hall Passes', description: 'Create convincing hall passes.', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 5 }),
-  makeTask({ template: { name: 'Museum Night Raid', description: 'Break in after hours.', category: 'heists', tier: 'sinister' }, tier: 'sinister', goldReward: 18 }),
-  makeTask({ template: { name: 'Build Doomsday Device', description: 'Ultimate bargaining chip.', category: 'research', tier: 'diabolical' }, tier: 'diabolical', goldReward: 48 }),
-  makeTask({ template: { name: 'Steal the Moon', description: 'The ultimate heist.', category: 'heists', tier: 'legendary' }, tier: 'legendary', goldReward: 120 }),
-  makeTask({ template: { name: 'TP the Hero\'s House', description: 'Classic TP bombardment.', category: 'mayhem', tier: 'petty' }, tier: 'petty', goldReward: 6 }),
-  makeTask({ template: { name: 'Infiltrate Council', description: 'Plant a spy.', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 20, isSpecialOp: true, specialOpExpiry: Date.now() + 30000 }),
-  makeTask({ template: { name: 'Mix Stink Bombs', description: 'Brew a foul concoction.', category: 'research', tier: 'petty' }, tier: 'petty', goldReward: 5 }),
-  makeTask({ template: { name: 'Train the Guards', description: 'Upgrade your security detail.', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 4 }),
-  makeTask({ template: { name: 'Release Robot Swarm', description: 'Deploy tiny robots.', category: 'mayhem', tier: 'sinister' }, tier: 'sinister', goldReward: 15 }),
-  makeTask({ template: { name: 'Volcano Activation', description: 'Trigger a dormant volcano.', category: 'mayhem', tier: 'diabolical' }, tier: 'diabolical', goldReward: 44 }),
-  makeTask({ template: { name: 'Jewel Store Heist', description: 'Crack display cases.', category: 'heists', tier: 'sinister' }, tier: 'sinister', goldReward: 16 }),
-  makeTask({ template: { name: 'Brew Sleeping Potion', description: 'A mild sedative.', category: 'research', tier: 'petty' }, tier: 'petty', goldReward: 5 }),
+  makeTask({ template: { name: 'Forge Hall Passes', description: 'petty scheme → 1× Heists ops', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 1, schemeTargetDept: 'heists', schemeOperationCount: 1 }),
+  makeTask({ template: { name: 'Museum Night Raid', description: 'sinister scheme → 2× Heists ops', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 2, schemeTargetDept: 'heists', schemeOperationCount: 2 }),
+  makeTask({ template: { name: 'Build Doomsday Device', description: 'diabolical scheme → 3× Research ops', category: 'schemes', tier: 'diabolical' }, tier: 'diabolical', goldReward: 3, schemeTargetDept: 'research', schemeOperationCount: 3 }),
+  makeTask({ template: { name: 'Steal the Moon', description: 'legendary scheme → 3× Heists ops', category: 'schemes', tier: 'legendary' }, tier: 'legendary', goldReward: 5, schemeTargetDept: 'heists', schemeOperationCount: 3 }),
+  makeTask({ template: { name: 'TP the Hero\'s House', description: 'petty scheme → 2× Mayhem ops', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 1, schemeTargetDept: 'mayhem', schemeOperationCount: 2 }),
+  makeTask({ template: { name: 'Infiltrate Council', description: 'sinister scheme → 2× Research ops', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 2, isSpecialOp: true, schemeTargetDept: 'research', schemeOperationCount: 2 }),
+  makeTask({ template: { name: 'Mix Stink Bombs', description: 'petty scheme → 1× Research ops', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 1, schemeTargetDept: 'research', schemeOperationCount: 1 }),
+  makeTask({ template: { name: 'Train the Guards', description: 'petty scheme → 2× Mayhem ops', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 1, schemeTargetDept: 'mayhem', schemeOperationCount: 2 }),
+  makeTask({ template: { name: 'Release Robot Swarm', description: 'sinister scheme → 1× Mayhem ops', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 2, schemeTargetDept: 'mayhem', schemeOperationCount: 1 }),
+  makeTask({ template: { name: 'Volcano Activation', description: 'diabolical scheme → 2× Mayhem ops', category: 'schemes', tier: 'diabolical' }, tier: 'diabolical', goldReward: 3, schemeTargetDept: 'mayhem', schemeOperationCount: 2 }),
+  makeTask({ template: { name: 'Jewel Store Heist', description: 'sinister scheme → 2× Heists ops', category: 'schemes', tier: 'sinister' }, tier: 'sinister', goldReward: 2, schemeTargetDept: 'heists', schemeOperationCount: 2 }),
+  makeTask({ template: { name: 'Brew Sleeping Potion', description: 'petty scheme → 1× Research ops', category: 'schemes', tier: 'petty' }, tier: 'petty', goldReward: 1, schemeTargetDept: 'research', schemeOperationCount: 1 }),
 ];
+
+const defaultDeckCounts = (): Record<TaskTier, number> => ({
+  petty: 12, sinister: 8, diabolical: 4, legendary: 1,
+});
 
 const meta: Meta<MissionBoardComponent> = {
   title: 'Minion Manager/Organisms/MissionBoard',
@@ -43,37 +47,54 @@ export default meta;
 type Story = StoryObj<MissionBoardComponent>;
 
 const allDepts = (): Record<TaskCategory, Department> => ({
-  schemes: { category: 'schemes', level: 2, xp: 20 },
-  heists: { category: 'heists', level: 2, xp: 20 },
-  research: { category: 'research', level: 2, xp: 20 },
-  mayhem: { category: 'mayhem', level: 2, xp: 20 },
+  schemes: { category: 'schemes', level: 2, workerSlots: 1, hasManager: false },
+  heists: { category: 'heists', level: 2, workerSlots: 1, hasManager: false },
+  research: { category: 'research', level: 2, workerSlots: 1, hasManager: false },
+  mayhem: { category: 'mayhem', level: 2, workerSlots: 1, hasManager: false },
 });
 
 export const FullBoard: Story = {
   args: {
     missions: makeBoardMissions(),
-    activeCount: 1,
-    activeSlots: 4,
+    schemesQueueFull: false,
+    dismissalsRemaining: 3,
+    tasksCompleted: 8,
+    taskBudget: 25,
+    deckRemaining: 22,
+    deckTotal: 30,
+    deckTierCounts: defaultDeckCounts(),
     unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
     departments: allDepts(),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    // Verify all 12 mission cards render
-    const cards = canvas.getAllByText(/Send to Queue/);
+    // Verify all 12 execute buttons render
+    const cards = canvas.getAllByText(/Execute/);
     expect(cards.length).toBe(12);
 
     // Verify special op card has the "Special" badge
     expect(canvas.getByText('Special')).toBeTruthy();
+
+    // Verify budget/dismissals footer
+    expect(canvas.getByText(/Budget: 8\/25/)).toBeTruthy();
+    expect(canvas.getByText(/Dismissals: 3\/5/)).toBeTruthy();
+
+    // Verify deck counter renders
+    expect(canvas.getByText(/22\/30/)).toBeTruthy();
   },
 };
 
 export const WithSortInteraction: Story = {
   args: {
     missions: makeBoardMissions(),
-    activeCount: 1,
-    activeSlots: 4,
+    schemesQueueFull: false,
+    dismissalsRemaining: 5,
+    tasksCompleted: 0,
+    taskBudget: 25,
+    deckRemaining: 25,
+    deckTotal: 30,
+    deckTierCounts: defaultDeckCounts(),
     unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
     departments: allDepts(),
   },
@@ -102,11 +123,76 @@ export const WithSortInteraction: Story = {
   },
 };
 
+export const WithDeckBreakdown: Story = {
+  args: {
+    missions: [],
+    schemesQueueFull: false,
+    dismissalsRemaining: 5,
+    tasksCompleted: 3,
+    taskBudget: 25,
+    deckRemaining: 22,
+    deckTotal: 30,
+    deckTierCounts: { petty: 10, sinister: 6, diabolical: 4, legendary: 2 },
+    unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
+    departments: allDepts(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Click deck counter to expand tier breakdown
+    const deckButton = canvas.getByText(/22\/30/);
+    await userEvent.click(deckButton);
+
+    // Verify tier labels appear (no mission cards so no tier badge collisions)
+    expect(canvas.getByText('petty')).toBeTruthy();
+    expect(canvas.getByText('sinister')).toBeTruthy();
+    expect(canvas.getByText('diabolical')).toBeTruthy();
+    expect(canvas.getByText('legendary')).toBeTruthy();
+
+    // Verify counts render
+    expect(canvas.getByText('10')).toBeTruthy();
+    expect(canvas.getByText('6')).toBeTruthy();
+
+    // Click again to collapse
+    await userEvent.click(deckButton);
+
+    // Tier labels should be gone
+    const pettyLabels = canvas.queryAllByText('petty');
+    expect(pettyLabels.length).toBe(0);
+  },
+};
+
+export const EmptyDeck: Story = {
+  args: {
+    missions: [],
+    schemesQueueFull: false,
+    deckRemaining: 0,
+    deckTotal: 30,
+    deckTierCounts: { petty: 0, sinister: 0, diabolical: 0, legendary: 0 },
+    unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
+    departments: allDepts(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Empty deck message shows
+    expect(canvas.getByText(/Deck empty/)).toBeTruthy();
+
+    // Deck counter shows 0
+    expect(canvas.getByText(/0\/30/)).toBeTruthy();
+  },
+};
+
 export const BoardWithFullSlots: Story = {
   args: {
     missions: makeBoardMissions(),
-    activeCount: 4,
-    activeSlots: 4,
+    schemesQueueFull: true,
+    dismissalsRemaining: 0,
+    tasksCompleted: 20,
+    taskBudget: 25,
+    deckRemaining: 5,
+    deckTotal: 30,
+    deckTierCounts: { petty: 3, sinister: 1, diabolical: 1, legendary: 0 },
     unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
     departments: allDepts(),
   },
@@ -115,36 +201,74 @@ export const BoardWithFullSlots: Story = {
 export const EmptyBoard: Story = {
   args: {
     missions: [],
-    activeCount: 0,
-    activeSlots: 3,
+    schemesQueueFull: false,
+    deckRemaining: 15,
+    deckTotal: 30,
+    deckTierCounts: { petty: 8, sinister: 4, diabolical: 2, legendary: 1 },
     unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
     departments: allDepts(),
+  },
+};
+
+export const WithActiveCombo: Story = {
+  args: {
+    missions: makeBoardMissions(),
+    schemesQueueFull: false,
+    dismissalsRemaining: 3,
+    tasksCompleted: 8,
+    taskBudget: 25,
+    deckRemaining: 17,
+    deckTotal: 30,
+    deckTierCounts: defaultDeckCounts(),
+    unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
+    departments: allDepts(),
+    comboState: {
+      deptFocus: { dept: 'heists', count: 3 },
+      tierLadder: { lastTier: 'petty', step: 2 },
+    } as ComboState,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Combo tracker should be visible
+    const tracker = canvasElement.querySelector('[data-testid="combo-tracker"]');
+    expect(tracker).toBeTruthy();
+
+    // Focus tracker shows heists focus ×3 (+2)
+    expect(canvas.getByText(/Focus/)).toBeTruthy();
+    expect(canvas.getByText(/×3/)).toBeTruthy();
+
+    // Ladder tracker shows step 2 (+2)
+    expect(canvas.getByText(/Ladder/)).toBeTruthy();
+
+    // Preview badges should appear on heists-targeting schemes (right-aligned gold area)
+    const previews = canvasElement.querySelectorAll('[data-testid="combo-gold-preview"]');
+    expect(previews.length).toBeGreaterThan(0);
   },
 };
 
 export const WithLockedFilters: Story = {
   args: {
     missions: makeBoardMissions(),
-    activeCount: 0,
-    activeSlots: 4,
+    schemesQueueFull: false,
+    dismissalsRemaining: 5,
+    tasksCompleted: 0,
+    taskBudget: 25,
+    deckRemaining: 25,
+    deckTotal: 30,
+    deckTierCounts: defaultDeckCounts(),
     unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
     departments: {
-      schemes: { category: 'schemes', level: 2, xp: 20 },
-      heists: { category: 'heists', level: 1, xp: 0 },
-      research: { category: 'research', level: 1, xp: 0 },
-      mayhem: { category: 'mayhem', level: 1, xp: 0 },
+      schemes: { category: 'schemes', level: 2, workerSlots: 1, hasManager: false },
+      heists: { category: 'heists', level: 1, workerSlots: 1, hasManager: false },
+      research: { category: 'research', level: 1, workerSlots: 1, hasManager: false },
+      mayhem: { category: 'mayhem', level: 1, workerSlots: 1, hasManager: false },
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    // Schemes is unlocked (level 2) — its emoji filter button should be clickable
-    // Use getAllByText since the emoji also appears in mission card category icons
-    const schemesElements = canvas.getAllByText('🗝️');
-    const schemesButton = schemesElements.find(el => el.tagName === 'BUTTON');
-    expect(schemesButton).toBeTruthy();
-
-    // 3 locked departments should show lock icons
+    // Heists/Research/Mayhem at level 1 show lock icons (3 execution depts)
     const lockIcons = canvas.getAllByText('🔒');
     expect(lockIcons.length).toBe(3);
 
@@ -152,9 +276,5 @@ export const WithLockedFilters: Story = {
     for (const lock of lockIcons) {
       expect(lock.tagName).toBe('SPAN');
     }
-
-    // Click the Schemes filter — it should activate
-    await userEvent.click(schemesButton!);
-    expect(schemesButton!.className).toContain('bg-accent/20');
   },
 };

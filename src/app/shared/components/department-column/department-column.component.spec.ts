@@ -26,7 +26,7 @@ describe('DepartmentColumnComponent', () => {
   } = {}): void {
     fixture.componentRef.setInput('category', overrides.category ?? 'schemes');
     fixture.componentRef.setInput('tasks', overrides.tasks ?? []);
-    fixture.componentRef.setInput('department', overrides.department ?? { category: 'schemes', xp: 0, level: 1 });
+    fixture.componentRef.setInput('department', overrides.department ?? { category: 'schemes', level: 1, workerSlots: 1, hasManager: false });
     fixture.componentRef.setInput('assignedMinions', overrides.assignedMinions ?? []);
     fixture.componentRef.setInput('connectedDropLists', overrides.connectedDropLists ?? []);
     fixture.detectChanges();
@@ -91,10 +91,9 @@ describe('DepartmentColumnComponent', () => {
     expect(component.inProgressTasks().length).toBe(1);
   });
 
-  it('getCategoryIcon returns correct icons', () => {
-    expect(component.getCategoryIcon('schemes')).toBe('\u{1F5DD}\uFE0F');
-    expect(component.getCategoryIcon('heists')).toBe('\u{1F48E}');
-    expect(component.getCategoryIcon('research')).toBe('\u{1F9EA}');
-    expect(component.getCategoryIcon('mayhem')).toBe('\u{1F4A5}');
+  it('renders department category icon in header', () => {
+    setInputs({ category: 'heists' });
+    // The component uses CATEGORY_LABELS which includes emoji icons
+    expect(fixture.nativeElement.textContent).toContain('Heists');
   });
 });

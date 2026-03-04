@@ -20,22 +20,19 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
 
 const makeMinion = (overrides: Partial<Minion> = {}): Minion => ({
   id: crypto.randomUUID(),
-  name: 'Grim',
-  appearance: { color: '#6c3483', accessory: 'goggles' },
+  archetypeId: 'penny-pincher',
+  role: 'worker',
   status: 'idle',
   assignedTaskId: null,
-  stats: { speed: 1.0, efficiency: 1.1 },
-  specialty: 'schemes',
   assignedDepartment: 'schemes',
-  xp: 0,
-  level: 1,
   ...overrides,
 });
 
-const makeDept = (cat: TaskCategory, level = 1, xp = 0): Department => ({
+const makeDept = (cat: TaskCategory, level = 1): Department => ({
   category: cat,
-  xp,
   level,
+  workerSlots: 1,
+  hasManager: false,
 });
 
 const emptyQueues = (): Record<TaskCategory, Task[]> => ({
@@ -56,6 +53,10 @@ const meta: Meta<KanbanBoardComponent> = {
   title: 'Minion Manager/Organisms/KanbanBoard',
   component: KanbanBoardComponent,
   tags: ['autodocs'],
+  args: {
+    deptEffectiveMults: { schemes: 1, heists: 1, research: 1, mayhem: 1 },
+    bossPenalty: 0,
+  },
   decorators: [
     (story) => ({
       ...story,
@@ -75,12 +76,9 @@ export const EarlyGame: Story = {
         makeTask({ template: { name: 'Spread Rumors', description: 'Whisper campaigns.', category: 'schemes', tier: 'petty' }, assignedQueue: 'schemes' }),
       ],
     },
-    playerQueue: [
-      makeTask({ template: { name: 'Steal Lunch Money', description: 'Shake down the nerds.', category: 'schemes', tier: 'petty' }, assignedQueue: 'player', status: 'in-progress', clicksRemaining: 6 }),
-    ],
     departments: defaultDepts(),
     minions: [
-      makeMinion({ name: 'Grim', specialty: 'schemes', assignedDepartment: 'schemes' }),
+      makeMinion({ archetypeId: 'penny-pincher', assignedDepartment: 'schemes' }),
     ],
     unlockedDepartments: ['schemes'] as TaskCategory[],
     clickPower: 1,
@@ -105,23 +103,21 @@ export const MidGame: Story = {
       ],
       mayhem: [],
     },
-    playerQueue: [
-      makeTask({ template: { name: 'Steal Lunch Money', description: 'Shake down the nerds.', category: 'schemes', tier: 'petty' }, assignedQueue: 'player', status: 'in-progress', clicksRemaining: 4 }),
-    ],
     departments: {
-      schemes: makeDept('schemes', 3, 60),
-      heists: makeDept('heists', 2, 20),
-      research: makeDept('research', 2, 25),
+      schemes: makeDept('schemes', 3),
+      heists: makeDept('heists', 2),
+      research: makeDept('research', 2),
       mayhem: makeDept('mayhem', 1),
     },
     minions: [
-      makeMinion({ id: midMinionId, name: 'Grim', specialty: 'schemes', assignedDepartment: 'schemes', status: 'working', assignedTaskId: midTaskId, level: 3 }),
-      makeMinion({ name: 'Skulk', appearance: { color: '#1a5276', accessory: 'helmet' }, specialty: 'heists', assignedDepartment: 'heists', level: 2 }),
-      makeMinion({ name: 'Hex', appearance: { color: '#1e8449', accessory: 'horns' }, specialty: 'research', assignedDepartment: 'research', level: 2 }),
-      makeMinion({ name: 'Vex', appearance: { color: '#7b241c', accessory: 'cape' }, specialty: 'schemes', assignedDepartment: 'schemes' }),
+      makeMinion({ id: midMinionId, archetypeId: 'scheme-architect', assignedDepartment: 'schemes', status: 'working', assignedTaskId: midTaskId }),
+      makeMinion({ archetypeId: 'vault-cracker', assignedDepartment: 'heists' }),
+      makeMinion({ archetypeId: 'lab-rat', assignedDepartment: 'research' }),
+      makeMinion({ archetypeId: 'corner-cutter', assignedDepartment: 'schemes' }),
     ],
     unlockedDepartments: ['schemes', 'heists', 'research'] as TaskCategory[],
     clickPower: 2,
+    deptEffectiveMults: { schemes: 3, heists: 2, research: 2, mayhem: 1 },
   },
 };
 
@@ -152,24 +148,21 @@ export const LateGame: Story = {
         makeTask({ template: { name: 'Release Robot Swarm', description: 'Deploy tiny robots.', category: 'mayhem', tier: 'sinister' }, tier: 'sinister', goldReward: 15, assignedQueue: 'mayhem' }),
       ],
     },
-    playerQueue: [
-      makeTask({ template: { name: 'Forge Hall Passes', description: 'Create convincing hall passes.', category: 'schemes', tier: 'petty' }, assignedQueue: 'player', status: 'in-progress', clicksRemaining: 2 }),
-      makeTask({ template: { name: 'TP Hero\'s House', description: 'Classic TP bombardment.', category: 'mayhem', tier: 'petty' }, goldReward: 6, assignedQueue: 'player' }),
-    ],
     departments: {
-      schemes: makeDept('schemes', 5, 200),
-      heists: makeDept('heists', 4, 120),
-      research: makeDept('research', 6, 350),
-      mayhem: makeDept('mayhem', 3, 60),
+      schemes: makeDept('schemes', 5),
+      heists: makeDept('heists', 4),
+      research: makeDept('research', 6),
+      mayhem: makeDept('mayhem', 3),
     },
     minions: [
-      makeMinion({ id: lateIds.m1, name: 'Grim', specialty: 'schemes', assignedDepartment: 'schemes', status: 'working', assignedTaskId: lateIds.t1, level: 5 }),
-      makeMinion({ id: lateIds.m2, name: 'Vex', appearance: { color: '#7b241c', accessory: 'cape' }, specialty: 'schemes', assignedDepartment: 'schemes', level: 4 }),
-      makeMinion({ id: lateIds.m3, name: 'Skulk', appearance: { color: '#1a5276', accessory: 'helmet' }, specialty: 'heists', assignedDepartment: 'heists', status: 'working', assignedTaskId: lateIds.t2, level: 5 }),
-      makeMinion({ id: lateIds.m4, name: 'Doom', appearance: { color: '#b9770e', accessory: 'horns' }, specialty: 'mayhem', assignedDepartment: 'mayhem', level: 4 }),
-      makeMinion({ id: lateIds.m5, name: 'Hex', appearance: { color: '#1e8449', accessory: 'horns' }, specialty: 'research', assignedDepartment: 'research', status: 'working', assignedTaskId: lateIds.t3, level: 6 }),
+      makeMinion({ id: lateIds.m1, archetypeId: 'scheme-architect', assignedDepartment: 'schemes', status: 'working', assignedTaskId: lateIds.t1 }),
+      makeMinion({ id: lateIds.m2, archetypeId: 'corner-cutter', assignedDepartment: 'schemes' }),
+      makeMinion({ id: lateIds.m3, archetypeId: 'vault-cracker', assignedDepartment: 'heists', status: 'working', assignedTaskId: lateIds.t2 }),
+      makeMinion({ id: lateIds.m4, archetypeId: 'demolitions-expert', assignedDepartment: 'mayhem' }),
+      makeMinion({ id: lateIds.m5, archetypeId: 'eureka-catalyst', assignedDepartment: 'research', status: 'working', assignedTaskId: lateIds.t3 }),
     ],
     unlockedDepartments: ['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[],
     clickPower: 5,
+    deptEffectiveMults: { schemes: 5, heists: 4, research: 6, mayhem: 3 },
   },
 };

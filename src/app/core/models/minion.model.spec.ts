@@ -1,163 +1,208 @@
-import { xpForLevel, levelFromXp, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES, SPECIALTY_CATEGORIES, SPECIALTY_BONUS, getMinionRank, getMinionStars, getMinionRankColor } from './minion.model';
+import {
+  MINION_ARCHETYPES, ALL_ARCHETYPE_IDS, MinionArchetype, MinionRarity,
+  rollHireOptions, getActivePassives, aggregatePassiveFlat, aggregatePassiveMult,
+  getMinionDisplay, getRarityColor, getRarityBorderColor, getArchetype, Minion,
+} from './minion.model';
 
-describe('Minion Model', () => {
+describe('Minion Model (Archetype System)', () => {
 
-  describe('xpForLevel', () => {
-    it('should return 0 for level 1', () => {
-      expect(xpForLevel(1)).toBe(0);
+  describe('MINION_ARCHETYPES', () => {
+    it('should have 18 archetypes', () => {
+      expect(ALL_ARCHETYPE_IDS.length).toBe(18);
     });
 
-    it('should return 0 for level 0 (edge case)', () => {
-      expect(xpForLevel(0)).toBe(0);
+    it('should have unique IDs', () => {
+      expect(new Set(ALL_ARCHETYPE_IDS).size).toBe(18);
     });
 
-    it('should return 0 for negative level (edge case)', () => {
-      expect(xpForLevel(-1)).toBe(0);
-    });
-
-    it('should return 10 for level 2', () => {
-      expect(xpForLevel(2)).toBe(10);
-    });
-
-    it('should return increasing values for higher levels', () => {
-      let prev = 0;
-      for (let lvl = 2; lvl <= 10; lvl++) {
-        const xp = xpForLevel(lvl);
-        expect(xp).toBeGreaterThan(prev);
-        prev = xp;
+    it('should have valid rarity on all archetypes', () => {
+      const validRarities: MinionRarity[] = ['common', 'uncommon', 'rare'];
+      for (const id of ALL_ARCHETYPE_IDS) {
+        expect(validRarities).toContain(MINION_ARCHETYPES[id].rarity);
       }
     });
 
-    it('should grow super-linearly (exponent 1.6)', () => {
-      const lvl5 = xpForLevel(5);
-      const lvl10 = xpForLevel(10);
-      // With exponent 1.6, lvl10 should be much more than 2x lvl5
-      expect(lvl10 / lvl5).toBeGreaterThan(2);
+    it('should have 8 common, 6 uncommon, 4 rare', () => {
+      const archs = ALL_ARCHETYPE_IDS.map(id => MINION_ARCHETYPES[id]);
+      expect(archs.filter(a => a.rarity === 'common').length).toBe(8);
+      expect(archs.filter(a => a.rarity === 'uncommon').length).toBe(6);
+      expect(archs.filter(a => a.rarity === 'rare').length).toBe(4);
     });
 
-    it('should return integers (floored)', () => {
-      for (let lvl = 1; lvl <= 15; lvl++) {
-        expect(xpForLevel(lvl)).toBe(Math.floor(xpForLevel(lvl)));
+    it('each archetype should have required fields', () => {
+      for (const id of ALL_ARCHETYPE_IDS) {
+        const arch = MINION_ARCHETYPES[id];
+        expect(arch.id).toBe(id);
+        expect(arch.name).toBeTruthy();
+        expect(arch.icon).toBeTruthy();
+        expect(arch.color).toBeTruthy();
+        expect(arch.passive).toBeTruthy();
+        expect(arch.passive.effectType).toBeTruthy();
+        expect(arch.passive.scope).toBeTruthy();
+        expect(arch.description).toBeTruthy();
       }
     });
   });
 
-  describe('levelFromXp', () => {
-    it('should return 1 for 0 XP', () => {
-      expect(levelFromXp(0)).toBe(1);
+  describe('getArchetype', () => {
+    it('should return archetype for valid ID', () => {
+      const arch = getArchetype('penny-pincher');
+      expect(arch).toBeTruthy();
+      expect(arch!.name).toBe('Penny Pincher');
     });
 
-    it('should return 1 for XP just below level 2 threshold', () => {
-      expect(levelFromXp(9)).toBe(1);
+    it('should return undefined for invalid ID', () => {
+      expect(getArchetype('nonexistent')).toBeUndefined();
+    });
+  });
+
+  describe('getMinionDisplay', () => {
+    it('should return archetype for valid minion', () => {
+      const minion: Minion = {
+        id: 'test', archetypeId: 'iron-grip', role: 'worker',
+        status: 'idle', assignedTaskId: null, assignedDepartment: null,
+      };
+      const display = getMinionDisplay(minion);
+      expect(display.name).toBe('Iron Grip');
+      expect(display.icon).toBe('👊');
     });
 
-    it('should return 2 for exactly level 2 XP', () => {
-      expect(levelFromXp(10)).toBe(2);
+    it('should fallback to penny-pincher for unknown archetype', () => {
+      const minion: Minion = {
+        id: 'test', archetypeId: 'unknown', role: 'worker',
+        status: 'idle', assignedTaskId: null, assignedDepartment: null,
+      };
+      const display = getMinionDisplay(minion);
+      expect(display.name).toBe('Penny Pincher');
+    });
+  });
+
+  describe('rollHireOptions', () => {
+    it('should return the requested number of options', () => {
+      const options = rollHireOptions(3);
+      expect(options.length).toBe(3);
     });
 
-    it('should return 2 for XP between level 2 and 3', () => {
-      const lvl3Xp = xpForLevel(3);
-      expect(levelFromXp(lvl3Xp - 1)).toBe(2);
-    });
-
-    it('should handle large XP values without error', () => {
-      const level = levelFromXp(100_000);
-      expect(level).toBeGreaterThan(10);
-    });
-
-    it('should round-trip: levelFromXp(xpForLevel(n)) === n', () => {
-      for (let lvl = 1; lvl <= 20; lvl++) {
-        expect(levelFromXp(xpForLevel(lvl))).toBe(lvl);
+    it('should return valid archetype IDs', () => {
+      const options = rollHireOptions(10);
+      for (const id of options) {
+        expect(MINION_ARCHETYPES[id]).toBeTruthy();
       }
     });
 
-    it('should return 1 for negative XP (edge case)', () => {
-      expect(levelFromXp(-5)).toBe(1);
+    it('should respect rarity weights with deterministic rng', () => {
+      // rng always returns 0 → common rarity
+      const options = rollHireOptions(5, () => 0);
+      for (const id of options) {
+        expect(MINION_ARCHETYPES[id].rarity).toBe('common');
+      }
+    });
+
+    it('should return rare with high rng roll', () => {
+      // rng returns 0.99 → rare rarity (87+ out of 100)
+      const options = rollHireOptions(5, () => 0.99);
+      for (const id of options) {
+        expect(MINION_ARCHETYPES[id].rarity).toBe('rare');
+      }
     });
   });
 
-  describe('constants', () => {
-    it('MINION_NAMES should have 25 unique names', () => {
-      expect(MINION_NAMES.length).toBe(25);
-      expect(new Set(MINION_NAMES).size).toBe(25);
+  describe('getActivePassives', () => {
+    const makeMinion = (id: string, archetypeId: string, role: 'worker' | 'manager', dept: string | null): Minion => ({
+      id, archetypeId, role, status: 'idle', assignedTaskId: null,
+      assignedDepartment: dept as any,
     });
 
-    it('MINION_COLORS should have 15 entries', () => {
-      expect(MINION_COLORS.length).toBe(15);
+    it('should return manager passive for all tasks in dept', () => {
+      const minions: Minion[] = [
+        makeMinion('m1', 'penny-pincher', 'manager', 'schemes'),
+      ];
+      const passives = getActivePassives(minions, 'schemes');
+      expect(passives.length).toBe(1);
+      expect(passives[0].id).toBe('penny-pincher');
     });
 
-    it('MINION_ACCESSORIES should have 5 options', () => {
-      expect(MINION_ACCESSORIES.length).toBe(5);
+    it('should return worker passive only for their own tasks', () => {
+      const minions: Minion[] = [
+        makeMinion('m1', 'penny-pincher', 'worker', 'schemes'),
+      ];
+      // Without minionId — worker passive not included
+      expect(getActivePassives(minions, 'schemes').length).toBe(0);
+      // With minionId — worker passive included
+      expect(getActivePassives(minions, 'schemes', 'm1').length).toBe(1);
     });
 
-    it('SPECIALTY_CATEGORIES should contain all 4 categories', () => {
-      expect(SPECIALTY_CATEGORIES).toContain('schemes');
-      expect(SPECIALTY_CATEGORIES).toContain('heists');
-      expect(SPECIALTY_CATEGORIES).toContain('research');
-      expect(SPECIALTY_CATEGORIES).toContain('mayhem');
+    it('should exclude minions from different departments', () => {
+      const minions: Minion[] = [
+        makeMinion('m1', 'penny-pincher', 'manager', 'heists'),
+      ];
+      expect(getActivePassives(minions, 'schemes').length).toBe(0);
     });
 
-    it('SPECIALTY_BONUS should be 0.25', () => {
-      expect(SPECIALTY_BONUS).toBe(0.25);
+    it('should respect scope-limited passives', () => {
+      const minions: Minion[] = [
+        // vault-cracker has scope: 'heists'
+        makeMinion('m1', 'vault-cracker', 'manager', 'schemes'),
+      ];
+      // Assigned to schemes but passive only applies to heists
+      expect(getActivePassives(minions, 'schemes').length).toBe(0);
     });
 
-  });
-
-  describe('getMinionRank', () => {
-    it('should return Lackey for levels 1-2', () => {
-      expect(getMinionRank(1)).toBe('Lackey');
-      expect(getMinionRank(2)).toBe('Lackey');
-    });
-
-    it('should return Grunt for levels 3-4', () => {
-      expect(getMinionRank(3)).toBe('Grunt');
-      expect(getMinionRank(4)).toBe('Grunt');
-    });
-
-    it('should return Agent for levels 5-6', () => {
-      expect(getMinionRank(5)).toBe('Agent');
-      expect(getMinionRank(6)).toBe('Agent');
-    });
-
-    it('should return Operative for levels 7-8', () => {
-      expect(getMinionRank(7)).toBe('Operative');
-      expect(getMinionRank(8)).toBe('Operative');
-    });
-
-    it('should return Elite for levels 9-10', () => {
-      expect(getMinionRank(9)).toBe('Elite');
-      expect(getMinionRank(10)).toBe('Elite');
-    });
-
-    it('should return Mastermind for levels 11+', () => {
-      expect(getMinionRank(11)).toBe('Mastermind');
-      expect(getMinionRank(20)).toBe('Mastermind');
+    it('should include scope-matched department-specific passives', () => {
+      const minions: Minion[] = [
+        makeMinion('m1', 'vault-cracker', 'manager', 'heists'),
+      ];
+      expect(getActivePassives(minions, 'heists').length).toBe(1);
     });
   });
 
-  describe('getMinionStars', () => {
-    it('should return 1 star for levels 1-2', () => {
-      expect(getMinionStars(1)).toBe(1);
-      expect(getMinionStars(2)).toBe(1);
+  describe('aggregatePassiveFlat', () => {
+    it('should sum flat values for matching effect type', () => {
+      const archetypes: MinionArchetype[] = [
+        MINION_ARCHETYPES['tip-jar'],       // +1 gold-flat
+        MINION_ARCHETYPES['double-dipper'], // +2 gold-flat
+      ];
+      expect(aggregatePassiveFlat(archetypes, 'gold-flat')).toBe(3);
     });
 
-    it('should return 5 stars for level 11+', () => {
-      expect(getMinionStars(11)).toBe(5);
-    });
-
-    it('should increase with level', () => {
-      expect(getMinionStars(3)).toBeGreaterThan(getMinionStars(1));
-      expect(getMinionStars(7)).toBeGreaterThan(getMinionStars(5));
+    it('should return 0 when no matching effects', () => {
+      const archetypes: MinionArchetype[] = [MINION_ARCHETYPES['penny-pincher']]; // gold-mult
+      expect(aggregatePassiveFlat(archetypes, 'gold-flat')).toBe(0);
     });
   });
 
-  describe('getMinionRankColor', () => {
-    it('should return different colors for different level ranges', () => {
-      const color1 = getMinionRankColor(1);
-      const color5 = getMinionRankColor(5);
-      const color9 = getMinionRankColor(9);
-      expect(color1).not.toBe(color5);
-      expect(color5).not.toBe(color9);
+  describe('aggregatePassiveMult', () => {
+    it('should multiply values for matching effect type', () => {
+      const archetypes: MinionArchetype[] = [
+        MINION_ARCHETYPES['taskmaster'],  // 1.2× speed-mult
+        MINION_ARCHETYPES['overdriver'],  // 1.4× speed-mult
+      ];
+      expect(aggregatePassiveMult(archetypes, 'speed-mult')).toBeCloseTo(1.68, 2);
+    });
+
+    it('should return 1 when no matching effects', () => {
+      const archetypes: MinionArchetype[] = [MINION_ARCHETYPES['penny-pincher']];
+      expect(aggregatePassiveMult(archetypes, 'speed-mult')).toBe(1);
+    });
+  });
+
+  describe('getRarityColor', () => {
+    it('should return different classes for each rarity', () => {
+      const common = getRarityColor('common');
+      const uncommon = getRarityColor('uncommon');
+      const rare = getRarityColor('rare');
+      expect(common).not.toBe(uncommon);
+      expect(uncommon).not.toBe(rare);
+    });
+  });
+
+  describe('getRarityBorderColor', () => {
+    it('should return different border classes for each rarity', () => {
+      const common = getRarityBorderColor('common');
+      const uncommon = getRarityBorderColor('uncommon');
+      const rare = getRarityBorderColor('rare');
+      expect(common).not.toBe(uncommon);
+      expect(uncommon).not.toBe(rare);
     });
   });
 });
