@@ -14,10 +14,10 @@ describe('KanbanBoardComponent', () => {
   };
 
   const defaultDepartments: Record<TaskCategory, Department> = {
-    schemes: { category: 'schemes', xp: 0, level: 1 },
-    heists: { category: 'heists', xp: 0, level: 1 },
-    research: { category: 'research', xp: 0, level: 1 },
-    mayhem: { category: 'mayhem', xp: 0, level: 1 },
+    schemes: { category: 'schemes', level: 1, workerSlots: 1, hasManager: false },
+    heists: { category: 'heists', level: 1, workerSlots: 1, hasManager: false },
+    research: { category: 'research', level: 1, workerSlots: 1, hasManager: false },
+    mayhem: { category: 'mayhem', level: 1, workerSlots: 1, hasManager: false },
   };
 
   const allCategories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
@@ -33,14 +33,12 @@ describe('KanbanBoardComponent', () => {
 
   function setInputs(overrides: {
     departmentQueues?: Record<TaskCategory, Task[]>;
-    playerQueue?: Task[];
     departments?: Record<TaskCategory, Department>;
     minions?: any[];
     clickPower?: number;
     unlockedDepartments?: TaskCategory[];
   } = {}): void {
     fixture.componentRef.setInput('departmentQueues', overrides.departmentQueues ?? emptyQueues);
-    fixture.componentRef.setInput('playerQueue', overrides.playerQueue ?? []);
     fixture.componentRef.setInput('departments', overrides.departments ?? defaultDepartments);
     fixture.componentRef.setInput('minions', overrides.minions ?? []);
     fixture.componentRef.setInput('clickPower', overrides.clickPower ?? 1);
@@ -48,12 +46,10 @@ describe('KanbanBoardComponent', () => {
     fixture.detectChanges();
   }
 
-  it('renders department columns for unlocked departments and player workbench', () => {
+  it('renders department columns for unlocked departments', () => {
     setInputs();
     const columns = fixture.nativeElement.querySelectorAll('app-department-column');
     expect(columns.length).toBe(4);
-    const workbench = fixture.nativeElement.querySelector('app-player-workbench');
-    expect(workbench).toBeTruthy();
   });
 
   it('renders only unlocked department columns', () => {
@@ -67,49 +63,14 @@ describe('KanbanBoardComponent', () => {
     expect(component.hasLockedDepartments()).toBeTrue();
   });
 
-  it('dropListIds includes unlocked departments, player, and mission-board', () => {
+  it('taskDropListIds includes only unlocked departments', () => {
     setInputs({ unlockedDepartments: ['schemes', 'heists'] });
-    const ids = component.dropListIds();
+    const ids = component.taskDropListIds();
     expect(ids).toContain('schemes');
     expect(ids).toContain('heists');
-    expect(ids).toContain('player');
-    expect(ids).toContain('mission-board');
+    expect(ids as string[]).not.toContain('mission-board');
     expect(ids).not.toContain('research');
     expect(ids).not.toContain('mayhem');
-  });
-
-  it('onTaskDropped emits taskRouted when source is mission-board', () => {
-    setInputs();
-    const task = makeTask();
-    const routedSpy = jasmine.createSpy('taskRouted');
-    component.taskRouted.subscribe(routedSpy);
-
-    const fakeEvent = {
-      item: { data: task },
-      previousContainer: { data: 'mission-board' },
-      container: { data: 'schemes' },
-    } as any;
-
-    component.onTaskDropped(fakeEvent, 'schemes');
-
-    expect(routedSpy).toHaveBeenCalledWith({ taskId: task.id, target: 'schemes' });
-  });
-
-  it('onTaskDropped emits taskMoved when source is a department queue', () => {
-    setInputs();
-    const task = makeTask();
-    const movedSpy = jasmine.createSpy('taskMoved');
-    component.taskMoved.subscribe(movedSpy);
-
-    const fakeEvent = {
-      item: { data: task },
-      previousContainer: { data: 'schemes' },
-      container: { data: 'heists' },
-    } as any;
-
-    component.onTaskDropped(fakeEvent, 'heists');
-
-    expect(movedSpy).toHaveBeenCalledWith({ taskId: task.id, from: 'schemes', to: 'heists' });
   });
 
   it('onTaskDropped emits taskReordered when source equals target', () => {
@@ -119,11 +80,7 @@ describe('KanbanBoardComponent', () => {
       departmentQueues: { ...emptyQueues, schemes: [task1, task2] },
     });
     const reorderedSpy = jasmine.createSpy('taskReordered');
-    const movedSpy = jasmine.createSpy('taskMoved');
-    const routedSpy = jasmine.createSpy('taskRouted');
     component.taskReordered.subscribe(reorderedSpy);
-    component.taskMoved.subscribe(movedSpy);
-    component.taskRouted.subscribe(routedSpy);
 
     const fakeEvent = {
       item: { data: task1 },
@@ -136,16 +93,29 @@ describe('KanbanBoardComponent', () => {
     component.onTaskDropped(fakeEvent, 'schemes');
 
     expect(reorderedSpy).toHaveBeenCalledWith({ queue: 'schemes', taskIds: ['q2', 'q1'] });
-    expect(movedSpy).not.toHaveBeenCalled();
-    expect(routedSpy).not.toHaveBeenCalled();
+  });
+
+  it('onTaskDropped ignores cross-queue drops', () => {
+    setInputs();
+    const task = makeTask();
+    const reorderedSpy = jasmine.createSpy('taskReordered');
+    component.taskReordered.subscribe(reorderedSpy);
+
+    const fakeEvent = {
+      item: { data: task },
+      previousContainer: { data: 'schemes' },
+      container: { data: 'heists' },
+    } as any;
+
+    component.onTaskDropped(fakeEvent, 'heists');
+
+    expect(reorderedSpy).not.toHaveBeenCalled();
   });
 
   it('onTaskDropped does nothing when task data is missing', () => {
     setInputs();
-    const movedSpy = jasmine.createSpy('taskMoved');
-    const routedSpy = jasmine.createSpy('taskRouted');
-    component.taskMoved.subscribe(movedSpy);
-    component.taskRouted.subscribe(routedSpy);
+    const reorderedSpy = jasmine.createSpy('taskReordered');
+    component.taskReordered.subscribe(reorderedSpy);
 
     const fakeEvent = {
       item: { data: null },
@@ -155,8 +125,7 @@ describe('KanbanBoardComponent', () => {
 
     component.onTaskDropped(fakeEvent, 'heists');
 
-    expect(movedSpy).not.toHaveBeenCalled();
-    expect(routedSpy).not.toHaveBeenCalled();
+    expect(reorderedSpy).not.toHaveBeenCalled();
   });
 
   it('minionsByDept groups minions correctly', () => {

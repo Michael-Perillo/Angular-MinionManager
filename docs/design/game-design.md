@@ -1,353 +1,318 @@
-# Minion Manager — Game Design Document
+# Minion Manager — Game Design (Current State)
 
-> Sections marked **[CURRENT]** describe implemented mechanics with exact values from code.
-> Sections marked **[PROPOSED]** describe future designs — not yet built.
->
-> **See also:** [game-design-vision.md](game-design-vision.md) for the high-level roguelike vision, including the quarterly review structure, card-based automation, and meta-progression. This document covers current mechanics and near-term proposals; the vision doc covers the long-term strategic direction.
+Last updated: 2026-03-02
 
----
+## Status Legend
+- `Implemented`: behavior exists and is considered active in the game flow.
+- `In Progress`: partially implemented or present in WIP; not yet stable/validated.
+- `Planned`: accepted direction but not implemented.
 
-## Core Game Loop [CURRENT]
+## Scope
+This document is the canonical design snapshot for the v1 vertical-slice target:
+`scout -> route -> execute -> quarter progression -> basic automation`.
 
-### Event-Driven Architecture
-
-The game uses an **event-driven architecture** powered by `GameEventService` (15 event types) and `GameTimerService`.
-
-Instead of a single tick function, each game system runs on its own independent timer or event subscription:
-
-- **Task completion** — per-task timers scheduled on assignment, awards gold/XP on completion
-- **Board refresh** — dynamic interval (~3s base, reduced by upgrades/passives), fills empty mission board slots
-- **Auto-assign** — debounced microtask triggered by `MinionIdle`, `TaskQueued`, `MinionHired`, and `MinionReassigned` events
-- **Special Op expiry** — per-task 30s timer scheduled on spawn
-- **Notification cleanup** — 1s interval, removes notifications older than 4s
-- **Auto-save** — 30s interval
-
-`GameEventService` emits typed events (`TaskCompleted`, `MinionIdle`, `BoardRefreshed`, `LevelUp`, `SpecialOpSpawned`, `TaskQueued`, `TaskAssigned`, `MinionHired`, `MinionReassigned`, `UpgradePurchased`) that any system can subscribe to. This architecture unblocks the rules engine — rule triggers are event subscriptions, not tick polling.
-
-### The Core Progression
-
-```
-Click manually to complete tasks
-  → Earn gold to hire minions
-    → Minions automate task completion
-      → Upgrade minions (speed, efficiency, XP)
-        → Unlock harder tiers (more gold per task)
-          → Need more minions to handle volume
-            → Expand departments for passive bonuses
-              → Hit quarterly gold targets → earn card packs
-                → Build automation rules from cards
-                  → Survive Year-End boss reviews
-```
-
-**Key tension:** Each quarter has a task budget and a gold target. Players must earn enough gross gold from tasks to meet the target. Spending on upgrades and hires doesn't count against the target — so the tension is purely about earning efficiency.
-
-### Player Actions
-
-- **Click tasks** in the player workbench (manual completion)
-- **Drag missions** from the mission board to department queues or player workbench
-- **Hire minions** (pick one of two candidates)
-- **Purchase upgrades** from the upgrade shop
-- **Monitor quarterly progress** (tasks remaining, gold earned vs target)
+Related docs:
+- `game-design-vision.md` for long-horizon direction.
+- `roadmap.md` for phased implementation order and gates.
+- `implementation-status.md` for drift ledger and blockers.
+- `tutorial-plan.md` for first-run onboarding design.
 
 ---
 
-## Resource Economy
+## System Status Matrix
 
-### Gold [CURRENT]
-
-The **only** currency. Earned from completing tasks, spent on everything.
-
-**Earning formula:**
-```
-finalGold = floor(
-  floor(baseGold * (1 + (villainLevel - 1) * 0.07))  // +7% per villain level
-  * minionEfficiencyMultiplier                         // minion stat bonus
-  * (1 + (heistsLevel - 1) * 0.04)                    // Heists dept passive
-)
-```
-
-**Base values by tier (all scale by +7%/villain level):**
-
-| Tier | Base Gold | Base Time (s) | Base Clicks |
-|------|-----------|---------------|-------------|
-| Petty | 5 | 10 | 12 |
-| Sinister | 15 | 25 | 25 |
-| Diabolical | 40 | 55 | 40 |
-| Legendary | 100 | 90 | 55 |
-
-Special Operations grant +50% bonus gold (1.5x multiplier).
-
-**Spending sinks:**
-- Hiring minions: `75 * 1.6^(numMinions)` base cost (reduced by Recruitment Agency upgrade)
-- Upgrades: 10 operational upgrades with scaling costs (`baseCost * costScale^currentLevel`)
-- Card packs (when available — see Quarterly Rewards)
-- Strategic upgrades (gold-priced, see Card System)
-
-### Quarterly Targets [PROPOSED]
-
-The game's run structure is built around **quarterly performance reviews**. Each quarter has:
-
-1. **Task budget** — the quarter ends after N task completions
-2. **Gold target** — gross gold earned from tasks must meet this threshold
-
-**Gold target = total gold earned from completed tasks this quarter.** Spending on upgrades/hires does NOT count against the target. The tension is purely about earning efficiency: can your build generate enough gold per task?
-
-**Year 1 targets:**
-
-| Quarter | Task Budget | Gold Target | Pacing Notes |
-|---------|------------|-----------------|-------------|
-| Q1 | 30 tasks | 75g | Tutorial quarter. Mostly petty. First hire costs 75g. |
-| Q2 | 40 tasks | 400g | Sinister unlocking. 1-2 minions on sinister. |
-| Q3 | 60 tasks | 1,200g | Mid-game. VL scaling + efficiency needed. 3-4 minions. |
-| Q4 | Boss Review | — | Survive the reviewer's challenge. |
-
-**Year 2+ scaling:**
-- Task budgets: +10 tasks/quarter/year
-- Gold targets: ×1.8 per year
+| System | Status | Notes |
+|---|---|---|
+| Quarterly run structure (Q1-Q4, pass/miss, review flow) | `Implemented` | Core quarter progression and year-end review loop are in place. |
+| Gold-only economy | `Implemented` | Gold is the primary spend/earn currency in active flow. |
+| Base x Mult gold formula | `Implemented` | Transparent integer-additive mult system replaces opaque % scaling. |
+| Department mult progression (no passives) | `Implemented` | Departments provide +1 mult per level above 1. No department-specific passives. |
+| Per-department tier unlocking (gold sinks) | `Implemented` | Tiers purchased per department with gold (Sinister 15g, Diabolical 80g, Legendary 300g). |
+| Scouting costs budget | `Implemented` | Each scout costs 1 task budget. Scouting is instant (no click cost). |
+| Card/Joker inventory and pack opening | `Implemented` | Collection, pending pack, picks, and persistence are present. |
+| Joker integer mult system | `Implemented` | All jokers use integer additive mult values (+1, +2, +3). |
+| Rule CRUD and default rule fallback | `Implemented` | Rules can be created/toggled/reordered; default rule remains catch-all behavior. |
+| Scouting-driven mission supply | `Implemented` | Player/minion scouting is the only mission intake. Board pre-seeded at quarter start. |
+| Minion role model (`worker`/`scout`) | `Implemented` | Role field exists; scouts auto-scout every 3 ticks costing 1 budget each. |
+| Department unlocks via vouchers | `Implemented` | Voucher model supports unlock vouchers. |
+| Routing/role actions in rule engine | `In Progress` | New rule actions/conditions are in branch work; conflict-proof execution still being validated. |
+| Efficiency rewards (par system) | `Implemented` | Budget remaining at quarter end determines card pack quality. |
+| First-run guided tutorial | `Planned` | Defined in `tutorial-plan.md`; runtime system not yet complete. |
 
 ---
 
-## Quarterly Review System [PROPOSED]
+## Core Loop
 
-### Year-End Boss Reviews
+### Mission Intake
+`Implemented`
 
-Q4 is a **boss review** — a named corporate manager evaluates your operation under constraints.
+Current behavior:
+1. Player manually scouts from the workbench (instant, costs 1 budget).
+2. Scout-role minions auto-scout every 3 ticks (each costs 1 budget).
+3. Board pre-seeded with 6 tasks at quarter start.
+4. No passive timed board refill.
 
-Each reviewer has:
-1. **A base challenge** (a target or survival condition active during the review)
-2. **A personality** (determines modifier types)
-3. **Extra modifiers** for each missed quarterly target (0-3 stacking)
+Design intent:
+- Supply is player-controlled and automatable via scout minions and rule cards.
+- Scouting costs budget, creating tension: "Spend 1 budget to find better tasks, or complete what's available?"
 
-**Example Reviewers:**
+### Routing
+`Implemented` with `In Progress` extensions
 
-| Reviewer | Title | Base Challenge | Missed-Q Modifier |
-|----------|-------|----------------|-------------------|
-| Margaret Thornton | VP of Compliance | "Only Sinister+ tasks count" | "Schemes dept under audit (locked)" |
-| Viktor Grimes | Head of Internal Affairs | "No new hires during review" | "Minion speed halved" |
-| Director Blackwell | Chief Risk Officer | "Raids every 30 seconds" | "Random minion quits each raid" |
-| Patricia Hale | SVP Strategic Oversight | "Board refresh frozen" | "Upgrade shop locked" |
-| The Auditor | ??? | "Gold drains at 5g/s. Earn 500g net." | "Only petty tasks available" |
+Current and target behavior:
+1. Missions on the board are routed to a department queue or player workbench.
+2. Manual routing is always available.
+3. Rule-driven routing (task-scouted triggers to dept/workbench actions) is being finalized.
+4. Dismissing a task from the board is free (no budget cost).
 
-**Modifier categories:** Task constraints (restrict what works), Operational constraints (restrict how you work), Survival challenges (active threats during review).
+### Execution
+`Implemented`
 
-### Review Mechanics
+Current behavior:
+1. Player can click tasks in workbench/manual queues.
+2. Worker minions execute assigned queued tasks.
+3. Completion awards gold using Base x Mult formula.
 
-- The review is a special quarter with its own task budget and gold target, played under the reviewer's modifiers
-- Miss the target → **run over**. This is the loss condition.
-- Survive → next year begins with escalated targets
-- Each missed Q1-Q3 target adds a modifier to the boss, stacking difficulty
+### Quarter Progression
+`Implemented`
 
-### Rewards
-
-| Event | Reward |
-|-------|--------|
-| Pass Q1 | Card pack (3 shown, pick 1) |
-| Pass Q2 | Card pack (4 shown, pick 1) + upgrade discount |
-| Pass Q3 | Card pack (5 shown, pick 2) |
-| Survive Year-End | Card pack (5 shown, pick 2) + next year |
-| Miss Q1/Q2/Q3 | No card pack, extra boss modifier |
+Current behavior:
+1. Quarter ends when task budget is exhausted (scouting also costs budget).
+2. Quarter is evaluated against gross gold target.
+3. Pass/fail drives rewards and year-end review pressure.
+4. Efficiency rating based on remaining budget when gold target is met.
 
 ---
 
-## Department System [CURRENT]
+## Economy and Progression
+
+### Gold Formula: Base x Mult
+`Implemented`
+
+**Base** = fixed per tier (small, easy to multiply):
+
+| Tier | Base Gold | Clicks |
+|------|-----------|--------|
+| Petty | 2 | 10 |
+| Sinister | 5 | 18 |
+| Diabolical | 12 | 30 |
+| Legendary | 30 | 45 |
+
+**Mult** = 1 + sum of all bonuses (all integers, trivial mental math):
+
+| Source | Bonus | Example |
+|--------|-------|---------|
+| Dept level (matching) | +1 per level above 1 | Dept L5 = +4 |
+| Specialty match | +1 | Minion specialty = task dept |
+| Special Op flag | +1 | 15% chance on scout |
+| Jokers (common/uncommon) | +1 each | Max 5 equipped |
+| Jokers (rare/legendary) | +2 or +3 each | |
+| Boss review penalty | -1 or -2 | Integer modifier penalties |
+
+**Example:** "Sinister Heist, Research L4, specialty match = 5 x (1+3+1) = 5 x 5 = 25g"
+
+**Removed from gold formula:** VL scaling (was +5%/level), dept passives (were opaque %s). VL is cosmetic title only.
 
 ### Departments
+`Implemented`
 
-| Department | Icon | Passive | Scaling |
-|------------|------|---------|---------|
-| Research | 🧪 | Covert Ops — reduced task time | -5% per level above 1 |
-| Schemes | 🗝️ | Intel Network — faster board refresh | -8% per level above 1 |
-| Heists | 💎 | Loot Bonus — bonus gold from all tasks | +4% per level above 1 |
-| Mayhem | 💥 | Intimidation — increased Special Op chance | +3% per level above 1 |
+- Departments are the primary mult driver: +1 per level above 1.
+- All departments work identically through mult — no department-specific passives.
+- Two investment axes per department:
+  1. **Gold → tier unlocks** (Sinister 15g, Diabolical 80g, Legendary 300g per dept)
+  2. **XP → dept level** (+1 mult per level above 1)
 
-### Department XP & Leveling [CURRENT]
+Steepened XP curve: `floor(25 * pow(level-1, 2.0))`
 
-**Formula:** `deptXpForLevel(level) = 20 * (level - 1)^1.8`
+| Level | XP Required | Mult Bonus |
+|-------|-------------|------------|
+| 2 | 25 | +1 |
+| 3 | 100 | +2 |
+| 4 | 225 | +3 |
+| 5 | 400 | +4 |
+| 6 | 625 | +5 |
 
-| Level | XP to Next | Available Tiers |
-|-------|-----------|-----------------|
-| 1–2 | 20 | Petty |
-| 3–4 | 60–120 | Petty, Sinister |
-| 5–7 | 200–420 | Petty, Sinister, Diabolical |
-| 8–10 | 560–900 | All tiers including Legendary |
+### Tier Unlocking (Per-Department Gold Sinks)
+`Implemented`
 
-**XP earned per task tier (base):**
+| Tier | Unlock Cost (per dept) | Earliest Realistic |
+|------|----------------------|-------------------|
+| Petty | Free | Always |
+| Sinister | 15g | Y1 Q1 |
+| Diabolical | 80g | Y1 Q2-Q3 |
+| Legendary | 300g | Y2+ |
 
-| Tier | Dept XP | Modified by Dept Funding upgrade |
-|------|---------|--------------------------------|
-| Petty | 5 | Yes |
-| Sinister | 12 | Yes |
-| Diabolical | 25 | Yes |
-| Legendary | 50 | Yes |
+- Each department independently tracks unlocked tiers.
+- Only unlocked tiers appear when scouting for that department's tasks.
+- Scouting tier weights (within unlocked tiers): Petty 50%, Sinister 30%, Diabolical 15%, Legendary 5%.
 
-### Progressive Unlocking [CURRENT]
+### Scouting Budget
+`Implemented`
 
-Departments use a **two-tier unlock system**:
+- Each scout = 1 budget spent (player or minion).
+- Scouting is instant (no click cost, no scout task object).
+- Board pre-seeded with 6 tasks at quarter start.
+- Board max capacity: 8 + min(4, minionCount) + voucher bonus.
+- Dismissing a task from the board is free.
+- Scout minions auto-scout every 3 ticks (3 seconds), each costing 1 budget.
 
-1. **Department unlock** — Hire a minion with that department's specialty. Persists even if the minion is later lost.
-2. **Filter unlock** — Department reaches **level 2**. The mission board category filter becomes clickable.
+### Minions
+`Implemented`
 
----
+- Minions have speed, specialty, level/xp.
+- Role model includes `worker` and `scout`.
+- Specialty match adds +1 to mult.
+- Minion cost curve: `floor(75 * pow(1.5, minionCount) * (1 - hireDiscount))`.
 
-## Minion System [CURRENT]
+### Currency
+`Implemented`
 
-### Hiring [CURRENT]
-
-Pick-one-of-two choice system. If any departments are still locked, at least one candidate will have a locked department's specialty.
-
-**Cost formula:** `75 * 1.6^(numMinions)`, reduced by Recruitment Agency upgrade.
-
-### Stats [CURRENT]
-
-| Stat | Base Range | Per-Level Bonus | Specialty Bonus |
-|------|-----------|-----------------|-----------------|
-| Speed | 0.7–1.3 | +2% per level above 1 | +25% when task matches specialty |
-| Efficiency | 0.7–1.3 | +3% per level above 1 | +25% when task matches specialty |
-
-### XP & Leveling [CURRENT]
-
-**Formula:** `xpForLevel(level) = 10 * (level - 1)^1.6`
-
-**XP per task tier (base):** Petty 3, Sinister 8, Diabolical 15, Legendary 25. Boosted by Fast Learner upgrade.
-
-### Rank Titles [CURRENT]
-
-| Level | Rank | Stars |
-|-------|------|-------|
-| 1–2 | Lackey | 1 |
-| 3–4 | Grunt | 2 |
-| 5–6 | Agent | 3 |
-| 7–8 | Operative | 4 |
-| 9–10 | Elite | 5 |
-| 11+ | Mastermind | 6 |
+- Gold drives hires, tier unlocks, vouchers, and pack purchases.
+- Quarterly target tension based on gross gold earned (not spend tracking).
+- Gold sinks: minion hiring, tier unlocking, voucher upgrades, card packs.
 
 ---
 
-## Mission System [CURRENT]
+## Special Operations
+`Implemented`
 
-### Template Taxonomy
-
-**60 mission templates** in `task-pool.ts` across 4 categories and 4 tiers:
-- Each category has 5 petty, 5 sinister, 3 diabolical, 2 legendary = 15 per category
-
-### Special Operations [CURRENT]
-
-- 15% base spawn rate (increased by Mayhem passive: +3% per level above 1)
-- 30-second expiry timer
-- +50% gold reward
-- Appear with gold glow animation
-
-### Mission Board [CURRENT]
-
-- Base capacity: 12 slots (expandable via Expanded Intel upgrade)
-- Refresh interval: ~3 seconds base (reduced by Rapid Intel upgrade and Schemes passive)
-- Active mission limit: 3 base (expandable via Operations Desk upgrade)
+- Special Op = flag on scouted task (15% chance).
+- Adds +1 to mult (shown in breakdown, consistent with integer system).
+- No expiry timer — they sit on board like any task.
 
 ---
 
-## Upgrade System [CURRENT + PROPOSED]
+## Efficiency Rewards (Par System)
+`Implemented`
 
-### Operational Upgrades (Gold) — 10 total [CURRENT]
+When gold target is hit with budget remaining:
 
-**Click Power:**
+| Budget Remaining | Rating | Card Pack Reward |
+|-----------------|--------|-----------------|
+| 0-10% | Standard | 1 pick from 3 |
+| 11-25% | Standard+ | 2 picks from 4 |
+| 26-50% | Premium | 2 picks from 5 |
+| 50%+ | Premium+ | 3 picks from 5 |
 
-| Upgrade | Base Cost | Scale | Effect Type |
-|---------|-----------|-------|-------------|
-| Iron Fingers | 30g | 1.8x | Additive: +clicks per click |
-| Golden Touch | 50g | 2.0x | Percentage: +% gold from clicked tasks (max 150%) |
-
-**Minion Training:**
-
-| Upgrade | Base Cost | Scale | Effect Type |
-|---------|-----------|-------|-------------|
-| Speed Drills | 60g | 1.9x | Percentage: +% minion speed (max 100%) |
-| Profit Training | 60g | 1.9x | Percentage: +% minion efficiency (max 100%) |
-| Fast Learner | 100g | 2.2x | Percentage: +% minion XP (max 200%) |
-| Recruitment Agency | 75g | 2.2x | Percentage: -% hire cost (max 60%) |
-
-**War Room:**
-
-| Upgrade | Base Cost | Scale | Effect Type |
-|---------|-----------|-------|-------------|
-| Expanded Intel | 80g | 2.0x | Additive: +board slots |
-| Operations Desk | 120g | 2.5x | Additive: +active mission slots |
-| Rapid Intel | 70g | 2.0x | Refresh multiplier: reduces board refresh interval |
-
-**Department:**
-
-| Upgrade | Base Cost | Scale | Effect Type |
-|---------|-----------|-------|-------------|
-| Department Funding | 90g | 2.0x | Percentage: +% dept XP (max 150%) |
-
-**Cost formula:** `floor(baseCost * costScale^currentLevel)`
-
-### Strategic Upgrades (Gold) [PROPOSED — Card System]
-
-| Upgrade | Max Lv | Effect | Costs |
-|---------|--------|--------|-------|
-| Rule Slots | 5 | +1 active automation rule per level | 25/60/120/200/350 |
-| Condition Depth | 3 | +1 max AND-clause per rule | 40/100/200 |
-| Logic Gates | 3 | OR (L1), NOT (L2), nested boolean (L3) | 50/125/250 |
-| Pack Insight | 3 | +1 card shown per pack opening | 30/75/150 |
-| Card Synergy | 3 | +10% modifier effectiveness per level | 35/90/180 |
+Leftover budget bonus: each unspent budget point = +1g carried to next quarter.
 
 ---
 
-## Villain Progression [CURRENT]
+## Voucher Shop
+`Implemented`
 
-### Villain Level
-
-**Formula:** `min(20, floor(sqrt(completedCount / 5)) + 1)`
-
-**Symmetric scaling:** Everything scales at +7% per villain level — gold, time, and clicks. Gold/minute per minion stays roughly flat; growth comes from more minions and upgrades, not raw VL progression.
-
-### Villain Titles [CURRENT]
-
-| Level | Title |
-|-------|-------|
-| 1–2 | Petty Troublemaker |
-| 3–4 | Aspiring Villain |
-| 5–6 | Notorious Scoundrel |
-| 7–8 | Criminal Mastermind |
-| 9–10 | Arch-Villain |
-| 11–14 | Dark Overlord |
-| 15–20 | Supreme Evil Genius |
+- Show 3 random upgrade vouchers per shop visit (seeded by year+quarter).
+- All costs multiply by year number (Y1=x1, Y2=x2, Y3=x3).
+- Available vouchers: iron-fingers, board-expansion, operations-desk, hire-discount, dept-funding, rule-mastery.
+- Rapid Intel and Scout Expansion removed (scouting has no click cost).
 
 ---
 
-## Card-Based Automation [PROPOSED]
+## Quarter Targets
+`Implemented`
 
-See [game-design-vision.md](game-design-vision.md) for full details on the card system. Summary:
-
-- **29 universal logic cards** (8 Triggers, 10 Conditions, 8 Actions, 5 Modifiers)
-- Cards compose into **automation rules** (WHEN → IF → THEN)
-- **Default rule:** `WHEN Idle → Assign to Work` (always active, lowest priority)
-- AND-clause multipliers reward stacking conditions (1x/1.5x/2.5x/5x/8x/12x)
-- Cards acquired through **quarterly rewards** (hitting targets) and **gold-purchased packs**
-- 12 deterministic milestone drops ensure minimum viable card set
-- Boss modifiers can interact with rules ("automation disabled", "only 1 rule slot")
+| Year | Quarter | Budget | Target |
+|------|---------|--------|--------|
+| Y1 | Q1 | 25 | 30g |
+| Y1 | Q2 | 35 | 100g |
+| Y1 | Q3 | 45 | 300g |
+| Y2 | Q1 | 35 | 200g |
+| Y2 | Q2 | 45 | 600g |
+| Y2 | Q3 | 55 | 1500g |
+| Y3 | Q1 | 45 | 500g |
+| Y3 | Q2 | 55 | 1200g |
+| Y3 | Q3 | 65 | 3500g |
+| Y4+ | | +8/yr | x2.0/yr |
 
 ---
 
-## Balancing Principles
+## Joker System
+`Implemented`
 
-### Quarterly Targets as Core Tension
+All jokers use integer additive mult values:
 
-The quarterly review system replaces notoriety as the primary balancing lever. Every decision weighs investment against accumulation:
-- Spend gold on upgrades → higher gold/task going forward (spending doesn't count against target)
-- Hire more minions → expensive upfront, but more tasks completed within the budget
-- Higher-tier tasks → more gold per task, but fewer total tasks possible if manually clicking
+| Joker | Rarity | Effect |
+|-------|--------|--------|
+| Gold Rush | Common | +1 mult (all tasks) |
+| Deep Pockets | Common | +1 flat gold |
+| Iron Fist | Common | +2 click power |
+| Quick Study | Uncommon | +1 minion XP mult |
+| Heist Expert | Uncommon | +2 mult (heists only) |
+| Research Grant | Uncommon | +1 dept XP mult |
+| Speed Demon | Rare | +1 speed tier |
+| Bargain Hunter | Rare | -3 clicks flat |
+| Lucky Break | Rare | +2 mult (specialty match) |
+| Overachiever | Legendary | +3 mult (specialty match) |
 
-### Automation Should Be Authored, Not Purchased
+---
 
-Each automation tier removes a manual chore but introduces a new strategic choice:
-- Minions remove clicking → player chooses mission routing
-- Card-based rules remove routing → player designs automation logic
-- Better rules → more efficient gold/task → easier quarterly targets → harder year-end bosses
+## Automation Stack
 
-### Power Curve
+### Cards/Jokers/Packs
+`Implemented`
 
-- **Linear early** — clear, predictable growth to teach mechanics (Q1-Q2 Year 1)
-- **Exponential mid** — satisfying acceleration as card synergies compound (Q3+ Year 1)
-- **Boss pressure** — Year-End reviews with modifiers prevent infinite optimization, pushing toward decisive play
-- **Escalating targets** — Year 2+ demands better builds, creating natural roguelike difficulty ramp
+- Owned card and joker collections are persisted.
+- Pack generation and pick flows exist.
+- Joker effects use integer additive mult values.
+- Efficiency-based pack quality from par system.
+
+### Rule Engine
+`Implemented` with `In Progress` expansion
+
+Implemented baseline:
+- Event-driven rule evaluation and action generation.
+- Default fallback rule behavior.
+
+In-progress extensions:
+- New scouting/routing triggers and conditions.
+- Role-switch actions.
+- Routing actions against task context.
+
+v1 requirement:
+- Rule behavior must be useful by Y1Q3 (at least 2-3 practical strong rules).
+
+---
+
+## Reviews and Modifiers
+`Implemented`
+
+- Q4 review/boss flow is active.
+- Operational constraints include automation-disabled behavior.
+- "Board Frozen" = "Intel Blackout" in scouting-first flow.
+- Gold penalty modifiers use integer mult adjustments (-1, -2 from mult).
+
+---
+
+## UI State
+
+| Surface | Status | v1 Direction |
+|---|---|---|
+| Mission board | `Implemented` | Empty-state and blackout language aligned to scouting-first supply. |
+| Kanban + queues | `Implemented` | Maintain manual routing as baseline; preserve mobile parity. |
+| Rule editor/drawer rules tab | `Implemented` | Keep as v1 editing surface; improve clarity and useful presets later. |
+| Shop | `Implemented` | 3 random vouchers per visit, year-scaled costs, card packs. |
+| Workbench scouting | `Implemented` | Instant scout button (costs 1 budget). |
+| Dept tier unlock UI | `Implemented` | Tier unlock buttons in department column ("Unlock Sinister: 15g"). |
+| Gold breakdown display | `Implemented` | "Base x Mult = Total" with breakdown tooltip. |
+| Tutorial overlay | `Planned` | First-run guided, skippable, replayable, seeded. |
+
+---
+
+## v1 Vertical Slice Definition
+
+The slice is complete when all of the following are true:
+1. Player can discover missions via scouting (manual or scout-role minions), each costing 1 budget.
+2. Missions can be manually or automatically routed and completed.
+3. Gold formula is transparent: Base x Mult with integer additive bonuses.
+4. Quarter pass/fail loop with efficiency rewards is coherent.
+5. Automation fallback works when modifiers disable custom rules.
+6. Build/type/tests are green per the release gate in `roadmap.md`.
+
+---
+
+## Out of Scope for v1
+
+The following can proceed post-v1 unless low-risk:
+1. Full menu-system overhaul.
+2. Full toast visual redesign.
+3. Large-scale aesthetic rewrites not required for core loop clarity.

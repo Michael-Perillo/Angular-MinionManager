@@ -27,9 +27,6 @@ export const MissionsTab: Story = {
     await userEvent.click(canvas.getByText('Work'));
     expect(args.tabSelected).toHaveBeenCalledWith('work');
 
-    await userEvent.click(canvas.getByText('Click'));
-    expect(args.tabSelected).toHaveBeenCalledWith('click');
-
     await userEvent.click(canvas.getByText('More'));
     expect(args.tabSelected).toHaveBeenCalledWith('more');
 
@@ -41,13 +38,6 @@ export const MissionsTab: Story = {
 export const WorkTab: Story = {
   args: {
     activeTab: 'work',
-    hasAlert: false,
-  },
-};
-
-export const ClickTab: Story = {
-  args: {
-    activeTab: 'click',
     hasAlert: false,
   },
 };

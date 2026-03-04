@@ -1,406 +1,241 @@
-# Minion Manager — Feature Roadmap
+# Minion Manager — v1 Implementation Roadmap
 
-> This roadmap charts the path from the current idle game to the **roguelike management sim** described in [game-design-vision.md](game-design-vision.md). The game reorients around escalating quarterly targets and Year-End boss reviews (Balatro-inspired), with a gold-only economy and card-based automation.
->
-> Related docs: [game-design.md](game-design.md) (current mechanics), [game-design-vision.md](game-design-vision.md) (long-term vision), [narrative.md](narrative.md), [art-direction.md](art-direction.md), [../gameplay-improvements.md](../gameplay-improvements.md), [../user-feedback.md](../user-feedback.md)
+Last updated: 2026-03-03
 
----
+This roadmap is the execution document for the v1 vertical slice and documentation reconciliation workstream.
 
-## Feature Pillars
+## v1 Objective
+Ship a stable, testable loop:
+`scout -> route -> execute -> quarter progression -> basic automation`
 
-| Pillar | Goal | Key Systems |
-|--------|------|-------------|
-| **Economy** | Gold-only, one number that matters | Quarterly gold targets (gross gold earned), earning efficiency tension |
-| **Automation** | Player-authored rules | Universal logic cards, strategic upgrades (gold-priced), AND/OR chaining |
-| **Roguelike** | Escalating runs with loss condition | Quarterly targets, Year-End boss reviews, named reviewers with modifiers |
-| **Meta** | Between-run progression | Infamy Points, permanent unlocks, Hall of Fame |
-| **Polish** | Juice + accessibility + narrative | Sound, animations, corporate satire, milestone storytelling |
-
----
-
-## Phase A — Strip & Restructure
-
-**Goal:** Remove accumulated complexity (notoriety, Influence, raids, bribes, cover tracks) and add the quarterly review structure. This simplifies the game to its core — kanban board + minions + gold — and establishes the run structure.
-
-### Remove Systems
-
-- [ ] Remove **notoriety system** entirely
-  - `notoriety.model.ts`, `notoriety.model.spec.ts` — delete
-  - Notoriety signals in `game-state.service.ts` — remove
-  - `awardGold()` notoriety gain path — remove
-  - Notoriety bar component + stories — remove
-  - Header threat level display — remove
-- [ ] Remove **Influence currency**
-  - `resource.model.ts` Influence-related exports — remove or repurpose
-  - Influence signals in `game-state.service.ts` — remove
-  - Influence display in header — remove
-  - Influence penalty from notoriety — remove
-- [ ] Remove **4 notoriety upgrades**
-  - Lay Low Protocol, Shadow Operations, Deep Cover, Bribe Network — remove from `upgrade.model.ts`
-  - Update upgrade counts, categories, UI
-- [ ] Remove **raids**
-  - `checkRaidTrigger()`, `processRaidCountdown()` — remove from `game-state.service.ts`
-  - Raid intervals in `game-timer.service.ts` — remove
-  - Raid UI (alert, defend button) — remove
-  - `RaidStarted`, `RaidEnded` events — remove
-- [ ] Remove **bribes**
-  - `bribeCost()`, bribe methods — remove
-  - Bribe UI — remove
-- [ ] Remove **cover tracks missions**
-  - `createCoverTracksMission()`, `COVER_TRACKS_CHANCE` — remove
-  - Cover tracks templates — remove
-- [ ] Remove **breakout missions** (raids are gone, so captures don't happen)
-  - `capturedMinions` signal, prison timers — remove
-  - Breakout mission logic — remove
-
-### Update Research Passive
-
-- [ ] Research department passive ("Covert Ops — reduced notoriety gain") needs a **new purpose** since notoriety is removed
-  - Proposed: "Efficiency Lab — reduced task time" (−5% per level above 1, stacks with Speed Drills)
-  - Alternative: "R&D Insights — bonus XP from all tasks"
-
-### Add Quarterly Structure
-
-- [ ] Create `quarter.model.ts` — quarter targets, year/quarter state, task budget tracking
-- [x] Add quarterly signals to `game-state.service.ts`: `currentYear`, `currentQuarter`, `quarterTaskBudget`, `quarterTasksCompleted`, `quarterGoldTarget`, `quarterGold`
-- [x] Track gross gold earned per quarter (spending not tracked — target is gross gold)
-- [x] Quarter completion detection: when `quarterTasksCompleted >= quarterTaskBudget`
-- [x] Quarter result: pass (gold earned ≥ target) or miss (gold earned < target)
-- [ ] Track missed quarters for boss modifier stacking
-- [ ] Year 1 targets: Q1 (30 tasks, 75g), Q2 (40 tasks, 400g), Q3 (60 tasks, 1200g)
-- [ ] Year 2+ scaling: +10 tasks/quarter/year, ×1.8 gold targets/year
-
-### Add Quarterly Events
-
-- [ ] New game events: `QuarterCompleted`, `QuarterMissed`, `YearStarted`
-- [ ] Quarterly progress UI: header indicator showing tasks remaining + gold progress
-- [ ] Drawer panel section: quarterly details, year tracker
-- [ ] Card pack placeholder rewards on quarter pass (actual card system is Phase C)
-
-### Update Persistence
-
-- [ ] Bump save data version
-- [ ] Add quarterly state to save format (year, quarter, progress, missed count)
-- [ ] Migration from prior version (strip notoriety/influence/raids, add quarterly state)
-- [ ] Update all affected unit tests
-- [ ] Update E2E tests (remove notoriety flows, add quarterly flows)
-- [ ] Update Storybook stories (remove notoriety bar, update header, update drawer)
-
-### Text Readability & Accessibility
-
-*Carried forward from prior Phase 0:*
-
-- [ ] Audit small text sizes and low-contrast elements
-- [ ] Increase minimum font size on data-dense panels
-- [ ] Ensure all text meets WCAG AA contrast ratio (4.5:1)
-
-**Dependencies:** None — this is the foundation phase.
-
-**Deliverables:** Clean gold-only economy, quarterly target tracking, stripped-down game with clear tension mechanic.
+## Success Criteria
+1. Build/type checks pass.
+2. Core loop is fully playable without hidden supply mechanics.
+3. Automation is useful by Year 1 Quarter 3.
+4. Tutorial is first-run, skippable, replayable, and deterministic.
+5. Documentation is synchronized with repo reality and known blockers.
 
 ---
 
-## Phase B — Year-End Boss Reviews
+## Phase 0 — Baseline Stability
 
-**Goal:** Add the loss condition that makes this a roguelike. Named corporate reviewers with modifier pools create the "boss blind" challenge at the end of each year.
+### Goal
+Eliminate compile/type and schema drift blockers before extending behavior.
 
-### Reviewer Data Model
+### Entry Criteria
+1. Active branch contains mixed committed + WIP deltas.
+2. Build/type failures exist from model and save-schema shifts.
 
-- [ ] `reviewer.model.ts` — reviewer pool with named characters, titles, personalities
-- [ ] Base challenge per reviewer (constraint active during review)
-- [ ] Missed-quarter modifier pool per reviewer (drawn from all 3 categories)
-- [ ] 8-12 reviewers in the initial pool
+### Work
+1. Resolve regressions from required `Minion.role` across stories/specs/dev tooling.
+2. Resolve regressions from expanded voucher IDs.
+3. Resolve Save v12 field drift (`lastBoardRefresh` removal, new scout/task state handling).
+4. Remove stale board-refresh-era references in support files.
 
-### Modifier System
-
-- [ ] Modifier types: task constraints, operational constraints, survival challenges
-- [ ] Modifier application: temporarily alter game rules during review
-- [ ] Modifier removal: restore normal rules when review ends
-- [ ] Stacking: 0-3 missed-quarter modifiers added to reviewer's base challenge
-
-### Review Flow
-
-- [ ] Year-End review trigger at Q4
-- [ ] Reviewer selection (random from year's available pool)
-- [ ] Review is a special quarter with own task budget + gold target + active modifiers
-- [ ] Review result: survive (pass target under constraints) → next year, fail → run over
-- [ ] Run-over screen with summary stats
-
-### Year Scaling
-
-- [ ] Year 1: 3 reviewers available
-- [ ] Year 2: +3 reviewers (6 total)
-- [ ] Year 3: +2 reviewers (8 total)
-- [ ] Year 4+: full pool available
-- [ ] Target multiplier: 1.0× → 1.8× → 3.0× → +1.5×/year
-
-### Review UI
-
-- [ ] Reviewer introduction screen (name, title, personality flavor text)
-- [ ] Active modifiers display during review
-- [ ] Review progress tracker (task budget + gold target under constraints)
-- [ ] Review result screen (survive/fail)
-
-### Example Reviewers
-
-| Reviewer | Title | Base Challenge |
-|----------|-------|----------------|
-| Margaret Thornton | VP of Compliance | "Only Sinister+ tasks count" |
-| Viktor Grimes | Head of Internal Affairs | "No new hires during review" |
-| Director Blackwell | Chief Risk Officer | "Raids every 30 seconds" |
-| Patricia Hale | SVP Strategic Oversight | "Board refresh frozen" |
-| The Auditor | ??? | "Gold drains at 5g/s" |
-
-**Dependencies:** Phase A (quarterly structure must exist).
-
-**Deliverables:** Named boss reviewers, modifier system, Year-End review flow, run termination condition, year scaling.
+### Exit Criteria
+1. `ng build` passes.
+2. `npx tsc -p tsconfig.app.json --noEmit` passes.
+3. Core test suites covering touched models/services are updated and passing.
 
 ---
 
-## Phase C — Card System & Rule Engine
+## Phase 1 — Scouting Loop Completion
 
-**Goal:** The core new system. Players collect logic cards and arrange them into automation rules. This is what transforms the game from a clicker into a management sim.
+### Goal
+Make scouting the canonical mission intake path.
 
-*Source: [game-design-vision.md](game-design-vision.md) — Card-Based Rule Building*
+### Entry Criteria
+1. Baseline stability gate is green.
+2. Scouting primitives exist but are not fully validated end-to-end.
 
-### Card Data Model
+### Work
+1. Keep mission generation scouting-driven; no passive timed board refill.
+2. Finalize manual workbench scouting path (`scoutClick`, progress, mission spawn, feedback).
+3. Finalize scout minion task path (spawn mission, no direct gold/xp payout, release scout).
+4. Enforce Intel Blackout across all scouting pathways.
+5. Ensure `TaskScouted` and `BacklogLow` events are consistently emitted and consumed.
 
-- [ ] Card types: Trigger (Red), Condition (Blue), Action (Green), Modifier (Gold)
-- [ ] Card attributes: id, type, name, description, rarity, parameters
-- [ ] Card rarity tiers (Common, Uncommon, Rare, Legendary)
-- [ ] Card pool: 29 universal cards (8 Triggers, 10 Conditions, 8 Actions, 5 Modifiers)
-
-### Rule Engine
-
-- [ ] Rule model: Trigger + optional Conditions + Action + optional Modifiers
-- [ ] Rule evaluation: all-match + priority claiming
-- [ ] **Default rule:** built-in `WHEN Idle → Assign to Work` (always lowest priority, cannot be removed)
-- [ ] Priority ordering (player-configurable drag to reorder)
-- [ ] AND-clause multiplier: 0=1x, 1=1.5x, 2=2.5x, 3=5x, 4=8x, 5=12x
-- [ ] Rules subscribe to game events (triggers are event subscriptions)
-
-### Strategic Upgrades (Gold)
-
-- [ ] Rule Slots: +1 active rule per level (max 5) — 25/60/120/200/350g
-- [ ] Condition Depth: +1 max AND-clause per rule (max 3) — 40/100/200g
-- [ ] Logic Gates: OR (L1), NOT (L2), nested boolean (L3) — 50/125/250g
-- [ ] Pack Insight: +1 card shown per pack opening (max 3) — 30/75/150g
-- [ ] Card Synergy: +10% modifier effectiveness per level (max 3) — 35/90/180g
-
-### Card Acquisition
-
-**Quarterly rewards** (primary cadence):
-- Pass Q1 → card pack (3 shown, pick 1)
-- Pass Q2 → card pack (4 shown, pick 1)
-- Pass Q3 → card pack (5 shown, pick 2)
-- Survive Year-End → card pack (5 shown, pick 2)
-
-**Gold-purchased packs** (competing with upgrades/hires):
-- Pack pricing TBD — must be meaningful enough to compete with operational investments
-
-**Milestone drops** — 12 deterministic cards through natural progression:
-
-| Milestone | Card | Type |
-|-----------|------|------|
-| Complete 5 tasks | When Idle | Trigger |
-| Reach VL 2 | Assign to Work | Action |
-| First dept L2 | Specialty Match | Condition |
-| Complete 25 tasks | Gold Rush | Modifier |
-| Hire 5th minion | Tier Check | Condition |
-| Reach VL 4 | On Completion | Trigger |
-| Any dept L4 | Assign to Highest Tier | Action |
-| Complete 75 tasks | Swift Execution | Modifier |
-| Reach VL 6 | Every 10s | Trigger |
-| Any dept L6 | Level Threshold | Condition |
-| Complete 150 tasks | Stealth Op | Modifier |
-| Reach VL 8 | On Threat Change | Trigger |
-
-### Boss + Card Interactions
-
-- [ ] "Automation rules disabled" modifier — forces manual play during review
-- [ ] "Only 1 rule slot active" modifier — forces prioritization
-- [ ] "Modifier cards have no effect" — strips bonus effects
-
-### Rule Builder UI
-
-- [ ] WHEN [trigger] → IF [conditions] → THEN [action] + [modifiers]
-- [ ] Drag/slot cards from collection into rule slots
-- [ ] Active rules list with enable/disable and priority reordering
-- [ ] Rule preview in plain English
-
-### Rolodex UI
-
-- [ ] Corporate rolodex aesthetic for browsing cards
-- [ ] Filter/sort by type, rarity
-- [ ] Card detail view with stats and flavor text
-
-### Persistence
-
-- [ ] Save data update: card collection + active rules + rule configuration
-- [ ] Migration from prior save version
-
-**Dependencies:** Phase A (gold economy + quarterly rewards provide card acquisition cadence), Phase B (boss modifiers interact with rules).
-
-**Deliverables:** Working card system, rule engine, rule builder UI, rolodex, card collection through quarterly rewards + milestones + gold purchases.
-
-### Open Design Questions
-
-- **Rule builder interaction design** — Mockups needed. Mobile touch experience?
-- **Card pack gold pricing** — How much should gold-purchased packs cost?
-- **Chain Reaction card** — Deferred. Needs redesign for event-driven architecture.
+### Exit Criteria
+1. Manual scouting produces board supply reliably.
+2. Scout minions produce board supply reliably.
+3. Blackout state blocks scouting behavior deterministically.
+4. Event-based tests for scouting triggers are green.
 
 ---
 
-## Phase D — Meta-Progression
+## Phase 2 — Rule and Role Automation Completion
 
-**Goal:** Add between-run persistence so failure feels productive and each run builds toward something permanent.
+### Goal
+Make automation coherent for assignment, routing, and role changes.
 
-### Infamy Points
+### Entry Criteria
+1. Scouting loop is functional.
+2. Rule engine can evaluate baseline actions.
 
-- [ ] Meta-currency earned per run based on performance
-- [ ] Factors: years survived, total gold earned, tasks completed, cards collected
-- [ ] Formula TBD — early failures should still earn meaningful Infamy
+### Work
+1. Complete rule engine support for backlog/queue/role conditions.
+2. Complete role switch and route actions.
+3. Keep `defaultAutoAssign` fallback only for automation-disabled modifier states.
+4. Centralize side-effect execution via `executeRuleActions`.
+5. Ensure routing rules evaluate task context; assignment rules evaluate idle minion context.
 
-### Permanent Unlocks
-
-- [ ] New card types added to drop pool
-- [ ] New reviewer types
-- [ ] Starting bonuses (starting gold, starter card packs)
-- [ ] Cosmetics (minion appearances, UI themes)
-
-### Run Management
-
-- [ ] "New Run" flow — reset gold, minions, departments, upgrades, cards
-- [ ] Run summary screen (years survived, gold earned, Infamy earned, cards collected)
-- [ ] Run history / Hall of Fame
-
-### Persistence
-
-- [ ] Separate run-local state from meta-progression in save data
-- [ ] Infamy Points + permanent unlock tracking
-- [ ] Run history storage
-
-**Dependencies:** Phase B (runs must have a loss condition for meta-progression to matter).
-
-**Deliverables:** Infamy Points, permanent unlocks, run management flow, Hall of Fame.
+### Exit Criteria
+1. No rule-action context collisions between routing and assignment paths.
+2. Role-switch rules operate only on valid minion states.
+3. Automation-disabled modifier always falls back to default behavior.
+4. Rule engine tests cover new trigger/condition/action matrix.
 
 ---
 
-## Phase E — Narrative, Polish & Full Experience
+## Phase 3 — Core UI Completion
 
-**Goal:** Weave narrative, audio, and visual polish throughout all phases. Can start partially after Phase A.
+### Goal
+Expose the new loop clearly on desktop and mobile.
 
-### Corporate Satire UI Pass
+### Entry Criteria
+1. Core mechanics from Phases 1-2 are stable in services.
 
-*Source: [art-direction.md](art-direction.md)*
+### Work
+1. Complete scout/worker operational surfaces in workbench, department columns, kanban, and container wiring.
+2. Finalize mission board empty/blackout messaging for scouting-first flow.
+3. Finalize shop grouping: Departments, Upgrades, Card Packs with dynamic max-level display.
+4. Ensure mobile parity for role/dept/scouting actions without desktop-only assumptions.
 
-- [ ] Rename panels with corporate satire alternatives
-- [ ] Card flavor text in corporate-speak
-- [ ] Reviewer personality dialogue and flavor
-
-### Sound Design v1
-
-*Source: [art-direction.md](art-direction.md)*
-
-- [ ] Core interaction sounds: click, completion, gold earned, hire, upgrade
-- [ ] Card-specific sounds: pack opening, card slot, rule activation
-- [ ] Boss review sounds: reviewer introduction, modifier activation
-- [ ] Volume controls and mute toggle
-
-### Per-Second Metrics (Player Communication)
-
-Stats panel showing:
-- [ ] Gold/second — current gold income rate
-- [ ] Tasks/minute — task throughput
-- [ ] Quarterly progress — X/Y gold toward target, tasks remaining
-- [ ] Minion utilization — % of minions currently working
-- [ ] Department levels at a glance
-- [ ] Active upgrade effects summary
-
-### Minion Depth
-
-- [ ] Personality traits (Greedy, Zealous, Careful, Lucky) with stat effects
-- [ ] Minion dialogue bubbles for flavor moments
-
-### Achievement System
-
-- [ ] Achievement tracking across runs (permanent)
-- [ ] Categories: progression, challenge, discovery, card collection
-
-### Accessibility & Polish
-
-- [ ] WCAG AA audit across all UIs
-- [ ] `prefers-reduced-motion` respect for all animations
-- [ ] Screen reader compatibility for card system and rule builder
-- [ ] Mobile experience polish
-
-### Stat Visibility (carried forward)
-
-- [ ] Expandable stat breakdown panel on minion cards
-- [ ] Specialty match indicator on task cards
-
-**Dependencies:** Can start partially after Phase A. Full integration requires Phase C content.
-
-**Deliverables:** Corporate satire voice, audio, per-second metrics, deeper minions, achievements, accessible UIs.
+### Exit Criteria
+1. Desktop and mobile both support full core loop.
+2. Players can understand supply state from empty/blackout messaging.
+3. Shop layout reflects unlock-first progression clearly.
 
 ---
 
-## Completed Work
+## Phase 4 — Balance Overhaul: Transparent Base x Mult Economy
 
-### Phase 0 — Foundation (Complete)
+### Goal
+Make the economy transparent and head-mathable. Every number is discrete, visible, and easy to reason about.
 
-These items were completed before the quarterly review redesign:
+### Entry Criteria
+1. Core mechanics and UI are functional.
 
-- [x] Event-driven architecture refactor (15 event types, `GameEventService`, `GameTimerService`)
-- [x] Passive notoriety decay *(system now being removed)*
-- [x] Notoriety management upgrades (Bribe Network, Shadow Ops, Lay Low, Deep Cover) *(being removed)*
-- [x] Scaled Cover Your Tracks missions *(being removed)*
-- [x] Minion rank titles & star ratings
-- [x] Influence currency (merged from Supplies + Intel) *(being removed)*
-- [x] Progressive department unlocking
-- [x] Storybook testing infrastructure (20/21 components)
-- [x] Coverage gates (core + merged thresholds)
+### Work (6 stages)
+1. **Gold formula + dept simplification:** New TIER_CONFIG (2/5/12/30 base gold), integer additive mult (+1/dept level, +1 specialty, +1 special op, +N joker). Remove VL scaling and dept passives.
+2. **Scouting budget + tier gating:** Each scout costs 1 budget (instant), board pre-seeded with 6 tasks at quarter start. Per-department tier unlocking as gold sinks (Sinister 15g, Diabolical 80g, Legendary 300g).
+3. **Joker conversion:** All jokers use integer additive mult values (+1, +2, +3). Remove percentage-based joker effects.
+4. **Voucher rebalance:** Remove rapid-intel/scout-expansion. Year-scaled costs (×year). Show 3 random vouchers per shop visit. Flatten minion cost curve (1.6→1.5).
+5. **Quarter targets + efficiency:** Rebalanced targets for new base gold. Par system: budget remaining determines card pack quality. Leftover budget bonus (+1g per unspent).
+6. **Save migration + tests:** Bump save version, add migration for dept tier unlocks and stripped vouchers.
 
-**Note:** Several completed items (notoriety, Influence, raids, bribes, cover tracks) are being removed as part of Phase A. The event-driven architecture, rank system, department unlocking, and testing infrastructure carry forward.
-
----
-
-## Old Roadmap Item Disposition
-
-| Old Item | Status | New Location |
-|----------|--------|-------------|
-| Notoriety rework (decay, upgrades, cover-tracks) | **Removed** | Entire system dropped (Phase A) |
-| Influence currency | **Removed** | Dropped — gold only (Phase A) |
-| Cover Tracks, Bribes, Raids | **Removed** | Dropped with notoriety (Phase A) |
-| 4 notoriety upgrades | **Removed** | Dropped with notoriety (Phase A) |
-| Government Suspicion | **Replaced** | By quarterly targets + boss reviews (Phases A-B) |
-| Three-phase zoom-out (Dept→Division→Region) | **Dropped** | Game stays at department scale |
-| Rival organizations | **Dropped** | May revisit as Year 3+ content |
-| Card system & rule engine | **Preserved** | Phase C (gold-priced instead of Influence) |
-| Meta-progression (Infamy Points) | **Preserved** | Phase D |
-| Corporate satire UI pass | **Preserved** | Phase E |
-| Sound design | **Preserved** | Phase E |
-| Minion traits/depth | **Preserved** | Phase E |
-| Achievement system | **Preserved** | Phase E |
-| Accessibility | **Preserved** | Phase A (basics) + Phase E (full) |
-| Stat visibility (expandable panels, specialty indicators) | **Preserved** | Phase E |
-| Per-second metrics | **Added** | Phase E |
-| Equipment system | **Dropped** | Cards fill the "improve minions" space |
-| Department specialization trees | **Dropped** | Depts differentiated by passives only |
-| Department managers | **Superseded** | Card-based rules automate departments |
-| Prestige system | **Replaced** | Infamy Points + roguelike meta (Phase D) |
-| Tech tree | **Superseded** | Card-based automation (Phase C) |
+### Exit Criteria
+1. Gold formula is transparent: Base x Mult with integer additive bonuses.
+2. All joker/voucher/dept effects are discrete integers.
+3. Scouting creates meaningful budget tension.
+4. Quarter targets are tuned for new economy.
+5. All test suites pass.
 
 ---
 
-## Phase Dependencies
+## Phase 5 — v1 Bug and UX Cleanup
 
-```
-Phase A (Strip & Restructure)
-  └── Phase B (Boss Reviews) ── adds the loss condition
-        └── Phase C (Card System) ── core depth system
-              └── Phase D (Meta-Progression) ── between-run persistence
-  └── Phase E (Polish/Narrative) ── can start after Phase A, intensifies after Phase C
-```
+### Goal
+Address high-impact clarity and defect issues before release.
 
-Each phase builds on prior phases. Phase E work (satire, sound, metrics) can be threaded in incrementally starting after Phase A.
+### Entry Criteria
+1. Features and balance behavior are complete enough for final polish.
+
+### Work
+1. Remove redundant tier badges on department cards.
+2. Improve readability for dense states and warning states.
+3. Defer broad redesign work that is not required for v1 loop quality.
+
+### Exit Criteria
+1. Known high-impact UX defects in v1 scope are resolved.
+2. No new regressions in core loop behavior.
+
+---
+
+## Phase 6 — Release Validation
+
+### Goal
+Ship only when technical and gameplay acceptance gates are met.
+
+### Entry Criteria
+1. All previous phases marked complete.
+
+### Work
+1. Execute full quality gate.
+2. Execute deterministic tutorial path validation.
+3. Execute scripted manual playthrough from fresh run.
+
+### Exit Criteria
+1. Build/type checks pass.
+2. Core tests for scouting/routing/roles/rules/save migration pass.
+3. Tutorial deterministic path passes.
+4. Manual flow passes:
+`fresh run -> tutorial completion -> quarter flow -> first useful rule -> review transition`.
+
+---
+
+## Parallel Track — Tutorial Delivery
+
+### T0 Spec and Script Authoring
+Entry:
+1. v1 loop defined.
+
+Work:
+1. Author `tutorial-plan.md` step table and copy architecture.
+2. Define skip/replay behavior and persistence semantics.
+
+Exit:
+1. Step-by-step mechanical and narrative script approved.
+
+### T1 Runtime Tutorial State
+Entry:
+1. T0 complete.
+
+Work:
+1. Add tutorial progression model and service API.
+2. Add save fields for tutorial activity/completion/skips.
+3. Wire first-run start and replay entrypoint.
+
+Exit:
+1. Tutorial state survives reload and run transitions.
+
+### T2 Seeded Determinism Layer
+Entry:
+1. T1 complete.
+
+Work:
+1. Implement targeted tutorial script overrides for RNG-sensitive beats.
+2. Force deterministic outcomes for first mission, first hire candidates, first reward choices.
+
+Exit:
+1. Tutorial path is reproducible by seed/config.
+
+### T3 Overlay and Guidance UI
+Entry:
+1. T2 complete.
+
+Work:
+1. Add guided overlay with anchors, directive copy, skip/next controls.
+2. Gate progression off explicit gameplay events and state checks.
+
+Exit:
+1. First-run tutorial can be completed start-to-finish in production UI.
+
+### T4 Validation and Tuning
+Entry:
+1. T3 complete.
+
+Work:
+1. Add deterministic tutorial E2E coverage.
+2. Add stories for overlay states and blocked states.
+3. Tune pacing and text after playtests.
+
+Exit:
+1. Tutorial meets acceptance criteria and passes deterministic test path.
+
+---
+
+## Non-goals for this Roadmap Window
+1. Full menu-system redesign.
+2. Full notification/toast visual overhaul.
+3. Large speculative feature additions outside the v1 loop.

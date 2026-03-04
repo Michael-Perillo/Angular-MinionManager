@@ -6,16 +6,11 @@ import { SaveService } from './save.service';
 import { SaveData, SAVE_VERSION } from '../models/save-data.model';
 import { TaskCategory } from '../models/task.model';
 import {
-  Minion, MinionAppearance, MINION_NAMES, MINION_COLORS, MINION_ACCESSORIES,
-  SPECIALTY_CATEGORIES,
+  Minion, ALL_ARCHETYPE_IDS, MINION_ARCHETYPES, rollHireOptions,
 } from '../models/minion.model';
-import { deptXpForLevel } from '../models/department.model';
 import { createInitialProgress, QuarterProgress } from '../models/quarter.model';
 import { selectReviewer, getReviewModifiers } from '../models/reviewer.model';
 import { VoucherId, ALL_VOUCHER_IDS, createEmptyVoucherLevels } from '../models/voucher.model';
-import { ALL_CARD_IDS } from '../models/card.model';
-import { ALL_JOKER_IDS, JokerId } from '../models/joker.model';
-import { DEFAULT_RULE } from '../models/rule.model';
 
 const ALL_CATEGORIES: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
 
@@ -53,20 +48,13 @@ export class DevConsoleService {
       minions(count: number) {
         const minions = self.generateMinions(count);
         self.gameState['_minions'].set(minions);
-        // Unlock departments for all specialties
-        const unlocked = new Set<TaskCategory>(minions.map(m => m.specialty));
-        self.gameState['_unlockedDepartments'].set(unlocked);
-        console.log(`👾 Set ${count} minions (specialties: ${[...unlocked].join(', ')})`);
+        console.log(`👾 Set ${count} minions`);
       },
       year(y: number, q: 1 | 2 | 3 | 4 = 1) {
         const progress: QuarterProgress = {
+          ...createInitialProgress(),
           year: y,
           quarter: q,
-          grossGoldEarned: 0,
-          tasksCompleted: 0,
-          isComplete: false,
-          missedQuarters: 0,
-          quarterResults: [],
         };
         self.gameState['_quarterProgress'].set(progress);
         console.log(`📅 Jumped to Y${y}Q${q}`);
@@ -79,8 +67,7 @@ export class DevConsoleService {
           tasksCompleted: target.taskBudget,
           grossGoldEarned: target.goldTarget + 1,
         });
-        // Trigger the quarter budget check on next minion click tick
-        console.log(`✅ Quarter Y${progress.year}Q${progress.quarter} force-completed. Refresh the page or wait for tick.`);
+        console.log(`✅ Quarter Y${progress.year}Q${progress.quarter} force-completed.`);
       },
       levelDept(cat: TaskCategory, level: number) {
         if (!ALL_CATEGORIES.includes(cat)) {
@@ -88,33 +75,19 @@ export class DevConsoleService {
           return;
         }
         const depts = { ...self.gameState.departments() };
-        depts[cat] = { ...depts[cat], level, xp: deptXpForLevel(level) };
+        depts[cat] = { ...depts[cat], level };
         self.gameState['_departments'].set(depts);
         console.log(`🏛️ ${cat} set to level ${level}`);
       },
       unlockAllDepts() {
-        self.gameState['_unlockedDepartments'].set(new Set(ALL_CATEGORIES));
-        console.log('🔓 All departments unlocked');
-      },
-      addCards(...ids: string[]) {
-        for (const id of ids) self.gameState.addCard(id);
-        console.log(`🃏 Added ${ids.length} cards: ${ids.join(', ')}`);
-      },
-      allCards() {
-        for (const id of ALL_CARD_IDS) self.gameState.addCard(id);
-        console.log(`🃏 Added all ${ALL_CARD_IDS.length} cards`);
-      },
-      addJokers(...ids: string[]) {
-        for (const id of ids) self.gameState.addJoker(id);
-        console.log(`🃏 Added ${ids.length} jokers: ${ids.join(', ')}`);
-      },
-      allJokers() {
-        for (const id of ALL_JOKER_IDS) self.gameState.addJoker(id);
-        console.log(`🃏 Added all ${ALL_JOKER_IDS.length} jokers`);
-      },
-      equipJoker(id: JokerId) {
-        self.gameState.equipJoker(id);
-        console.log(`🃏 Equipped joker: ${id}`);
+        const vouchers = { ...self.gameState['_ownedVouchers']() };
+        for (const cat of ALL_CATEGORIES) {
+          if (cat !== 'schemes') {
+            vouchers[`unlock-${cat}` as VoucherId] = 1;
+          }
+        }
+        self.gameState['_ownedVouchers'].set(vouchers);
+        console.log('🔓 All departments unlocked via vouchers');
       },
       voucher(id: VoucherId, level: number) {
         if (!ALL_VOUCHER_IDS.includes(id)) {
@@ -132,6 +105,30 @@ export class DevConsoleService {
         self.gameState['_ownedVouchers'].set(vouchers);
         console.log(`🎟️ All vouchers set to level ${level}`);
       },
+      openShop() {
+        self.gameState.openShop();
+        console.log('🛒 Shop opened');
+      },
+      closeShop() {
+        self.gameState.closeShop();
+        console.log('🛒 Shop closed');
+      },
+      listArchetypes() {
+        console.table(Object.values(MINION_ARCHETYPES).map(a => ({
+          id: a.id, name: a.name, icon: a.icon, rarity: a.rarity,
+          passive: a.description, scope: a.passive.scope,
+        })));
+      },
+      setArchetype(minionId: string, archetypeId: string) {
+        if (!MINION_ARCHETYPES[archetypeId]) {
+          console.error(`Invalid archetype. Use dev.listArchetypes() to see options.`);
+          return;
+        }
+        self.gameState['_minions'].update((list: Minion[]) =>
+          list.map(m => m.id === minionId ? { ...m, archetypeId } : m)
+        );
+        console.log(`Set minion ${minionId} to archetype ${archetypeId}`);
+      },
 
       // ─── Inspection ─────────────────────────
       state() {
@@ -142,20 +139,23 @@ export class DevConsoleService {
           'Gold': gs.gold(),
           'Quarter Gold': qp.grossGoldEarned,
           'Tasks Done': qp.tasksCompleted,
-          'Villain Level': gs.villainLevel(),
+          'Completed': gs.completedCount(),
           'Minions': gs.minions().length,
           'Click Power': gs.clickPower(),
-          'Board Slots': gs.boardCapacity(),
-          'Active Slots': gs.activeSlots(),
+          'Board Slots': gs.backlogCapacity(),
+          'Queue Capacity': JSON.stringify(gs.deptQueueCapacity()),
           'In Review': gs.currentReviewer() ? gs.currentReviewer()!.name : 'No',
           'Run Over': gs.isRunOver(),
-          'Owned Cards': gs.ownedCards().size,
-          'Owned Jokers': gs.ownedJokers().size,
-          'Equipped Jokers': gs.equippedJokers().join(', ') || 'none',
         });
         console.log('Departments:', gs.departments());
         console.log('Vouchers:', gs.ownedVouchers());
-        console.log('Rules:', gs.rules());
+        console.log('Minions:', gs.minions().map(m => ({
+          id: m.id.slice(0, 8),
+          archetype: MINION_ARCHETYPES[m.archetypeId]?.name ?? m.archetypeId,
+          role: m.role,
+          dept: m.assignedDepartment,
+          status: m.status,
+        })));
       },
       help() {
         console.log(`
@@ -164,27 +164,24 @@ export class DevConsoleService {
 
 PRESETS (load complete game states):
   dev.preset.freshStart()       Y1Q1, 0 gold, 0 minions
-  dev.preset.earlyGame()        Y1Q2, 200g, 2 minions, schemes unlocked
-  dev.preset.midGame()          Y2Q1, 1500g, 4 minions, 3 depts, some cards/jokers
-  dev.preset.lateGame()         Y3Q3, 5000g, 6 minions, all depts, full cards/jokers
+  dev.preset.earlyGame()        Y1Q2, 200g, 2 minions
+  dev.preset.midGame()          Y2Q1, 1500g, 4 minions, 3 depts
+  dev.preset.lateGame()         Y3Q3, 5000g, 6 minions, all depts
   dev.preset.bossReview(year?)  Y{n}Q4 with reviewer active (default Y1)
   dev.preset.runOver()          Failed boss review state
 
 MANIPULATION:
   dev.gold(amount)              Set gold to amount
   dev.addGold(amount)           Add gold
-  dev.minions(count)            Set minion count (random specialties)
+  dev.minions(count)            Set minion count (random archetypes)
   dev.year(y, q?)               Jump to year Y, quarter Q (default 1)
   dev.completeQuarter()         Force-complete current quarter
-  dev.levelDept(cat, level)     Set department level (schemes/heists/research/mayhem)
+  dev.levelDept(cat, level)     Set department level
   dev.unlockAllDepts()          Unlock all 4 departments
-  dev.addCards(...ids)          Add specific cards to collection
-  dev.allCards()                Add ALL logic cards
-  dev.addJokers(...ids)         Add specific jokers to collection
-  dev.allJokers()               Add ALL jokers
-  dev.equipJoker(id)            Equip a joker
   dev.voucher(id, level)        Set voucher level
   dev.allVouchers(level?)       Set all vouchers to level (default max=3)
+  dev.listArchetypes()          List all minion archetypes
+  dev.setArchetype(mid, aid)    Set a minion's archetype
 
 INSPECTION:
   dev.state()                   Log current game state summary
@@ -215,27 +212,21 @@ INSPECTION:
       totalGoldEarned: 0,
       minions: [],
       departments: {
-        schemes: { category: 'schemes', xp: 0, level: 1 },
-        heists: { category: 'heists', xp: 0, level: 1 },
-        research: { category: 'research', xp: 0, level: 1 },
-        mayhem: { category: 'mayhem', xp: 0, level: 1 },
+        schemes: { category: 'schemes', level: 1, workerSlots: 1, hasManager: false },
+        heists: { category: 'heists', level: 1, workerSlots: 0, hasManager: false },
+        research: { category: 'research', level: 1, workerSlots: 0, hasManager: false },
+        mayhem: { category: 'mayhem', level: 1, workerSlots: 0, hasManager: false },
       },
       activeMissions: [],
       missionBoard: [],
       usedNameIndices: [],
-      lastBoardRefresh: 0,
       departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
-      playerQueue: [],
       quarterProgress: createInitialProgress(),
-      unlockedDepartments: [],
       currentReviewer: null,
       activeModifiers: [],
       isRunOver: false,
       ownedVouchers: {},
-      ownedCards: [],
-      ownedJokers: [],
-      equippedJokers: [],
-      rules: [DEFAULT_RULE],
+      hireOptions: rollHireOptions(3),
     };
   }
 
@@ -249,14 +240,12 @@ INSPECTION:
     save.completedCount = 15;
     save.totalGoldEarned = 300;
     save.minions = this.generateMinions(2, ['schemes', 'schemes']);
-    save.unlockedDepartments = ['schemes'];
     save.quarterProgress = {
+      ...createInitialProgress(),
       year: 1, quarter: 2,
-      grossGoldEarned: 0, tasksCompleted: 0,
-      isComplete: false, missedQuarters: 0,
       quarterResults: [{ year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 }],
     };
-    save.departments.schemes = { category: 'schemes', xp: 25, level: 2 };
+    save.departments.schemes = { category: 'schemes', level: 2, workerSlots: 2, hasManager: false };
     return save;
   }
 
@@ -266,11 +255,10 @@ INSPECTION:
     save.completedCount = 120;
     save.totalGoldEarned = 3000;
     save.minions = this.generateMinions(4, ['schemes', 'heists', 'research', 'schemes']);
-    save.unlockedDepartments = ['schemes', 'heists', 'research'];
+    save.ownedVouchers = { ...save.ownedVouchers, 'unlock-heists': 1, 'unlock-research': 1 } as any;
     save.quarterProgress = {
+      ...createInitialProgress(),
       year: 2, quarter: 1,
-      grossGoldEarned: 0, tasksCompleted: 0,
-      isComplete: false, missedQuarters: 0,
       quarterResults: [
         { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
         { year: 1, quarter: 2, passed: true, goldEarned: 400, target: 300, tasksCompleted: 40 },
@@ -279,15 +267,12 @@ INSPECTION:
       ],
     };
     save.departments = {
-      schemes: { category: 'schemes', xp: 100, level: 3 },
-      heists: { category: 'heists', xp: 60, level: 3 },
-      research: { category: 'research', xp: 25, level: 2 },
-      mayhem: { category: 'mayhem', xp: 0, level: 1 },
+      schemes: { category: 'schemes', level: 3, workerSlots: 2, hasManager: true },
+      heists: { category: 'heists', level: 3, workerSlots: 2, hasManager: true },
+      research: { category: 'research', level: 2, workerSlots: 1, hasManager: false },
+      mayhem: { category: 'mayhem', level: 1, workerSlots: 1, hasManager: false },
     };
-    save.ownedVouchers = { 'iron-fingers': 1, 'board-expansion': 1 };
-    save.ownedCards = ['when-idle', 'when-task-appears', 'specialty-match', 'assign-to-work', 'assign-highest-tier'];
-    save.ownedJokers = ['gold-rush', 'deep-pockets', 'iron-fist'];
-    save.equippedJokers = ['gold-rush'];
+    save.ownedVouchers = { 'unlock-heists': 1, 'unlock-research': 1, 'iron-fingers': 1, 'board-expansion': 1 };
     return save;
   }
 
@@ -297,11 +282,9 @@ INSPECTION:
     save.completedCount = 400;
     save.totalGoldEarned = 15000;
     save.minions = this.generateMinions(6, ['schemes', 'heists', 'research', 'mayhem', 'schemes', 'heists']);
-    save.unlockedDepartments = [...ALL_CATEGORIES];
     save.quarterProgress = {
+      ...createInitialProgress(),
       year: 3, quarter: 3,
-      grossGoldEarned: 0, tasksCompleted: 0,
-      isComplete: false, missedQuarters: 0,
       quarterResults: [
         { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
         { year: 1, quarter: 2, passed: true, goldEarned: 400, target: 300, tasksCompleted: 40 },
@@ -314,18 +297,16 @@ INSPECTION:
       ],
     };
     save.departments = {
-      schemes: { category: 'schemes', xp: 400, level: 5 },
-      heists: { category: 'heists', xp: 300, level: 5 },
-      research: { category: 'research', xp: 200, level: 4 },
-      mayhem: { category: 'mayhem', xp: 100, level: 3 },
+      schemes: { category: 'schemes', level: 5, workerSlots: 3, hasManager: true },
+      heists: { category: 'heists', level: 5, workerSlots: 3, hasManager: true },
+      research: { category: 'research', level: 4, workerSlots: 2, hasManager: true },
+      mayhem: { category: 'mayhem', level: 3, workerSlots: 2, hasManager: false },
     };
     save.ownedVouchers = {
+      'unlock-heists': 1, 'unlock-research': 1, 'unlock-mayhem': 1,
       'iron-fingers': 2, 'board-expansion': 2, 'operations-desk': 1,
-      'rapid-intel': 1, 'hire-discount': 1, 'dept-funding': 1, 'rule-mastery': 1,
+      'hire-discount': 1, 'dismissal-expert': 1,
     };
-    save.ownedCards = [...ALL_CARD_IDS];
-    save.ownedJokers = [...ALL_JOKER_IDS];
-    save.equippedJokers = ['gold-rush', 'speed-demon', 'lucky-break'];
     return save;
   }
 
@@ -340,9 +321,15 @@ INSPECTION:
 
     const deptCount = Math.min(1 + year, 4);
     const deptCats = ALL_CATEGORIES.slice(0, deptCount);
-    save.unlockedDepartments = deptCats;
+    const voucherUnlocks: Record<string, number> = {};
     for (const cat of deptCats) {
-      save.departments[cat] = { category: cat, xp: year * 50, level: 1 + year };
+      if (cat !== 'schemes') {
+        voucherUnlocks[`unlock-${cat}`] = 1;
+      }
+    }
+    save.ownedVouchers = { ...save.ownedVouchers, ...voucherUnlocks } as any;
+    for (const cat of deptCats) {
+      save.departments[cat] = { category: cat, level: 1 + year, workerSlots: Math.min(1 + year, 4), hasManager: year >= 2 };
     }
 
     // Build quarter history
@@ -361,19 +348,15 @@ INSPECTION:
     const modifiers = getReviewModifiers(reviewer, 0);
 
     save.quarterProgress = {
+      ...createInitialProgress(),
       year, quarter: 4,
-      grossGoldEarned: 0, tasksCompleted: 0,
-      isComplete: false, missedQuarters: 0,
       quarterResults: results,
     };
     save.currentReviewer = reviewer;
     save.activeModifiers = modifiers;
 
     if (year >= 2) {
-      save.ownedVouchers = { 'iron-fingers': 1, 'board-expansion': 1 };
-      save.ownedCards = ['when-idle', 'specialty-match', 'assign-to-work'];
-      save.ownedJokers = ['gold-rush', 'iron-fist'];
-      save.equippedJokers = ['gold-rush'];
+      save.ownedVouchers = { ...save.ownedVouchers, 'iron-fingers': 1, 'board-expansion': 1 } as any;
     }
 
     return save;
@@ -387,33 +370,20 @@ INSPECTION:
 
   // ─── Helpers ──────────────────────────────
 
-  private generateMinions(count: number, specialties?: TaskCategory[]): Minion[] {
+  private generateMinions(count: number, depts?: TaskCategory[]): Minion[] {
     const minions: Minion[] = [];
-    const usedNames = new Set<number>();
 
     for (let i = 0; i < count; i++) {
-      let nameIdx: number;
-      do {
-        nameIdx = Math.floor(Math.random() * MINION_NAMES.length);
-      } while (usedNames.has(nameIdx));
-      usedNames.add(nameIdx);
-
-      const specialty = specialties?.[i] ?? SPECIALTY_CATEGORIES[i % SPECIALTY_CATEGORIES.length];
-      const color = MINION_COLORS[i % MINION_COLORS.length];
-      const accessory = MINION_ACCESSORIES[i % MINION_ACCESSORIES.length];
-      const randStat = () => Math.round((0.85 + Math.random() * 0.3) * 100) / 100;
+      const archetypeId = ALL_ARCHETYPE_IDS[i % ALL_ARCHETYPE_IDS.length];
+      const dept = depts?.[i] ?? ALL_CATEGORIES[i % ALL_CATEGORIES.length];
 
       minions.push({
         id: crypto.randomUUID(),
-        name: MINION_NAMES[nameIdx],
-        appearance: { color, accessory } as MinionAppearance,
+        archetypeId,
+        role: 'worker',
         status: 'idle',
         assignedTaskId: null,
-        stats: { speed: randStat(), efficiency: randStat() },
-        specialty,
-        assignedDepartment: specialty,
-        xp: 0,
-        level: 1,
+        assignedDepartment: dept,
       });
     }
 

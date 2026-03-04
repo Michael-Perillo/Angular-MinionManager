@@ -7,16 +7,19 @@ export class WorkbenchPage {
     private nav: NavigationPage,
   ) {}
 
+  /** Click button is now in department columns */
   get clickButton() {
-    return this.page.locator('app-player-workbench button').filter({ hasText: /CLICK/ });
+    return this.page.locator('app-department-column button').filter({ hasText: /Click/ });
   }
 
+  /** The schemes department column (always unlocked, primary work area) */
   get workbench() {
-    return this.page.locator('app-player-workbench');
+    return this.page.locator('app-department-column').first();
   }
 
+  /** Drop target is now the schemes department column */
   get dropTarget() {
-    return this.page.locator('#player');
+    return this.page.locator('#schemes');
   }
 
   async clickUntilTaskComplete(): Promise<void> {

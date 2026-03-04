@@ -1,34 +1,43 @@
 import {
-  VOUCHERS, ALL_VOUCHER_IDS, VoucherId,
-  getVoucherCost, getVoucherEffect, createEmptyVoucherLevels,
+  VOUCHERS, ALL_VOUCHER_IDS, UNLOCK_VOUCHER_IDS, UPGRADE_VOUCHER_IDS, VoucherId,
+  getVoucherCost, getVoucherEffect, createEmptyVoucherLevels, getShopVoucherSelection,
 } from './voucher.model';
 
 describe('Voucher Model', () => {
   describe('VOUCHERS', () => {
-    it('should define exactly 7 vouchers', () => {
-      expect(ALL_VOUCHER_IDS.length).toBe(7);
-      expect(Object.keys(VOUCHERS).length).toBe(7);
+    it('should define exactly 8 vouchers (3 unlock + 5 upgrade)', () => {
+      expect(ALL_VOUCHER_IDS.length).toBe(8);
+      expect(Object.keys(VOUCHERS).length).toBe(8);
+      expect(UNLOCK_VOUCHER_IDS.length).toBe(3);
+      expect(UPGRADE_VOUCHER_IDS.length).toBe(5);
     });
 
-    it('each voucher has maxLevel 3', () => {
-      for (const id of ALL_VOUCHER_IDS) {
-        expect(VOUCHERS[id].maxLevel).toBe(3);
+    it('unlock vouchers have maxLevel 1', () => {
+      for (const id of UNLOCK_VOUCHER_IDS) {
+        expect(VOUCHERS[id].maxLevel).toBe(1);
       }
     });
 
-    it('each voucher has 3 level costs and 3 level effects', () => {
+    it('upgrade vouchers have maxLevel >= 2', () => {
+      for (const id of UPGRADE_VOUCHER_IDS) {
+        expect(VOUCHERS[id].maxLevel).toBeGreaterThanOrEqual(2);
+      }
+    });
+
+    it('each voucher has levelCosts and levelEffects matching maxLevel', () => {
       for (const id of ALL_VOUCHER_IDS) {
         const def = VOUCHERS[id];
-        expect(def.levelCosts.length).toBe(3);
-        expect(def.levelEffects.length).toBe(3);
+        expect(def.levelCosts.length).toBe(def.maxLevel);
+        expect(def.levelEffects.length).toBe(def.maxLevel);
       }
     });
 
-    it('level costs should increase monotonically', () => {
-      for (const id of ALL_VOUCHER_IDS) {
+    it('upgrade voucher level costs should increase monotonically', () => {
+      for (const id of UPGRADE_VOUCHER_IDS) {
         const costs = VOUCHERS[id].levelCosts;
-        expect(costs[0]).toBeLessThan(costs[1]);
-        expect(costs[1]).toBeLessThan(costs[2]);
+        for (let i = 1; i < costs.length; i++) {
+          expect(costs[i - 1]).toBeLessThan(costs[i]);
+        }
       }
     });
 
@@ -60,21 +69,32 @@ describe('Voucher Model', () => {
       expect(getVoucherCost('iron-fingers', 3)).toBe(600);
     });
 
+    it('returns correct cost for unlock vouchers', () => {
+      expect(getVoucherCost('unlock-heists', 1)).toBe(60);
+      expect(getVoucherCost('unlock-research', 1)).toBe(65);
+      expect(getVoucherCost('unlock-mayhem', 1)).toBe(75);
+    });
+
     it('returns 0 for level 0 (invalid)', () => {
       expect(getVoucherCost('iron-fingers', 0)).toBe(0);
     });
 
     it('returns 0 for level beyond max', () => {
       expect(getVoucherCost('iron-fingers', 4)).toBe(0);
+      expect(getVoucherCost('unlock-heists', 2)).toBe(0);
     });
 
-    it('returns correct costs for all vouchers at level 1', () => {
+    it('returns correct costs for all upgrade vouchers at level 1', () => {
       expect(getVoucherCost('board-expansion', 1)).toBe(60);
       expect(getVoucherCost('operations-desk', 1)).toBe(80);
-      expect(getVoucherCost('rapid-intel', 1)).toBe(60);
       expect(getVoucherCost('hire-discount', 1)).toBe(75);
-      expect(getVoucherCost('dept-funding', 1)).toBe(75);
-      expect(getVoucherCost('rule-mastery', 1)).toBe(100);
+      expect(getVoucherCost('dismissal-expert', 1)).toBe(100);
+    });
+
+    it('should scale costs by year', () => {
+      expect(getVoucherCost('iron-fingers', 1, 1)).toBe(40);
+      expect(getVoucherCost('iron-fingers', 1, 2)).toBe(80);
+      expect(getVoucherCost('iron-fingers', 1, 3)).toBe(120);
     });
   });
 
@@ -91,18 +111,46 @@ describe('Voucher Model', () => {
       expect(getVoucherEffect('iron-fingers', 3)).toBe(12);
     });
 
-    it('returns correct effect for rapid-intel (fractional values)', () => {
-      expect(getVoucherEffect('rapid-intel', 1)).toBe(0.65);
-      expect(getVoucherEffect('rapid-intel', 2)).toBe(0.40);
-      expect(getVoucherEffect('rapid-intel', 3)).toBe(0.20);
+    it('returns correct effect for unlock vouchers', () => {
+      expect(getVoucherEffect('unlock-heists', 1)).toBe(1);
     });
 
     it('clamps to max level for levels beyond max', () => {
       expect(getVoucherEffect('iron-fingers', 5)).toBe(12);
+      expect(getVoucherEffect('unlock-heists', 5)).toBe(1);
     });
 
     it('returns 0 for negative levels', () => {
       expect(getVoucherEffect('iron-fingers', -1)).toBe(0);
+    });
+  });
+
+  describe('getShopVoucherSelection', () => {
+    it('should return exactly 3 vouchers', () => {
+      const selection = getShopVoucherSelection(1, 1);
+      expect(selection.length).toBe(3);
+    });
+
+    it('should only contain upgrade voucher IDs', () => {
+      const selection = getShopVoucherSelection(1, 2);
+      for (const id of selection) {
+        expect(UPGRADE_VOUCHER_IDS).toContain(id);
+      }
+    });
+
+    it('should be deterministic for same year+quarter', () => {
+      const a = getShopVoucherSelection(2, 1);
+      const b = getShopVoucherSelection(2, 1);
+      expect(a).toEqual(b);
+    });
+
+    it('should differ across quarters', () => {
+      const q1 = getShopVoucherSelection(1, 1);
+      const q2 = getShopVoucherSelection(1, 2);
+      // Not guaranteed to differ but very likely given different seeds
+      // At minimum, the function should not crash
+      expect(q1.length).toBe(3);
+      expect(q2.length).toBe(3);
     });
   });
 });

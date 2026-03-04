@@ -1,48 +1,69 @@
-import { TaskCategory, TaskTier } from './task.model';
+import { TaskCategory, TaskTier, TIER_UNLOCK_COSTS } from './task.model';
 
 export interface Department {
   category: TaskCategory;
-  xp: number;
-  level: number;
+  level: number;          // 1-8, bought in shop
+  workerSlots: number;    // 0-4, bought in shop
+  hasManager: boolean;    // bought in shop
 }
 
-/** XP required to reach a given department level */
-export function deptXpForLevel(level: number): number {
-  if (level <= 1) return 0;
-  // Level 2: 20, Level 3: 60, Level 4: 120, Level 5: 200, ...
-  return Math.floor(20 * Math.pow(level - 1, 1.8));
+/** Per-department tier unlock tracking */
+export type DeptTierUnlocks = Record<TaskCategory, Set<TaskTier>>;
+
+/** Create default tier unlocks (petty always unlocked) */
+export function createDefaultTierUnlocks(): DeptTierUnlocks {
+  return {
+    schemes: new Set<TaskTier>(['petty']),
+    heists: new Set<TaskTier>(['petty']),
+    research: new Set<TaskTier>(['petty']),
+    mayhem: new Set<TaskTier>(['petty']),
+  };
 }
 
-/** Calculate department level from total XP */
-export function deptLevelFromXp(xp: number): number {
-  let level = 1;
-  while (deptXpForLevel(level + 1) <= xp) {
-    level++;
-  }
-  return level;
+// ─── Gold-gated progression costs ──────
+
+/** Gold cost to upgrade dept level: index 0 = 1→2, index 6 = 7→8 */
+export const DEPT_LEVEL_COSTS = [30, 80, 200, 500, 1200, 2500, 5000];
+
+/** Gold cost to buy worker slots: index 0 = 1st slot, index 3 = 4th slot */
+export const WORKER_SLOT_COSTS = [20, 60, 150, 400];
+
+/** Gold cost to buy a manager slot for a department */
+export const MANAGER_SLOT_COST = 50;
+
+/** Queue capacity for a department: base 1 + workerSlots + operationsDesk bonus */
+export function getDeptQueueCapacity(workerSlots: number, operationsDeskBonus: number): number {
+  return 1 + workerSlots + operationsDeskBonus;
 }
 
-/** Department XP earned per task tier */
-export const DEPT_TIER_XP: Record<TaskTier, number> = {
-  petty: 5,
-  sinister: 12,
-  diabolical: 25,
-  legendary: 50,
-};
+/** Get the gold cost to upgrade a department from currentLevel to currentLevel+1. Returns 0 if already max. */
+export function getDeptLevelCost(currentLevel: number): number {
+  const idx = currentLevel - 1; // level 1→2 = index 0
+  if (idx < 0 || idx >= DEPT_LEVEL_COSTS.length) return 0;
+  return DEPT_LEVEL_COSTS[idx];
+}
 
-/**
- * Which task tiers are available at each department level.
- * - Level 1: petty only
- * - Level 3: sinister unlocks
- * - Level 5: diabolical unlocks
- * - Level 8: legendary unlocks
- */
-export function availableTiersForDeptLevel(level: number): TaskTier[] {
-  const tiers: TaskTier[] = ['petty'];
-  if (level >= 3) tiers.push('sinister');
-  if (level >= 5) tiers.push('diabolical');
-  if (level >= 8) tiers.push('legendary');
-  return tiers;
+/** Get the gold cost to buy the next worker slot. Returns 0 if already at max (4). */
+export function getWorkerSlotCost(currentSlots: number): number {
+  if (currentSlots < 0 || currentSlots >= WORKER_SLOT_COSTS.length) return 0;
+  return WORKER_SLOT_COSTS[currentSlots];
+}
+
+/** Get the integer additive mult bonus for a department at a given level.
+ *  +1 per level above 1. Level 1 = +0, Level 5 = +4. */
+export function getDeptMult(level: number): number {
+  return Math.max(0, level - 1);
+}
+
+/** Get which tiers are unlocked for a department given its unlock set */
+export function getUnlockedTiers(unlocks: Set<TaskTier>): TaskTier[] {
+  const all: TaskTier[] = ['petty', 'sinister', 'diabolical', 'legendary'];
+  return all.filter(t => unlocks.has(t));
+}
+
+/** Get the cost to unlock a tier in a department (0 = free/already unlocked) */
+export function getTierUnlockCost(tier: TaskTier): number {
+  return TIER_UNLOCK_COSTS[tier];
 }
 
 export const DEPARTMENT_LABELS: Record<TaskCategory, { label: string; icon: string }> = {
@@ -52,53 +73,84 @@ export const DEPARTMENT_LABELS: Record<TaskCategory, { label: string; icon: stri
   mayhem: { label: 'Mayhem', icon: '💥' },
 };
 
-/** Department passive abilities that scale with level */
-export interface DepartmentPassive {
-  name: string;
-  description: string;
-  scalingPerLevel: number; // percentage per level above 1
-  unit: string;
+// ─── Department-specific mechanic helpers ──────
+
+/** Heists: gold variance floor multiplier. L1: 0.5×, L3: 0.75×, L5: 1.0× */
+export function getHeistFloorMult(level: number): number {
+  return 0.5 + Math.min(0.5, (level - 1) * 0.125);
 }
 
-export const DEPARTMENT_PASSIVES: Record<TaskCategory, DepartmentPassive> = {
-  research: {
-    name: 'Efficiency Lab',
-    description: 'Reduced clicks required for tasks',
-    scalingPerLevel: 3,
-    unit: '%',
-  },
-  schemes: {
-    name: 'Intel Network',
-    description: 'Faster mission board refresh',
-    scalingPerLevel: 8,
-    unit: '%',
-  },
-  heists: {
-    name: 'Payday',
-    description: 'Increased Special Op gold bonus',
-    scalingPerLevel: 5,
-    unit: '%',
-  },
-  mayhem: {
-    name: 'Intimidation',
-    description: 'Increased Special Op rate',
-    scalingPerLevel: 3,
-    unit: '%',
-  },
-};
+/** Heists: gold variance ceiling multiplier (fixed at 2.5×) */
+export const HEIST_CEIL_MULT = 2.5;
 
-/** Get the passive bonus value for a department at a given level */
-export function getPassiveBonus(category: TaskCategory, level: number): number {
-  if (level <= 1) return 0;
-  return (level - 1) * DEPARTMENT_PASSIVES[category].scalingPerLevel;
+/** Roll a heist gold value in [floor(base*floorMult), floor(base*ceilMult)] */
+export function rollHeistGold(baseGold: number, level: number, floorBonusPercent: number = 0): number {
+  const floorMult = getHeistFloorMult(level) + (floorBonusPercent / 100);
+  const low = Math.floor(baseGold * floorMult);
+  const high = Math.floor(baseGold * HEIST_CEIL_MULT);
+  if (low >= high) return high;
+  return low + Math.floor(Math.random() * (high - low + 1));
 }
 
-// ─── Scoring: department local multiplier ──────────────
+/** Research: breakthrough threshold (completions needed).
+ *  L1: 5, L3: 4, L5: 3. Formula: max(3, 6 - floor(level / 2)) */
+export function getBreakthroughThreshold(level: number): number {
+  return Math.max(3, 6 - Math.floor(level / 2));
+}
 
-/** Gold multiplier per department level above 1 */
-export const DEPT_LOCAL_MULT_PER_LEVEL = 0.06;
+/** Research: every N completions, add a scheme card to deck */
+export const RESEARCH_DECK_GROWTH_INTERVAL = 3;
 
-/** Get the local gold multiplier for a department at a given level */
-export function getDeptLocalMult(level: number): number {
-  return 1 + Math.max(0, level - 1) * DEPT_LOCAL_MULT_PER_LEVEL;
+/** Mayhem: click reduction factor (operations have 40% fewer clicks) */
+export const MAYHEM_CLICK_FACTOR = 0.6;
+
+/** Mayhem: gold reduction factor (operations have 30% less base gold) */
+export const MAYHEM_GOLD_FACTOR = 0.7;
+
+/** Mayhem: apply click modifier to base clicks */
+export function getMayhemClicks(baseClicks: number): number {
+  return Math.max(3, Math.ceil(baseClicks * MAYHEM_CLICK_FACTOR));
+}
+
+/** Mayhem: apply gold modifier to base gold */
+export function getMayhemGold(baseGold: number): number {
+  return Math.max(1, Math.floor(baseGold * MAYHEM_GOLD_FACTOR));
+}
+
+/** Mayhem: combo threshold (consecutive completions for 2× gold) */
+export const MAYHEM_COMBO_THRESHOLD = 3;
+
+/** Mayhem: combo timeout (ms) — combo resets if no mayhem completion within this window */
+export const MAYHEM_COMBO_TIMEOUT_MS = 8000;
+
+// ─── Payout estimation ──────
+
+export interface PayoutEstimate {
+  baseGold: number;
+  mult: number;         // total effective mult (≥1)
+  expectedGold: number; // baseGold × mult
+}
+
+/** Estimate the gold payout for a task in a department, given all active multipliers.
+ *  Pure function — no service dependency. */
+export function estimateTaskPayout(
+  baseGold: number,
+  deptLevel: number,
+  activeBreakthroughs: number,
+  managerGoldMult: number,
+  workerGoldMult: number,
+  isSpecialOp: boolean,
+  comboMult: number,
+  bossPenalty: number,
+): PayoutEstimate {
+  let mult = 1
+    + getDeptMult(deptLevel)
+    + activeBreakthroughs
+    + managerGoldMult
+    + workerGoldMult
+    + (isSpecialOp ? 1 : 0)
+    + comboMult
+    + bossPenalty;  // bossPenalty is negative (e.g. -1, -2)
+  mult = Math.max(1, mult);
+  return { baseGold, mult, expectedGold: baseGold * mult };
 }

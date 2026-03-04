@@ -6,7 +6,3 @@ export * from './department.model';
 export * from './save-data.model';
 export * from './quarter.model';
 export * from './voucher.model';
-export * from './card.model';
-export * from './joker.model';
-export * from './rule.model';
-export * from './card-pack.model';

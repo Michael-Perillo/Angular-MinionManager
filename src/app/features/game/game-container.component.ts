@@ -3,30 +3,21 @@ import { GameStateService } from '../../core/services/game-state.service';
 import { GameTimerService } from '../../core/services/game-timer.service';
 import { SaveService } from '../../core/services/save.service';
 import { DevConsoleService } from '../../core/services/dev-console.service';
-import { QueueTarget, TaskCategory, Task } from '../../core/models/task.model';
-import { Minion } from '../../core/models/minion.model';
+import { QueueTarget, TaskCategory } from '../../core/models/task.model';
+import { Minion, MinionRole, MinionArchetype, MINION_ARCHETYPES, getMinionDisplay } from '../../core/models/minion.model';
 import { VoucherId } from '../../core/models/voucher.model';
-import { Rule } from '../../core/models/rule.model';
-import { JokerId } from '../../core/models/joker.model';
-import { PackType } from '../../core/models/card-pack.model';
+import { getBreakthroughThreshold } from '../../core/models/department.model';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { MissionBoardComponent } from '../../shared/components/mission-board/mission-board.component';
 import { KanbanBoardComponent } from '../../shared/components/kanban-board/kanban-board.component';
-import { DrawerPanelComponent } from '../../shared/components/drawer-panel/drawer-panel.component';
-import { MissionRouterComponent } from '../../shared/components/mission-router/mission-router.component';
 import { MobileBottomNavComponent, MobileTab } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav.component';
 import { NotificationToastComponent } from '../../shared/components/notification-toast/notification-toast.component';
 import { ShopComponent } from '../../shared/components/shop/shop.component';
 import { DepartmentPanelComponent } from '../../shared/components/department-panel/department-panel.component';
-import { HireMinionPanelComponent } from '../../shared/components/hire-minion-panel/hire-minion-panel.component';
-import { MinionRosterComponent } from '../../shared/components/minion-roster/minion-roster.component';
-import { PlayerWorkbenchComponent } from '../../shared/components/player-workbench/player-workbench.component';
 import { DepartmentColumnComponent } from '../../shared/components/department-column/department-column.component';
 import { QuarterReviewComponent } from '../../shared/components/quarter-review/quarter-review.component';
 import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/reviewer-intro.component';
 import { RunOverComponent } from '../../shared/components/run-over/run-over.component';
-import { CardPackOpenerComponent } from '../../shared/components/card-pack-opener/card-pack-opener.component';
-import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-editor.component';
 
 @Component({
   selector: 'app-game-container',
@@ -35,21 +26,14 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
     HeaderComponent,
     MissionBoardComponent,
     KanbanBoardComponent,
-    DrawerPanelComponent,
-    MissionRouterComponent,
     MobileBottomNavComponent,
     NotificationToastComponent,
     DepartmentPanelComponent,
-    HireMinionPanelComponent,
-    MinionRosterComponent,
-    PlayerWorkbenchComponent,
     DepartmentColumnComponent,
     QuarterReviewComponent,
     ReviewerIntroComponent,
     RunOverComponent,
     ShopComponent,
-    CardPackOpenerComponent,
-    RuleEditorComponent,
   ],
   template: `
     <div class="h-screen flex flex-col overflow-hidden">
@@ -58,15 +42,13 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
         [gold]="gameState.gold()"
         [completedCount]="gameState.completedCount()"
         [minionCount]="gameState.minions().length"
-        [villainLevel]="gameState.villainLevel()"
-        [villainTitle]="gameState.villainTitle()"
         [quarterProgress]="gameState.quarterProgress()"
         [quarterGold]="gameState.quarterGold()"
         [taskBudget]="gameState.currentQuarterTarget().taskBudget"
         [goldTarget]="gameState.isInReview() ? gameState.reviewGoldTarget() : gameState.currentQuarterTarget().goldTarget"
+        [dismissalsRemaining]="gameState.dismissalsRemaining()"
         [lastSaved]="gameState.lastSaved()"
         [activeModifiers]="gameState.activeModifiers()"
-        (drawerToggle)="onDrawerToggle()"
         (reset)="onReset()" />
 
       <!-- Desktop layout (>= 768px) -->
@@ -75,50 +57,46 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
           <!-- Left panel: Mission Board (fixed width) -->
           <div class="w-[300px] shrink-0 border-r border-border p-3 overflow-y-auto">
             <app-mission-board
-              [missions]="gameState.missionBoard()"
-              [activeCount]="gameState.activeMissions().length"
-              [activeSlots]="gameState.activeSlots()"
-              [connectedDropLists]="kanbanDropListIds"
+              [missions]="gameState.backlog()"
+              [schemesQueueFull]="gameState.departmentQueues().schemes.length >= gameState.deptQueueCapacity().schemes"
               [unlockedDepartments]="gameState.unlockedDepartmentList()"
               [departments]="gameState.departments()"
-              [boardFrozen]="gameState.boardFrozen()"
+              [boardFrozen]="gameState.backlogFrozen()"
+              [dismissalsRemaining]="gameState.dismissalsRemaining()"
+              [tasksCompleted]="gameState.quarterProgress().tasksCompleted"
+              [taskBudget]="gameState.currentQuarterTarget().taskBudget"
+              [deckRemaining]="gameState.schemeDeck().length"
+              [deckTotal]="gameState.currentQuarterTarget().taskBudget + 5"
+              [deckTierCounts]="gameState.schemeDeckTierCounts()"
+              [comboState]="gameState.comboState()"
               (missionAccepted)="onAcceptMission($event)"
-              (missionRouteRequested)="onMissionRouteRequested($event)" />
+              (schemeExecuted)="onSchemeExecuted($event)"
+              (schemeDismissed)="onSchemeDismissed($event)" />
           </div>
 
           <!-- Center: Kanban work area -->
           <div class="flex-1 overflow-auto p-3">
             <app-kanban-board
               [departmentQueues]="gameState.departmentQueues()"
-              [playerQueue]="gameState.playerQueue()"
               [departments]="gameState.departments()"
               [minions]="gameState.minions()"
               [clickPower]="gameState.clickPower()"
+              [boardFrozen]="gameState.backlogFrozen()"
               [unlockedDepartments]="gameState.unlockedDepartmentList()"
+              [unassignedMinions]="gameState.unassignedMinions()"
+              [activeBreakthroughs]="gameState.activeBreakthroughs()"
+              [researchCompleted]="gameState.researchCompleted()"
+              [breakthroughThreshold]="breakthroughThreshold()"
+              [mayhemComboCount]="gameState.mayhemComboCount()"
+              [deptEffectiveMults]="gameState.deptEffectiveMults()"
+              [bossPenalty]="gameState.bossPenalty()"
+              [deptQueueCapacity]="gameState.deptQueueCapacity()"
               (taskClicked)="onTaskClick($event)"
-              (taskMoved)="onTaskMoved($event)"
-              (taskRouted)="onTaskRouted($event)"
-              (taskReordered)="onTaskReordered($event)" />
+              (taskReordered)="onTaskReordered($event)"
+              (minionRoleChanged)="onMinionRoleChanged($event)"
+              (minionAssigned)="onMinionAssigned($event)"
+              (minionUnassigned)="onMinionUnassigned($event)" />
           </div>
-
-          <!-- Right: Collapsible drawer -->
-          <app-drawer-panel
-            [gold]="gameState.gold()"
-            [minions]="gameState.minions()"
-            [departments]="gameState.departments()"
-            [nextMinionCost]="gameState.nextMinionCost()"
-            [canHireMinion]="gameState.canHireMinion()"
-            [unlockedDepartments]="gameState.unlockedDepartments()"
-            [hiringDisabled]="gameState.hiringDisabled()"
-            [equippedJokers]="gameState.equippedJokers()"
-            [ownedJokers]="gameState.ownedJokers()"
-            [rules]="gameState.rules()"
-            [maxRuleSlots]="gameState.maxRuleSlots()"
-            (recruitClicked)="onRecruitMinion()"
-            (hireChosenClicked)="onHireChosenMinion($event)"
-            (jokerEquipped)="onJokerEquipped($event)"
-            (jokerUnequipped)="onJokerUnequipped($event)"
-            (editRulesClicked)="showRuleEditor.set(true)" />
         </main>
       }
 
@@ -128,23 +106,28 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
           @switch (mobileTab()) {
             @case ('missions') {
               <app-mission-board
-                [missions]="gameState.missionBoard()"
-                [activeCount]="gameState.activeMissions().length"
-                [activeSlots]="gameState.activeSlots()"
-                [dragDisabled]="true"
+                [missions]="gameState.backlog()"
+                [schemesQueueFull]="gameState.departmentQueues().schemes.length >= gameState.deptQueueCapacity().schemes"
                 [unlockedDepartments]="gameState.unlockedDepartmentList()"
                 [departments]="gameState.departments()"
-                [boardFrozen]="gameState.boardFrozen()"
+                [boardFrozen]="gameState.backlogFrozen()"
+                [dismissalsRemaining]="gameState.dismissalsRemaining()"
+                [tasksCompleted]="gameState.quarterProgress().tasksCompleted"
+                [taskBudget]="gameState.currentQuarterTarget().taskBudget"
+                [deckRemaining]="gameState.schemeDeck().length"
+                [deckTotal]="gameState.currentQuarterTarget().taskBudget + 5"
+                [deckTierCounts]="gameState.schemeDeckTierCounts()"
                 (missionAccepted)="onAcceptMission($event)"
-                (missionRouteRequested)="onMissionRouteRequested($event)" />
+                (schemeExecuted)="onSchemeExecuted($event)"
+                (schemeDismissed)="onSchemeDismissed($event)" />
             }
             @case ('work') {
-              <!-- Swipeable department columns -->
+              <!-- Department columns -->
               @if (gameState.unlockedDepartmentList().length === 0) {
                 <div class="flex flex-col items-center justify-center h-full text-center p-8">
                   <span class="text-4xl mb-3 opacity-40">🔒</span>
                   <p class="text-sm text-text-muted">No departments unlocked yet.</p>
-                  <p class="text-xs text-text-muted mt-1">Hire a minion to open your first department!</p>
+                  <p class="text-xs text-text-muted mt-1">Visit the Shop between quarters to unlock departments!</p>
                 </div>
               } @else {
                 <div class="flex flex-col gap-2 h-full -mx-3">
@@ -162,10 +145,21 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
                           [department]="gameState.departments()[cat]"
                           [assignedMinions]="getDeptMinions(cat)"
                           [connectedDropLists]="[]"
+                          [minionConnectedDropLists]="[]"
                           [dragDisabled]="true"
                           [fullWidth]="true"
-                                    (taskMoveRequested)="onTaskMoveRequested($event)"
-                          (taskReordered)="onDeptTaskReordered(cat, $event)" />
+                          [clickPower]="gameState.clickPower()"
+                          [activeBreakthroughs]="gameState.activeBreakthroughs()"
+                          [researchCompleted]="gameState.researchCompleted()"
+                          [breakthroughThreshold]="breakthroughThreshold()"
+                          [mayhemComboCount]="gameState.mayhemComboCount()"
+                          [deptEffectiveMult]="gameState.deptEffectiveMults()[cat]"
+                          [bossPenalty]="gameState.bossPenalty()"
+                          [queueCapacity]="gameState.deptQueueCapacity()[cat]"
+                          (taskClicked)="onTaskClick($event)"
+                          (taskReordered)="onDeptTaskReordered(cat, $event)"
+                          (minionRoleChanged)="onMinionRoleChanged($event)"
+                          (minionUnassigned)="onMinionUnassigned($event)" />
                       </div>
                     }
                   </div>
@@ -188,29 +182,62 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
                       </span>
                     }
                   </div>
+
+                  <!-- Unassigned pool (mobile) -->
+                  @if (gameState.unassignedMinions().length > 0) {
+                    <div class="px-3 pb-2">
+                      <div class="text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">
+                        👾 Unassigned Pool ({{ gameState.unassignedMinions().length }})
+                      </div>
+                      @for (minion of gameState.unassignedMinions(); track minion.id) {
+                        <div class="flex items-center justify-between gap-2 py-1.5 px-2 rounded bg-bg-card/30 border border-border/50 mb-1">
+                          <div class="flex items-center gap-1.5 text-xs">
+                            <span class="text-sm">{{ getArchetypeIcon(minion) }}</span>
+                            <span class="text-text-primary font-semibold">{{ getArchetypeName(minion) }}</span>
+                          </div>
+                          <button
+                            (click)="openMobileAssignPicker(minion)"
+                            class="text-[10px] text-accent hover:text-gold cursor-pointer px-2 py-1 rounded
+                                   border border-accent/20 hover:border-accent/40 transition-colors">
+                            Assign...
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Mobile assignment picker -->
+              @if (assigningMinion(); as minion) {
+                <div class="fixed inset-0 bg-black/60 z-50 flex items-end justify-center" (click)="assigningMinion.set(null)">
+                  <div class="bg-bg-secondary rounded-t-xl border border-border p-4 w-full max-w-md" (click)="$event.stopPropagation()">
+                    <h4 class="text-sm font-bold text-text-primary mb-3">
+                      Assign {{ getArchetypeName(minion) }} to:
+                    </h4>
+                    <div class="flex flex-col gap-2">
+                      @for (cat of gameState.unlockedDepartmentList(); track cat) {
+                        <button
+                          (click)="onMobileAssign(minion.id, cat, 'worker')"
+                          class="flex items-center gap-2 p-3 rounded-lg bg-bg-card border border-border
+                                 hover:border-gold/50 transition-all cursor-pointer min-h-[44px]">
+                          <span>{{ getCategoryIcon(cat) }}</span>
+                          <span class="text-sm text-text-primary">{{ getCategoryLabel(cat) }} — Worker</span>
+                        </button>
+                      }
+                    </div>
+                    <button
+                      (click)="assigningMinion.set(null)"
+                      class="w-full mt-3 py-2 text-sm text-text-muted border border-border rounded-lg cursor-pointer
+                             hover:text-text-secondary">
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               }
             }
-            @case ('click') {
-              <app-player-workbench
-                [tasks]="gameState.playerQueue()"
-                [clickPower]="gameState.clickPower()"
-                [connectedDropLists]="[]"
-                [dragDisabled]="true"
-                [fullWidth]="true"
-                (taskClicked)="onTaskClick($event)"
-                (taskReordered)="onPlayerTaskReordered($event)" />
-            }
             @case ('more') {
               <div class="flex flex-col gap-2">
-                <button
-                  (click)="moreSection.set('hire')"
-                  class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
-                         hover:border-accent/30 transition-all cursor-pointer min-h-[48px]">
-                  <span class="text-xl">👾</span>
-                  <span class="text-sm font-semibold text-text-primary">Hire Minions</span>
-                  <span class="ml-auto text-text-muted">→</span>
-                </button>
                 <button
                   (click)="moreSection.set('departments')"
                   class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
@@ -239,21 +266,6 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
                   </button>
 
                   @switch (moreSection()) {
-                    @case ('hire') {
-                      <app-hire-minion-panel
-                        #mobileHirePanel
-                        [gold]="gameState.gold()"
-                        [cost]="gameState.nextMinionCost()"
-                        [minionCount]="gameState.minions().length"
-                        [canHire]="gameState.canHireMinion()"
-                        [unlockedDepartments]="gameState.unlockedDepartments()"
-                        [hiringDisabled]="gameState.hiringDisabled()"
-                        (recruit)="onRecruitMinion('mobile')"
-                        (hireChosen)="onHireChosenMinion($event)" />
-                      <div class="mt-3">
-                        <app-minion-roster [minions]="gameState.minions()" />
-                      </div>
-                    }
                     @case ('departments') {
                       <app-department-panel
                         [departments]="gameState.departments()" />
@@ -270,16 +282,6 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
           (tabSelected)="onMobileTabChange($event)" />
       }
 
-      <!-- Mission Router (popup for choosing queue target) -->
-      <app-mission-router
-        [mission]="routerMission()"
-        [deptQueueCounts]="deptQueueCounts()"
-        [playerQueueCount]="gameState.playerQueue().length"
-        [isMobile]="isMobile()"
-        [unlockedDepartments]="gameState.unlockedDepartmentList()"
-        (queueSelected)="onQueueSelected($event)"
-        (closed)="routerMission.set(null); pendingMove.set(null)" />
-
       <!-- Quarter Review Modal -->
       @if (latestQuarterResult(); as result) {
         <app-quarter-review
@@ -288,35 +290,25 @@ import { RuleEditorComponent } from '../../shared/components/rule-editor/rule-ed
           (advance)="onQuarterAdvance()" />
       }
 
-      <!-- Pack Reward Modal (after quarter, before shop) -->
-      @if (gameState.showPackReward() && gameState.pendingPack(); as pack) {
-        <app-card-pack-opener
-          [cards]="pack"
-          [pickCount]="gameState.pendingPickCount()"
-          [packName]="'Quarterly Bonus'"
-          (cardsPicked)="onPackPicked($event)" />
-      }
-
       <!-- Shop Modal (between quarters) -->
       @if (gameState.showShop()) {
         <app-shop
           [vouchers]="gameState.ownedVouchers()"
           [gold]="gameState.gold()"
+          [departments]="gameState.departments()"
+          [unlockedDepartments]="gameState.unlockedDepartmentList()"
+          [hireOptions]="hireOptionArchetypes()"
+          [hireCost]="gameState.nextMinionCost()"
+          [canHire]="gameState.canHireMinion()"
+          [rerollCost]="gameState.rerollCost()"
+          [minionCount]="gameState.minions().length"
           (purchase)="onVoucherPurchase($event)"
-          (packPurchased)="onShopPackPurchase($event)"
+          (purchaseDeptLevel)="onPurchaseDeptLevel($event)"
+          (purchaseWorkerSlot)="onPurchaseWorkerSlot($event)"
+          (purchaseManagerSlot)="onPurchaseManagerSlot($event)"
+          (hire)="onHireMinion($event)"
+          (reroll)="onRerollHireOptions()"
           (continue)="onShopContinue()" />
-      }
-
-      <!-- Rule Editor Modal -->
-      @if (showRuleEditor()) {
-        <app-rule-editor
-          [rules]="gameState.rules()"
-          [ownedCards]="gameState.ownedCards()"
-          [maxSlots]="gameState.maxRuleSlots()"
-          (ruleAdded)="onRuleAdded($event)"
-          (ruleRemoved)="onRuleRemoved($event)"
-          (ruleToggled)="onRuleToggled($event)"
-          (closed)="showRuleEditor.set(false)" />
       }
 
       <!-- Run Over Screen -->
@@ -355,30 +347,22 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   private readonly saveService = inject(SaveService);
   private readonly devConsole = inject(DevConsoleService);
 
-  readonly drawerPanel = viewChild(DrawerPanelComponent);
-  readonly missionRouter = viewChild(MissionRouterComponent);
   readonly deptSwipeContainer = viewChild<ElementRef>('deptSwipeContainer');
-  readonly mobileHirePanel = viewChild<HireMinionPanelComponent>('mobileHirePanel');
 
   readonly isMobile = signal(false);
   readonly mobileTab = signal<MobileTab>('missions');
   readonly mobileDeptTab = signal<TaskCategory>('schemes');
   readonly mobileDeptIndex = signal(0);
   readonly moreSection = signal<string | null>(null);
-  readonly routerMission = signal<Task | null>(null);
-  readonly pendingMove = signal<{ taskId: string; fromQueue: string } | null>(null);
-  readonly showRuleEditor = signal(false);
+  readonly assigningMinion = signal<Minion | null>(null);
 
   private pausedAt: number | null = null;
 
   readonly allCategories: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
-  readonly kanbanDropListIds = ['schemes', 'heists', 'research', 'mayhem', 'player'];
 
   readonly latestQuarterResult = computed(() => {
     const qp = this.gameState.quarterProgress();
     if (!qp.isComplete) return null;
-    // Hide quarter review when pack reward, shop, reviewer intro, or run-over is showing
-    if (this.gameState.showPackReward()) return null;
     if (this.gameState.showShop()) return null;
     if (this.gameState.showReviewerIntro()) return null;
     if (this.gameState.isRunOver()) return null;
@@ -386,15 +370,16 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     return results.length > 0 ? results[results.length - 1] : null;
   });
 
-  readonly deptQueueCounts = computed(() => {
-    const queues = this.gameState.departmentQueues();
-    return {
-      schemes: queues.schemes.length,
-      heists: queues.heists.length,
-      research: queues.research.length,
-      mayhem: queues.mayhem.length,
-    } as Record<TaskCategory, number>;
-  });
+  readonly breakthroughThreshold = computed(() =>
+    getBreakthroughThreshold(this.gameState.departments().research.level)
+  );
+
+  /** Resolve hire option IDs to archetype objects for the hire panel */
+  readonly hireOptionArchetypes = computed(() =>
+    this.gameState.hireOptions()
+      .map(id => MINION_ARCHETYPES[id])
+      .filter((a): a is MinionArchetype => !!a)
+  );
 
   constructor() {
     // Pause game timers when a quarter completes (modal will block gameplay)
@@ -433,34 +418,20 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     this.gameState.clickTask(taskId);
   }
 
+  onSchemeDismissed(taskId: string): void {
+    this.gameState.dismissScheme(taskId);
+  }
+
+  onMinionRoleChanged(event: { minionId: string; role: MinionRole }): void {
+    this.gameState.assignMinionRole(event.minionId, event.role);
+  }
+
   onAcceptMission(missionId: string): void {
     this.gameState.acceptMission(missionId);
   }
 
-  onMissionRouteRequested(mission: Task): void {
-    this.routerMission.set(mission);
-    this.missionRouter()?.open();
-  }
-
-  onQueueSelected(event: { missionId: string; target: QueueTarget }): void {
-    const move = this.pendingMove();
-    if (move) {
-      // Moving an existing task between queues
-      this.gameState.moveTaskToQueue(move.taskId, move.fromQueue as QueueTarget, event.target);
-      this.pendingMove.set(null);
-    } else {
-      // Routing a new mission from the board
-      this.gameState.routeMission(event.missionId, event.target);
-    }
-    this.routerMission.set(null);
-  }
-
-  onTaskMoved(event: { taskId: string; from: QueueTarget; to: QueueTarget }): void {
-    this.gameState.moveTaskToQueue(event.taskId, event.from, event.to);
-  }
-
-  onTaskRouted(event: { taskId: string; target: QueueTarget }): void {
-    this.gameState.routeMission(event.taskId, event.target);
+  onSchemeExecuted(missionId: string): void {
+    this.gameState.routeMission(missionId, 'schemes');
   }
 
   onTaskReordered(event: { queue: QueueTarget; taskIds: string[] }): void {
@@ -471,39 +442,43 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     this.gameState.reorderQueue(cat, taskIds);
   }
 
-  onPlayerTaskReordered(taskIds: string[]): void {
-    this.gameState.reorderQueue('player', taskIds);
+  onHireMinion(archetypeId: string): void {
+    this.gameState.hireMinion(archetypeId);
   }
 
-  onTaskMoveRequested(event: { taskId: string; fromQueue: string }): void {
-    this.pendingMove.set(event);
-    // Create a minimal task stub for the router (it only reads .id)
-    this.routerMission.set({ id: event.taskId } as Task);
-    this.missionRouter()?.open();
+  onRerollHireOptions(): void {
+    this.gameState.rerollHireOptions();
   }
 
-  onHireMinion(): void {
-    this.gameState.hireMinion();
+  onMinionAssigned(event: { minionId: string; department: TaskCategory; role: MinionRole }): void {
+    this.gameState.assignMinionToDepartment(event.minionId, event.department, event.role);
   }
 
-  onRecruitMinion(source?: string): void {
-    const candidates = this.gameState.generateHiringCandidates();
-    if (source === 'mobile') {
-      this.mobileHirePanel()?.showCandidates(candidates);
-    } else {
-      this.drawerPanel()?.hirePanel()?.showCandidates(candidates);
-    }
+  onMinionUnassigned(minionId: string): void {
+    this.gameState.unassignMinion(minionId);
   }
 
-  onHireChosenMinion(minion: Minion): void {
-    this.gameState.hireChosenMinion(minion);
+  openMobileAssignPicker(minion: Minion): void {
+    this.assigningMinion.set(minion);
+  }
+
+  onMobileAssign(minionId: string, dept: TaskCategory, role: MinionRole): void {
+    this.gameState.assignMinionToDepartment(minionId, dept, role);
+    this.assigningMinion.set(null);
+  }
+
+  getArchetypeIcon(minion: Minion): string {
+    return getMinionDisplay(minion).icon;
+  }
+
+  getArchetypeName(minion: Minion): string {
+    return getMinionDisplay(minion).name;
   }
 
   onQuarterAdvance(): void {
     this.pausedAt = null;
     this.gameState.advanceQuarter();
-    // Don't restart timers if the pack reward, reviewer intro, shop, or run-over is showing
-    if (!this.gameState.showPackReward() && !this.gameState.showReviewerIntro() &&
+    if (!this.gameState.showReviewerIntro() &&
         !this.gameState.isRunOver() && !this.gameState.showShop()) {
       this.gameTimer.restartTimers();
     }
@@ -511,6 +486,18 @@ export class GameContainerComponent implements OnInit, OnDestroy {
 
   onVoucherPurchase(id: VoucherId): void {
     this.gameState.purchaseVoucher(id);
+  }
+
+  onPurchaseDeptLevel(category: TaskCategory): void {
+    this.gameState.purchaseDeptLevel(category);
+  }
+
+  onPurchaseWorkerSlot(category: TaskCategory): void {
+    this.gameState.purchaseWorkerSlot(category);
+  }
+
+  onPurchaseManagerSlot(category: TaskCategory): void {
+    this.gameState.purchaseManagerSlot(category);
   }
 
   onShopContinue(): void {
@@ -534,10 +521,6 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   onReset(): void {
     this.gameState.resetGame();
     this.saveService.clearSave();
-  }
-
-  onDrawerToggle(): void {
-    this.drawerPanel()?.toggle();
   }
 
   onMobileTabChange(tab: MobileTab): void {
@@ -578,41 +561,5 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     const el = this.deptSwipeContainer()?.nativeElement;
     if (!el) return;
     el.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
-  }
-
-  // ─── Pack reward handlers ────────────────
-  onPackPicked(selectedIds: string[]): void {
-    this.gameState.pickFromPack(selectedIds);
-    this.gameState.continueAfterPack();
-    // Shop or reviewer intro will now show
-    if (!this.gameState.showReviewerIntro() && !this.gameState.isRunOver() && !this.gameState.showShop()) {
-      this.gameTimer.restartTimers();
-    }
-  }
-
-  onShopPackPurchase(packType: PackType): void {
-    this.gameState.purchasePack(packType);
-  }
-
-  // ─── Joker handlers ─────────────────────
-  onJokerEquipped(jokerId: JokerId): void {
-    this.gameState.equipJoker(jokerId);
-  }
-
-  onJokerUnequipped(jokerId: JokerId): void {
-    this.gameState.unequipJoker(jokerId);
-  }
-
-  // ─── Rule handlers ──────────────────────
-  onRuleAdded(rule: Rule): void {
-    this.gameState.addRule(rule);
-  }
-
-  onRuleRemoved(ruleId: string): void {
-    this.gameState.removeRule(ruleId);
-  }
-
-  onRuleToggled(ruleId: string): void {
-    this.gameState.toggleRuleEnabled(ruleId);
   }
 }

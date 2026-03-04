@@ -16,7 +16,7 @@ export class KanbanPage {
   }
 
   get lockedPlaceholder() {
-    return this.page.locator('app-kanban-board').getByText('More departments unlock');
+    return this.page.locator('app-kanban-board').getByText('Visit the Shop between quarters to unlock departments');
   }
 
   get missionBoardDropList() {

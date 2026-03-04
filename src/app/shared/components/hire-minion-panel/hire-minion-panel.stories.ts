@@ -1,7 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/angular';
-import { expect, within, userEvent } from 'storybook/test';
+import { expect, within, userEvent, fn } from 'storybook/test';
 import { HireMinionPanelComponent } from './hire-minion-panel.component';
-import { TaskCategory } from '../../../core/models/task.model';
+import { MinionArchetype, MINION_ARCHETYPES } from '../../../core/models/minion.model';
+
+const sampleOptions: MinionArchetype[] = [
+  MINION_ARCHETYPES['penny-pincher'],
+  MINION_ARCHETYPES['vault-cracker'],
+  MINION_ARCHETYPES['golden-touch'],
+];
 
 const meta: Meta<HireMinionPanelComponent> = {
   title: 'Minion Manager/Molecules/HireMinionPanel',
@@ -18,17 +24,21 @@ export const CanAfford: Story = {
     cost: 50,
     minionCount: 0,
     canHire: true,
-    unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
+    hireOptions: sampleOptions,
+    rerollCost: 25,
+    hire: fn(),
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
 
-    // Verify "Scout Recruits" button is present and enabled
-    const recruitButton = canvas.getByText(/Scout Recruits/);
-    expect(recruitButton).toBeTruthy();
+    // Verify 3 draft cards are shown
+    expect(canvas.getByText('Penny Pincher')).toBeTruthy();
+    expect(canvas.getByText('Vault Cracker')).toBeTruthy();
+    expect(canvas.getByText('Golden Touch')).toBeTruthy();
 
-    // Click the recruit button — this emits the recruit output
-    await userEvent.click(recruitButton);
+    // Click to hire the first option
+    await userEvent.click(canvas.getByText('Penny Pincher'));
+    expect(args.hire).toHaveBeenCalledWith('penny-pincher');
   },
 };
 
@@ -38,26 +48,43 @@ export const CannotAfford: Story = {
     cost: 50,
     minionCount: 0,
     canHire: false,
-    unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
+    hireOptions: sampleOptions,
+    rerollCost: 25,
   },
 };
 
-export const SecondMinion: Story = {
+export const HiringFrozen: Story = {
   args: {
-    gold: 80,
+    gold: 200,
+    cost: 50,
+    minionCount: 2,
+    canHire: true,
+    hiringDisabled: true,
+    hireOptions: sampleOptions,
+    rerollCost: 25,
+  },
+};
+
+export const WithReroll: Story = {
+  args: {
+    gold: 200,
     cost: 75,
     minionCount: 1,
     canHire: true,
-    unlockedDepartments: new Set(['schemes', 'heists'] as TaskCategory[]),
+    hireOptions: [
+      MINION_ARCHETYPES['corner-cutter'],
+      MINION_ARCHETYPES['lab-rat'],
+      MINION_ARCHETYPES['overdriver'],
+    ],
+    rerollCost: 37,
+    reroll: fn(),
   },
-};
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
 
-export const ExpensiveMinion: Story = {
-  args: {
-    gold: 100,
-    cost: 253,
-    minionCount: 4,
-    canHire: false,
-    unlockedDepartments: new Set(['schemes', 'heists', 'research', 'mayhem'] as TaskCategory[]),
+    // Click reroll button
+    const rerollBtn = canvas.getByText(/Reroll/);
+    await userEvent.click(rerollBtn);
+    expect(args.reroll).toHaveBeenCalled();
   },
 };

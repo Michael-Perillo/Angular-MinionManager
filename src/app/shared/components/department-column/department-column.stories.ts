@@ -21,22 +21,19 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
 
 const makeMinion = (overrides: Partial<Minion> = {}): Minion => ({
   id: crypto.randomUUID(),
-  name: 'Grim',
-  appearance: { color: '#6c3483', accessory: 'goggles' },
+  archetypeId: 'penny-pincher',
+  role: 'worker',
   status: 'idle',
   assignedTaskId: null,
-  stats: { speed: 1.0, efficiency: 1.1 },
-  specialty: 'schemes',
   assignedDepartment: 'schemes',
-  xp: 0,
-  level: 1,
   ...overrides,
 });
 
 const makeDept = (overrides: Partial<Department> = {}): Department => ({
   category: 'schemes',
-  xp: 0,
   level: 1,
+  workerSlots: 1,
+  hasManager: false,
   ...overrides,
 });
 
@@ -65,16 +62,22 @@ export const SingleMinion: Story = {
       makeTask({ template: { name: 'Forge Hall Passes', description: 'Create convincing hall passes.', category: 'schemes', tier: 'petty' } }),
     ],
     department: makeDept({ level: 2 }),
-    assignedMinions: [makeMinion({ name: 'Grim' })],
+    assignedMinions: [makeMinion({ archetypeId: 'penny-pincher' })],
+    deptEffectiveMult: 2,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    // Verify minion lane renders
-    expect(canvas.getByText('Grim')).toBeTruthy();
+    // Verify minion archetype name renders
+    expect(canvas.getByText('Penny Pincher')).toBeTruthy();
 
     // Verify queue section renders with task
     expect(canvas.getByText('Forge Hall Passes')).toBeTruthy();
+
+    // Verify payout block shows mult breakdown (multiple ×2 elements: header + task)
+    const multElements = canvas.getAllByText(/×2/);
+    expect(multElements.length).toBeGreaterThanOrEqual(2);
+    expect(canvas.getByText(/~10g/)).toBeTruthy();
   },
 };
 
@@ -106,24 +109,19 @@ export const MultipleMinions: Story = {
         assignedQueue: 'heists',
       }),
     ],
-    department: makeDept({ category: 'heists', level: 3, xp: 60 }),
+    department: makeDept({ category: 'heists', level: 3 }),
+    deptEffectiveMult: 3,
     assignedMinions: [
       makeMinion({
         id: workingMinionId,
-        name: 'Skulk',
-        appearance: { color: '#1a5276', accessory: 'helmet' },
-        specialty: 'heists',
+        archetypeId: 'vault-cracker',
         assignedDepartment: 'heists',
         status: 'working',
         assignedTaskId: workingTaskId,
-        level: 3,
       }),
       makeMinion({
-        name: 'Wraith',
-        appearance: { color: '#7b241c', accessory: 'cape' },
-        specialty: 'heists',
+        archetypeId: 'safe-hands',
         assignedDepartment: 'heists',
-        level: 2,
       }),
     ],
   },
@@ -139,19 +137,20 @@ export const FullQueue: Story = {
       makeTask({ template: { name: 'Clone Army Research', description: 'Mass production.', category: 'research', tier: 'legendary' }, tier: 'legendary', goldReward: 120, assignedQueue: 'research' }),
       makeTask({ template: { name: 'Weather Machine', description: 'Control the weather.', category: 'research', tier: 'sinister' }, tier: 'sinister', goldReward: 18, assignedQueue: 'research' }),
     ],
-    department: makeDept({ category: 'research', level: 5, xp: 200 }),
+    department: makeDept({ category: 'research', level: 5 }),
+    deptEffectiveMult: 5,
     assignedMinions: [
-      makeMinion({ name: 'Hex', appearance: { color: '#1e8449', accessory: 'horns' }, specialty: 'research', assignedDepartment: 'research', level: 4 }),
+      makeMinion({ archetypeId: 'lab-rat', assignedDepartment: 'research' }),
     ],
   },
 };
 
-export const WithSpecialtyBonus: Story = {
+export const WithManager: Story = {
   args: {
     category: 'mayhem',
     tasks: [
       makeTask({
-        template: { name: 'TP Hero\'s House', description: 'Classic TP bombardment.', category: 'mayhem', tier: 'petty' },
+        template: { name: "TP Hero's House", description: 'Classic TP bombardment.', category: 'mayhem', tier: 'petty' },
         goldReward: 6,
         assignedQueue: 'mayhem',
       }),
@@ -162,15 +161,106 @@ export const WithSpecialtyBonus: Story = {
         assignedQueue: 'mayhem',
       }),
     ],
-    department: makeDept({ category: 'mayhem', level: 2, xp: 20 }),
+    department: makeDept({ category: 'mayhem', level: 2 }),
+    deptEffectiveMult: 2,
     assignedMinions: [
       makeMinion({
-        name: 'Doom',
-        appearance: { color: '#b9770e', accessory: 'horns' },
-        specialty: 'mayhem',
+        archetypeId: 'demolitions-expert',
+        role: 'manager',
         assignedDepartment: 'mayhem',
-        level: 3,
+      }),
+      makeMinion({
+        archetypeId: 'taskmaster',
+        assignedDepartment: 'mayhem',
       }),
     ],
+  },
+};
+
+export const WithOperations: Story = {
+  args: {
+    category: 'heists',
+    tasks: [
+      makeTask({
+        template: { name: 'Case the Museum', description: 'Scout the layout.', category: 'heists', tier: 'petty' },
+        goldReward: 5,
+        assignedQueue: 'heists',
+      }),
+      makeTask({
+        template: { name: 'Bypass Alarm System', description: 'Disable security grid.', category: 'heists', tier: 'sinister' },
+        tier: 'sinister',
+        goldReward: 12,
+        assignedQueue: 'heists',
+        isOperation: true,
+      }),
+      makeTask({
+        template: { name: 'Crack the Vault', description: 'Open the main vault.', category: 'heists', tier: 'diabolical' },
+        tier: 'diabolical',
+        goldReward: 30,
+        assignedQueue: 'heists',
+        isOperation: true,
+        isSpecialOp: true,
+      }),
+      makeTask({
+        template: { name: 'Steal the Diamond', description: 'Grab the prize.', category: 'heists', tier: 'sinister' },
+        tier: 'sinister',
+        goldReward: 16,
+        assignedQueue: 'heists',
+        isOperation: true,
+      }),
+    ],
+    department: makeDept({ category: 'heists', level: 3 }),
+    deptEffectiveMult: 3,
+    assignedMinions: [],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // Regular task (no OP badge)
+    expect(canvas.getByText('Case the Museum')).toBeTruthy();
+
+    // Operations should show OP badges
+    const opBadges = canvas.getAllByText('OP');
+    expect(opBadges.length).toBe(3); // 3 operations in queue
+
+    // Special op task should render
+    expect(canvas.getByText('Crack the Vault')).toBeTruthy();
+  },
+};
+
+export const WithHighMult: Story = {
+  args: {
+    category: 'heists',
+    tasks: [
+      makeTask({
+        template: { name: 'Vault Heist', description: 'Crack the vault.', category: 'heists', tier: 'sinister' },
+        tier: 'sinister',
+        goldReward: 8,
+        assignedQueue: 'heists',
+        isSpecialOp: true,
+        comboMult: 2,
+      }),
+      makeTask({
+        template: { name: 'Quick Grab', description: 'Grab and go.', category: 'heists', tier: 'petty' },
+        goldReward: 3,
+        assignedQueue: 'heists',
+      }),
+    ],
+    department: makeDept({ category: 'heists', level: 5 }),
+    deptEffectiveMult: 6,
+    activeBreakthroughs: 1,
+    assignedMinions: [],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // High-mult story: special op task (8g) with effectiveMult=6 + specialOp+1 + combo+2 = 9
+    // Should show base, multiplier, and expected gold
+    expect(canvas.getByText(/Vault Heist/)).toBeTruthy();
+    expect(canvas.getByText(/~72g/)).toBeTruthy(); // 8 × 9
+
+    // Non-special task (3g) with effectiveMult=6 → ~18g
+    expect(canvas.getByText(/Quick Grab/)).toBeTruthy();
+    expect(canvas.getByText(/~18g/)).toBeTruthy(); // 3 × 6
   },
 };

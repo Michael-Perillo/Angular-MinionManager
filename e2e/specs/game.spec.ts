@@ -7,16 +7,15 @@ test.beforeEach(async ({ nav }) => {
 test('App loads with heading and mission board', async ({ page, nav }) => {
   await expect(page.getByRole('heading', { name: 'Minion Manager' })).toBeVisible();
   await nav.goToMissions();
-  await expect(page.getByRole('heading', { name: 'Mission Board' })).toBeVisible();
+  await expect(page.locator('app-mission-board').getByRole('heading', { name: 'Backlog' })).toBeVisible();
   const cards = page.locator('app-mission-board .game-card');
   await expect(cards.first()).toBeVisible();
 });
 
-test('Accept mission moves it to a queue', async ({ missionBoard, workbench }) => {
-  await missionBoard.sendFirstMissionToQueue();
-  await missionBoard.routeToWorkbench();
+test('Execute scheme auto-routes to Schemes queue', async ({ missionBoard, workbench }) => {
+  await missionBoard.executeFirstScheme();
 
-  // Verify the workbench received the task (CLICK button visible)
+  // Verify the department column received the task (Click button visible)
   await expect(workbench.clickButton.first()).toBeVisible({ timeout: 5_000 });
 });
 
@@ -27,21 +26,17 @@ test('Click task to completion earns gold', async ({ game }) => {
 
 test('Hire minion after earning gold', async ({ nav, hire, header }) => {
   await nav.seedState({ gold: 200 });
-  await hire.scoutRecruits();
-  await hire.pickFirstCandidate();
+  await hire.hireMinion();
   expect(await header.minions).toBeGreaterThanOrEqual(1);
 });
 
-test('Drawer tab navigation shows correct content', async ({ page, nav }) => {
-  test.skip(nav.isMobile, 'Desktop drawer not available on mobile');
+test('Department column visible in kanban view', async ({ page, nav }) => {
+  test.skip(nav.isMobile, 'Desktop kanban layout only');
 
-  // Open drawer — Minions is default tab
-  await nav.goToHirePanel();
-  await expect(page.locator('app-hire-minion-panel')).toBeVisible();
-
-  // Depts tab
-  await nav.goToDepartmentPanel();
-  await expect(page.locator('app-department-panel')).toBeVisible();
+  // Schemes is always unlocked — department column should be visible
+  const deptColumn = page.locator('app-department-column').first();
+  await expect(deptColumn).toBeVisible({ timeout: 5_000 });
+  await expect(deptColumn.getByText('Lv.1').first()).toBeVisible();
 });
 
 test('Reset game clears progress', async ({ nav, game, header, page }) => {
@@ -58,42 +53,47 @@ test('Reset game clears progress', async ({ nav, game, header, page }) => {
 });
 
 test('Quarter review modal appears on quarter completion', async ({ page, nav }) => {
-  // Seed state: Y1Q1 at 29/30 tasks, with a 1-click task in the player workbench
+  // Seed state: Y1Q1 near budget, with a 1-click task in schemes queue
   const taskId = 'e2e-final-task';
   await nav.seedState({
     gold: 100,
-    completedCount: 29,
+    completedCount: 24,
     totalGoldEarned: 100,
-    unlockedDepartments: ['schemes'],
     missionBoard: [],
-    playerQueue: [
-      {
-        id: taskId,
-        template: { name: 'Final Task', description: 'Complete this.', category: 'schemes', tier: 'petty' },
-        status: 'queued',
-        tier: 'petty',
-        goldReward: 5,
-        clicksRequired: 1,
-        clicksRemaining: 1,
-        assignedMinionId: null,
-        queuedAt: Date.now(),
-        assignedQueue: 'player',
-      },
-    ],
+    departmentQueues: {
+      schemes: [
+        {
+          id: taskId,
+          template: { name: 'Final Task', description: 'Complete this.', category: 'schemes', tier: 'petty' },
+          status: 'queued',
+          tier: 'petty',
+          goldReward: 5,
+          clicksRequired: 1,
+          clicksRemaining: 1,
+          assignedMinionId: null,
+          queuedAt: Date.now(),
+          assignedQueue: 'schemes',
+        },
+      ],
+      heists: [], research: [], mayhem: [],
+    },
     quarterProgress: {
       year: 1,
       quarter: 1,
       grossGoldEarned: 100,
-      tasksCompleted: 29,
+      tasksCompleted: 24,
       isComplete: false,
       missedQuarters: 0,
       quarterResults: [],
+      dismissalsRemaining: 5,
+      researchCompleted: 0,
+      activeBreakthroughs: 0,
     },
   });
 
   // Navigate to workbench and click the task to complete it
   await nav.goToWorkbench();
-  const clickBtn = page.locator('app-player-workbench button').filter({ hasText: /CLICK/ }).first();
+  const clickBtn = page.locator('app-department-column button').filter({ hasText: /Click/ }).first();
   await clickBtn.waitFor({ state: 'visible', timeout: 5_000 });
   await clickBtn.click();
 
@@ -110,18 +110,7 @@ test('Quarter review modal appears on quarter completion', async ({ page, nav })
   // Quarter review modal should dismiss
   await modal.waitFor({ state: 'hidden', timeout: 3_000 });
 
-  // Pack reward modal should appear (passed quarter)
-  const packOpener = page.locator('app-card-pack-opener');
-  await packOpener.waitFor({ state: 'visible', timeout: 3_000 });
-
-  // Select first card and confirm
-  const firstCard = packOpener.locator('[data-testid^="pack-card-"]').first();
-  await firstCard.click();
-  const confirmBtn2 = packOpener.getByTestId('pack-confirm-btn');
-  await confirmBtn2.click();
-  await packOpener.waitFor({ state: 'hidden', timeout: 3_000 });
-
-  // Shop modal should appear between quarters
+  // Shop modal should appear between quarters (no pack reward)
   const shop = page.locator('app-shop');
   await shop.waitFor({ state: 'visible', timeout: 3_000 });
 

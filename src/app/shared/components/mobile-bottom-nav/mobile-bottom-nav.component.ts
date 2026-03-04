@@ -1,6 +1,6 @@
 import { Component, ChangeDetectionStrategy, input, output } from '@angular/core';
 
-export type MobileTab = 'missions' | 'work' | 'click' | 'more';
+export type MobileTab = 'missions' | 'work' | 'more';
 
 @Component({
   selector: 'app-mobile-bottom-nav',
@@ -41,7 +41,6 @@ export class MobileBottomNavComponent {
   readonly tabs: { id: MobileTab; icon: string; label: string }[] = [
     { id: 'missions', icon: '📋', label: 'Missions' },
     { id: 'work', icon: '⚔️', label: 'Work' },
-    { id: 'click', icon: '👆', label: 'Click' },
     { id: 'more', icon: '⚙️', label: 'More' },
   ];
 }

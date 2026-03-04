@@ -5,15 +5,32 @@ import { completeTaskByClicking, setupGameWithMinions } from '../../../testing/h
 import { makeSaveData } from '../../../testing/factories/game-state.factory';
 import { makeMinion } from '../../../testing/factories/minion.factory';
 import { SAVE_VERSION } from '../models/save-data.model';
+import { TaskCategory } from '../models/task.model';
 
 describe('GameStateService', () => {
   let service: GameStateService;
+
+  /** Seed the mission board with n missions (board is empty after initializeGame) */
+  function seedBoard(n = 12): void {
+    for (let i = 0; i < n; i++) {
+      const mission = service.createBoardMission();
+      (service as any)._backlog.update((b: any[]) => [...b, mission]);
+    }
+  }
+
+  /** Hire a minion via the shop (shop must be open for hiring). */
+  function shopHire(): void {
+    service.openShop();
+    service.hireMinion(service.hireOptions()[0]);
+    service.closeShop();
+  }
 
   beforeEach(() => {
     TestBed.configureTestingModule({});
     service = TestBed.inject(GameStateService);
     service.clickCompleteDelay = 0;
     service.initializeGame();
+    seedBoard();
   });
 
   describe('initializeGame', () => {
@@ -25,7 +42,7 @@ describe('GameStateService', () => {
       expect(service.minions().length).toBe(0);
     });
 
-    it('should seed the mission board with missions', () => {
+    it('should seed the mission board via seedBoard helper', () => {
       expect(service.missionBoard().length).toBeGreaterThan(0);
     });
 
@@ -35,10 +52,6 @@ describe('GameStateService', () => {
 
     it('should start with no active missions', () => {
       expect(service.activeMissions().length).toBe(0);
-    });
-
-    it('should start at villain level 1', () => {
-      expect(service.villainLevel()).toBe(1);
     });
 
     it('should have all departments at level 1', () => {
@@ -59,18 +72,17 @@ describe('GameStateService', () => {
       expect(service.missionBoard().length).toBe(boardBefore - 1);
     });
 
-    it('should not accept when active slots are full', () => {
-      // Active slots = 3 + 0 minions = 3
+    it('should not accept when dept queue is full', () => {
+      // Schemes capacity = 1 + workerSlots(1) + bonus(0) = 2
       const missions = service.missionBoard();
       service.acceptMission(missions[0].id);
       service.acceptMission(missions[1].id);
-      service.acceptMission(missions[2].id);
-      expect(service.activeMissions().length).toBe(3);
+      expect(service.activeMissions().length).toBe(2);
 
-      // Try a 4th — should be rejected
+      // Try a 3rd — should be rejected (schemes queue full)
       const remaining = service.missionBoard()[0];
       service.acceptMission(remaining.id);
-      expect(service.activeMissions().length).toBe(3);
+      expect(service.activeMissions().length).toBe(2);
     });
   });
 
@@ -115,52 +127,50 @@ describe('GameStateService', () => {
   });
 
   describe('hireMinion', () => {
+    beforeEach(() => service.openShop());
+
     it('should not hire when insufficient gold', () => {
-      service.hireMinion();
+      service.hireMinion(service.hireOptions()[0]);
       expect(service.minions().length).toBe(0);
     });
 
-    it('should hire when gold is sufficient', () => {
+    it('should not hire when shop is closed', () => {
+      service.closeShop();
       service.addGold(75);
-      service.hireMinion();
+      service.hireMinion(service.hireOptions()[0]);
+      expect(service.minions().length).toBe(0);
+    });
+
+    it('should hire when gold is sufficient and shop is open', () => {
+      service.addGold(75);
+      service.hireMinion(service.hireOptions()[0]);
       expect(service.minions().length).toBe(1);
     });
 
     it('should deduct the cost from gold', () => {
       service.addGold(100);
-      service.hireMinion(); // costs 75
+      service.hireMinion(service.hireOptions()[0]); // costs 75
       expect(service.gold()).toBe(25);
     });
 
-    it('should give minion stats, specialty, and level', () => {
+    it('should give minion an archetypeId and set to idle worker', () => {
       service.addGold(75);
-      service.hireMinion();
-      const minion = service.minions()[0];
-      expect(minion.stats).toBeTruthy();
-      expect(minion.stats.speed).toBeGreaterThan(0);
-      expect(minion.stats.efficiency).toBeGreaterThan(0);
-      expect(minion.specialty).toBeTruthy();
-      expect(minion.level).toBe(1);
-      expect(minion.xp).toBe(0);
-    });
-
-    it('should give minion a name and set to idle', () => {
-      service.addGold(75);
-      service.hireMinion();
+      service.hireMinion(service.hireOptions()[0]);
       const minion = service.minions()[0];
       expect(minion).toBeTruthy();
-      expect(minion.name).toBeTruthy();
+      expect(minion.archetypeId).toBeTruthy();
+      expect(minion.role).toBe('worker');
       expect(minion.status).toBe('idle');
       expect(minion.assignedTaskId).toBeNull();
+      expect(minion.assignedDepartment).toBeNull();
     });
 
-    it('should give minion an appearance', () => {
+    it('should roll new hire options after hiring', () => {
       service.addGold(75);
-      service.hireMinion();
-      const minion = service.minions()[0];
-      expect(minion.appearance).toBeTruthy();
-      expect(minion.appearance.color).toBeTruthy();
-      expect(minion.appearance.accessory).toBeTruthy();
+      const optionsBefore = [...service.hireOptions()];
+      service.hireMinion(optionsBefore[0]);
+      // Options should be refreshed (may or may not differ due to randomness)
+      expect(service.hireOptions().length).toBe(3);
     });
   });
 
@@ -180,17 +190,19 @@ describe('GameStateService', () => {
 
     it('idleMinions should track idle minions', () => {
       service.addGold(75);
-      service.hireMinion();
+      shopHire();
       expect(service.idleMinions().length).toBe(1);
       expect(service.workingMinions().length).toBe(0);
     });
 
-    it('boardCapacity should be at least 12', () => {
-      expect(service.boardCapacity()).toBeGreaterThanOrEqual(12);
+    it('backlogCapacity should be at least 8 (base capacity with 0 minions)', () => {
+      expect(service.backlogCapacity()).toBeGreaterThanOrEqual(8);
     });
 
-    it('activeSlots should be at least 3', () => {
-      expect(service.activeSlots()).toBeGreaterThanOrEqual(3);
+    it('deptQueueCapacity should return correct values for default state', () => {
+      // schemes starts with workerSlots: 1, others: 0; no operations-desk bonus
+      expect(service.deptQueueCapacity().schemes).toBe(2); // 1 + 1 + 0
+      expect(service.deptQueueCapacity().heists).toBe(1);  // 1 + 0 + 0
     });
   });
 
@@ -200,7 +212,7 @@ describe('GameStateService', () => {
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       service.addGold(75);
-      service.hireMinion();
+      shopHire();
 
       // Reassign minion to the task's department so auto-assign can work
       const minion = service.minions()[0];
@@ -215,7 +227,7 @@ describe('GameStateService', () => {
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
       service.addGold(75);
-      service.hireMinion();
+      shopHire();
 
       // Reassign minion to matching department
       const minion = service.minions()[0];
@@ -243,34 +255,19 @@ describe('GameStateService', () => {
       expect(service.minions()[0].status).toBe('idle');
     });
 
-    it('should refill mission board over time', () => {
-      // Accept all missions to empty the board
-      const initialCount = service.missionBoard().length;
-      expect(initialCount).toBeGreaterThan(0);
-
-      // Remove some from board by accepting
-      service.acceptMission(service.missionBoard()[0].id);
-      service.acceptMission(service.missionBoard()[0].id);
-
-      // Tick enough for a board refresh (refresh interval = 3s, tick = 1s)
-      for (let i = 0; i < 5; i++) {
-        service.tickTime();
-      }
-
-      // Board should have been refilled
-      expect(service.missionBoard().length).toBeGreaterThanOrEqual(initialCount - 2);
-    });
+    // Board refresh removed — scouting replaces board refill
   });
 
   describe('resetGame', () => {
     it('should reset all state', () => {
       service.addGold(100);
-      service.hireMinion();
+      shopHire();
       service.resetGame();
 
       expect(service.gold()).toBe(0);
       expect(service.minions().length).toBe(0);
       expect(service.completedCount()).toBe(0);
+      // After reset, board is populated from starter deck
       expect(service.missionBoard().length).toBeGreaterThan(0);
       expect(service.activeMissions().length).toBe(0);
     });
@@ -290,14 +287,14 @@ describe('GameStateService', () => {
 
     it('should add notification when minion is hired', () => {
       service.addGold(75);
-      service.hireMinion();
+      shopHire();
       const minionNotif = service.notifications().find(n => n.type === 'minion');
       expect(minionNotif).toBeTruthy();
     });
 
     it('should dismiss notification by id', () => {
       service.addGold(75);
-      service.hireMinion();
+      shopHire();
       const notif = service.notifications()[0];
       service.dismissNotification(notif.id);
       expect(service.notifications().find(n => n.id === notif.id)).toBeUndefined();
@@ -308,27 +305,21 @@ describe('GameStateService', () => {
 
   describe('awardGold (via clickTask completion)', () => {
     it('should award full gold at baseline', () => {
-      const mission = service.missionBoard()[0];
-      service.acceptMission(mission.id);
-      const task = service.activeMissions().find(t => t.id === mission.id)!;
-      const reward = task.goldReward;
+      // Use a controlled mission (no special op) so mult is deterministic
+      const mission = {
+        id: 'baseline-test', template: { name: 'Test', description: '', category: 'schemes' as TaskCategory, tier: 'petty' as const },
+        status: 'queued' as const, tier: 'petty' as const, goldReward: 2, clicksRequired: 10, clicksRemaining: 10,
+        assignedMinionId: null, queuedAt: Date.now(), isSpecialOp: false, assignedQueue: null,
+      };
+      const data = makeSaveData({ missionBoard: [mission] });
+      service.loadSnapshot(data);
 
-      completeTaskByClicking(service, task.id);
-      // At baseline (dept level 1), gold = base × 1.0 dept mult × 1.0 boss mult - 0 drain
-      expect(service.gold()).toBe(reward);
+      service.acceptMission('baseline-test');
+      completeTaskByClicking(service, 'baseline-test');
+      // At baseline (dept level 1, no special op), gold = 2 × 1 = 2
+      expect(service.gold()).toBe(2);
     });
 
-    it('should increase department XP on task completion', () => {
-      const mission = service.missionBoard()[0];
-      const category = mission.template.category;
-      // Dept XP gated behind unlock — unlock the task's department
-      (service as any)._unlockedDepartments.set(new Set([category]));
-      service.acceptMission(mission.id);
-      const task = service.activeMissions().find(t => t.id === mission.id)!;
-
-      completeTaskByClicking(service, task.id);
-      expect(service.departments()[category].xp).toBeGreaterThan(0);
-    });
   });
 
   describe('clickTask edge cases', () => {
@@ -372,7 +363,7 @@ describe('GameStateService', () => {
   describe('autoAssignMinions', () => {
     it('should assign minion to task in its department', () => {
       service.addGold(10_000);
-      service.hireMinion();
+      shopHire();
 
       // Accept a mission and reassign the minion to match
       const mission = service.missionBoard()[0];
@@ -416,7 +407,7 @@ describe('GameStateService', () => {
 
     it('should not assign minion to task in different department', () => {
       service.addGold(10_000);
-      service.hireMinion();
+      shopHire();
 
       const mission = service.missionBoard()[0];
       service.acceptMission(mission.id);
@@ -436,85 +427,15 @@ describe('GameStateService', () => {
     });
   });
 
-  describe('villain level', () => {
-    it('should be 1 at 0 completed', () => {
-      expect(service.villainLevel()).toBe(1);
+  describe('hire options (draft system)', () => {
+    it('should initialize with 3 hire options', () => {
+      expect(service.hireOptions().length).toBe(3);
     });
 
-    it('should increase with completedCount', () => {
-      // Complete several tasks
-      for (let i = 0; i < 10; i++) {
-        const m = service.missionBoard()[0];
-        if (!m) break;
-        service.acceptMission(m.id);
-        completeTaskByClicking(service, m.id);
-      }
-      expect(service.villainLevel()).toBeGreaterThan(1);
-    });
-
-    it('should cap at 20', () => {
-      // Formula: min(20, floor(sqrt(completed/5)) + 1)
-      // To reach 20: sqrt(c/5) >= 19 → c >= 5 * 19^2 = 1805
-      // At completed = 2000, floor(sqrt(2000/5)) + 1 = floor(20) + 1 = 21, capped at 20
-      const saveData = makeSaveData({ completedCount: 2000 });
-      service.loadSnapshot(saveData);
-      expect(service.villainLevel()).toBe(20);
-    });
-
-    it('should return specific values for known completedCount', () => {
-      // completedCount=0 → level 1
-      expect(service.villainLevel()).toBe(1);
-
-      // completedCount=5 → floor(sqrt(5/5)) + 1 = floor(1) + 1 = 2
-      let data = makeSaveData({ completedCount: 5 });
-      service.loadSnapshot(data);
-      expect(service.villainLevel()).toBe(2);
-
-      // completedCount=20 → floor(sqrt(20/5)) + 1 = floor(2) + 1 = 3
-      data = makeSaveData({ completedCount: 20 });
-      service.loadSnapshot(data);
-      expect(service.villainLevel()).toBe(3);
-    });
-  });
-
-  describe('villainTitle', () => {
-    it('should return Petty Troublemaker at level 1', () => {
-      expect(service.villainTitle()).toBe('Petty Troublemaker');
-    });
-
-    it('should return higher titles at higher levels', () => {
-      const data = makeSaveData({ completedCount: 1000 });
-      service.loadSnapshot(data);
-      expect(service.villainTitle()).toBe('Supreme Evil Genius');
-    });
-  });
-
-  describe('minion XP & leveling', () => {
-    it('should award minion XP after completing a task via minion', () => {
-      setupGameWithMinions(service, 1);
-      const mission = service.missionBoard()[0];
-      const dept = mission.template.category;
-      service.acceptMission(mission.id);
-
-      // Reassign minion to matching department
-      const minion = service.minions()[0];
-      service.reassignMinion(minion.id, dept);
-
-      service.tickTime(); // auto-assigns minion
-
-      const minionBefore = service.minions()[0];
-      expect(minionBefore.xp).toBe(0);
-
-      // Complete via processMinionClicks
-      const task = service.inProgressTasks()[0];
-      for (let i = 0; i < 200; i++) {
-        service.processMinionClicks();
-        if (!service.departmentQueues()[dept].find(t => t.id === task.id)) break;
-      }
-
-      const minionAfter = service.minions()[0];
-      if (minionAfter) {
-        expect(minionAfter.xp).toBeGreaterThan(0);
+    it('should have valid archetype IDs in hire options', () => {
+      const { MINION_ARCHETYPES } = require('../models/minion.model');
+      for (const id of service.hireOptions()) {
+        expect(MINION_ARCHETYPES[id]).toBeTruthy();
       }
     });
   });
@@ -536,24 +457,15 @@ describe('GameStateService', () => {
       expect(service.completedCount()).toBe(snapshot.completedCount);
     });
 
-    it('should preserve usedNameIndices through snapshot', () => {
-      service.addGold(10_000);
-      service.hireMinion();
-      const firstName = service.minions()[0].name;
-
+    it('should preserve hireOptions through snapshot', () => {
       const snapshot = service.getSnapshot();
-      expect(snapshot.usedNameIndices.length).toBeGreaterThan(0);
+      expect(snapshot.hireOptions).toBeDefined();
+      expect(snapshot.hireOptions!.length).toBe(3);
 
       service.resetGame();
       service.loadSnapshot(snapshot);
 
-      // usedNameIndices restored, so next minion shouldn't get same name
-      service.addGold(10_000);
-      service.hireMinion();
-      // With only 2 minions out of 25 names, the second should differ
-      if (service.minions().length === 2) {
-        expect(service.minions()[1].name).not.toBe(firstName);
-      }
+      expect(service.hireOptions().length).toBe(3);
     });
 
     it('should include current version in snapshot', () => {
@@ -562,29 +474,34 @@ describe('GameStateService', () => {
     });
   });
 
-  describe('board and active capacity scaling', () => {
-    it('should increase board capacity with minions', () => {
-      const baseCap = service.boardCapacity();
+  describe('board and queue capacity scaling', () => {
+    it('should increase backlog capacity with minions', () => {
+      const baseCap = service.backlogCapacity();
       setupGameWithMinions(service, 2, 10_000);
-      expect(service.boardCapacity()).toBeGreaterThan(baseCap);
+      expect(service.backlogCapacity()).toBeGreaterThan(baseCap);
     });
 
-    it('should increase active slots with minions', () => {
-      const baseSlots = service.activeSlots(); // 3
-      setupGameWithMinions(service, 2, 10_000);
-      expect(service.activeSlots()).toBe(baseSlots + 2);
+    it('acceptMission should reject when dept queue is at capacity', () => {
+      // Default schemes has workerSlots: 1, so capacity = 2
+      const m1 = service.missionBoard()[0];
+      const m2 = service.missionBoard()[1];
+      const m3 = service.missionBoard()[2];
+      service.acceptMission(m1.id);
+      service.acceptMission(m2.id);
+      // Third should be rejected (capacity = 2)
+      service.acceptMission(m3.id);
+      expect(service.departmentQueues().schemes.length).toBe(2);
     });
 
   });
 
-  describe('name pool exhaustion', () => {
-    it('should recycle names after all 25 are used', () => {
+  describe('hiring many minions', () => {
+    it('should allow hiring many minions without error', () => {
       service.addGold(100_000_000); // enough for exponentially scaling costs
-      for (let i = 0; i < 26; i++) {
-        service.hireMinion();
+      for (let i = 0; i < 20; i++) {
+        shopHire();
       }
-      // Should have 26 minions without error
-      expect(service.minions().length).toBe(26);
+      expect(service.minions().length).toBe(20);
     });
   });
 
@@ -595,245 +512,157 @@ describe('GameStateService', () => {
     });
   });
 
-  // ─── Phase 1A: Progressive Department Unlocking ──────────
+  // ─── Department Unlocking (via vouchers) ──────────
 
-  describe('progressive department unlocking', () => {
-    it('should start with empty unlockedDepartments', () => {
-      expect(service.unlockedDepartments().size).toBe(0);
-      expect(service.unlockedDepartmentList().length).toBe(0);
+  describe('department unlocking via vouchers', () => {
+    it('should start with schemes always unlocked', () => {
+      expect(service.unlockedDepartments().size).toBe(1);
+      expect(service.unlockedDepartments().has('schemes')).toBe(true);
     });
 
-    it('should unlock department when hireMinion is called', () => {
-      service.addGold(75);
-      service.hireMinion();
-      const minion = service.minions()[0];
-      expect(service.unlockedDepartments().has(minion.assignedDepartment)).toBe(true);
-      expect(service.unlockedDepartmentList().length).toBeGreaterThanOrEqual(1);
+    it('should unlock department when purchasing unlock voucher', () => {
+      service.addGold(100);
+      service.purchaseVoucher('unlock-heists');
+      expect(service.unlockedDepartments().has('heists')).toBe(true);
+      expect(service.unlockedDepartmentList().length).toBe(2); // schemes + heists
     });
 
-    it('should unlock department when hireChosenMinion is called', () => {
-      const candidates = service.generateHiringCandidates();
-      service.addGold(75);
-      service.hireChosenMinion(candidates[0]);
-      expect(service.unlockedDepartments().has(candidates[0].assignedDepartment)).toBe(true);
-    });
-
-    it('should not duplicate department in unlocked set on second hire in same dept', () => {
+    it('should not duplicate department in unlocked set on double purchase attempt', () => {
       service.addGold(10_000);
-      service.hireMinion();
-      const dept = service.minions()[0].assignedDepartment;
+      service.purchaseVoucher('unlock-heists');
       const sizeBefore = service.unlockedDepartments().size;
 
-      // Hire another minion and force it into the same department via hireChosenMinion
-      const candidate = makeMinion({ assignedDepartment: dept, specialty: dept });
-      service.hireChosenMinion(candidate);
+      // Purchasing again should fail (max level 1)
+      service.purchaseVoucher('unlock-heists');
       expect(service.unlockedDepartments().size).toBe(sizeBefore);
     });
 
-    it('should emit notification when a new department is unlocked', () => {
-      service.addGold(75);
-      const notifsBefore = service.notifications().length;
-      service.hireMinion();
-      const deptNotif = service.notifications().find(n => n.message.includes('Department opened'));
-      expect(deptNotif).toBeTruthy();
-    });
-
-    it('should persist unlockedDepartments in snapshot', () => {
-      service.addGold(10_000);
-      service.hireMinion();
-      const snapshot = service.getSnapshot();
-      expect(snapshot.version).toBe(SAVE_VERSION);
-      expect(snapshot.unlockedDepartments).toBeDefined();
-      expect(snapshot.unlockedDepartments!.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('should restore unlockedDepartments from save data', () => {
+    it('should restore unlockedDepartments from voucher levels in save data', () => {
       const data = makeSaveData({
-        unlockedDepartments: ['schemes', 'heists'],
+        ownedVouchers: { 'unlock-heists': 1 } as any,
       });
       service.loadSnapshot(data);
-      expect(service.unlockedDepartments().has('schemes' as any)).toBe(true);
-      expect(service.unlockedDepartments().has('heists' as any)).toBe(true);
-      expect(service.unlockedDepartments().has('research' as any)).toBe(false);
+      expect(service.unlockedDepartments().has('schemes')).toBe(true);
+      expect(service.unlockedDepartments().has('heists')).toBe(true);
+      expect(service.unlockedDepartments().has('research')).toBe(false);
     });
 
-    it('should derive unlockedDepartments from minions for older saves without the field', () => {
-      const minions = [
-        makeMinion({ assignedDepartment: 'research' }),
-        makeMinion({ assignedDepartment: 'mayhem' }),
-      ];
-      const data = makeSaveData({ minions, unlockedDepartments: [] });
-      service.loadSnapshot(data);
-      expect(service.unlockedDepartments().has('research' as any)).toBe(true);
-      expect(service.unlockedDepartments().has('mayhem' as any)).toBe(true);
-    });
-
-    it('should reset unlockedDepartments on initializeGame', () => {
-      service.addGold(75);
-      service.hireMinion();
-      expect(service.unlockedDepartments().size).toBeGreaterThan(0);
+    it('should reset unlockedDepartments to only schemes on initializeGame', () => {
+      service.addGold(100);
+      service.purchaseVoucher('unlock-heists');
+      expect(service.unlockedDepartments().size).toBeGreaterThan(1);
 
       service.initializeGame();
-      expect(service.unlockedDepartments().size).toBe(0);
-    });
-
-    it('should only generate new missions from unlocked departments', () => {
-      // Start a fresh game, hire a minion to unlock one department
-      service.addGold(75);
-      service.hireMinion();
-      const unlocked = service.unlockedDepartments();
-
-      // Clear the board and force a complete refill so all missions are newly generated
-      // We can do this via loadSnapshot with an empty board and the current state
-      const snapshot = service.getSnapshot();
-      snapshot.missionBoard = [];
-      service.loadSnapshot(snapshot);
-
-      // Trigger board refill directly (migrated from tickTime to GameTimerService)
-      service.refreshBoard();
-
-      // All newly generated missions should be from unlocked depts
-      const boardMissions = service.missionBoard();
-      expect(boardMissions.length).toBeGreaterThan(0);
-      for (const m of boardMissions) {
-        expect(unlocked.has(m.template.category)).toBe(true);
-      }
+      expect(service.unlockedDepartments().size).toBe(1);
+      expect(service.unlockedDepartments().has('schemes')).toBe(true);
     });
   });
 
-  // ─── Phase 1B: Minion Hiring Choice ──────────
+  // ─── Phase 1B: Minion Assignment ──────────
 
-  describe('generateHiringCandidates', () => {
-    it('should return exactly 2 minions', () => {
-      const candidates = service.generateHiringCandidates();
-      expect(candidates.length).toBe(2);
-      expect(candidates[0]).toBeTruthy();
-      expect(candidates[1]).toBeTruthy();
-    });
-
-    it('should return minions with valid properties', () => {
-      const candidates = service.generateHiringCandidates();
-      for (const minion of candidates) {
-        expect(minion.id).toBeTruthy();
-        expect(minion.name).toBeTruthy();
-        expect(minion.stats.speed).toBeGreaterThan(0);
-        expect(minion.stats.efficiency).toBeGreaterThan(0);
-        expect(minion.specialty).toBeTruthy();
-        expect(minion.assignedDepartment).toBeTruthy();
-      }
-    });
-
-    it('should include at least one candidate from a locked department when locked depts exist', () => {
-      // At start, no departments are unlocked. Unlock one via hire.
+  describe('assignMinionToDepartment', () => {
+    it('should assign an unassigned minion to a department with role', () => {
       service.addGold(75);
-      service.hireMinion();
-      const unlockedDept = service.minions()[0].assignedDepartment;
+      shopHire();
+      const minion = service.minions()[0];
+      expect(minion.assignedDepartment).toBeNull();
 
-      // If there are still locked depts, at least one candidate should open a new one
-      if (service.unlockedDepartments().size < 4) {
-        // Run multiple times to account for random ordering
-        let foundLockedCandidate = false;
-        for (let attempt = 0; attempt < 20; attempt++) {
-          const candidates = service.generateHiringCandidates();
-          const hasLocked = candidates.some(c => !service.unlockedDepartments().has(c.assignedDepartment));
-          if (hasLocked) {
-            foundLockedCandidate = true;
-            break;
-          }
-        }
-        expect(foundLockedCandidate).toBe(true);
-      }
+      service.assignMinionToDepartment(minion.id, 'schemes', 'worker');
+      expect(service.minions()[0].assignedDepartment).toBe('schemes');
+      expect(service.minions()[0].role).toBe('worker');
     });
 
-    it('should return both random when all departments are unlocked', () => {
-      // Unlock all 4 departments
-      service.addGold(100_000);
-      const allDepts = ['schemes', 'heists', 'research', 'mayhem'] as const;
-      for (const dept of allDepts) {
-        const candidate = makeMinion({ assignedDepartment: dept, specialty: dept });
-        service.hireChosenMinion(candidate);
-        service.addGold(100_000); // replenish
-      }
-      expect(service.unlockedDepartments().size).toBe(4);
+    it('should not assign a working minion', () => {
+      service.addGold(75);
+      shopHire();
+      const minion = service.minions()[0];
+      service.assignMinionToDepartment(minion.id, 'schemes', 'worker');
 
-      // All candidates should be from unlocked depts (which is all of them)
-      const candidates = service.generateHiringCandidates();
-      expect(candidates.length).toBe(2);
-    });
+      // Simulate working state
+      service['_minions'].update(list =>
+        list.map(m => ({ ...m, status: 'working' as const }))
+      );
 
-    it('should generate two different minion IDs', () => {
-      const candidates = service.generateHiringCandidates();
-      expect(candidates[0].id).not.toBe(candidates[1].id);
+      // Give heists a worker slot so the rejection is due to working status, not slot limit
+      service['_departments'].update(d => ({ ...d, heists: { ...d.heists, workerSlots: 1 } }));
+      service.assignMinionToDepartment(minion.id, 'heists', 'worker');
+      expect(service.minions()[0].assignedDepartment).toBe('schemes');
     });
   });
 
-  describe('hireChosenMinion', () => {
-    it('should deduct gold and add the chosen minion', () => {
-      service.addGold(100);
-      const cost = service.nextMinionCost();
-      const candidates = service.generateHiringCandidates();
+  describe('unassignMinion', () => {
+    it('should return minion to unassigned pool', () => {
+      service.addGold(75);
+      shopHire();
+      const minion = service.minions()[0];
+      service.assignMinionToDepartment(minion.id, 'schemes', 'worker');
+      expect(service.minions()[0].assignedDepartment).toBe('schemes');
 
-      service.hireChosenMinion(candidates[0]);
-      expect(service.gold()).toBe(100 - cost);
-      expect(service.minions().length).toBe(1);
-      expect(service.minions()[0].id).toBe(candidates[0].id);
+      service.unassignMinion(minion.id);
+      expect(service.minions()[0].assignedDepartment).toBeNull();
+      expect(service.minions()[0].role).toBe('worker');
+    });
+  });
+
+  describe('unassignedMinions', () => {
+    it('should include newly hired minions', () => {
+      service.addGold(75);
+      shopHire();
+      expect(service.unassignedMinions().length).toBe(1);
     });
 
-    it('should not hire when gold is insufficient', () => {
-      const candidates = service.generateHiringCandidates();
-      service.hireChosenMinion(candidates[0]);
-      expect(service.minions().length).toBe(0);
-    });
-
-    it('should add a hire notification', () => {
-      service.addGold(100);
-      const candidates = service.generateHiringCandidates();
-      service.hireChosenMinion(candidates[0]);
-      const minionNotif = service.notifications().find(n => n.type === 'minion');
-      expect(minionNotif).toBeTruthy();
+    it('should exclude assigned minions', () => {
+      service.addGold(75);
+      shopHire();
+      const minion = service.minions()[0];
+      service.assignMinionToDepartment(minion.id, 'schemes', 'worker');
+      expect(service.unassignedMinions().length).toBe(0);
     });
   });
 
   // ─── Department local multiplier on gold ──────────
 
-  describe('department local gold multiplier', () => {
-    it('should apply dept local mult when department level > 1', () => {
-      // getDeptLocalMult(level) = 1 + (level-1)*0.06
-      // At level 3: 1 + 2*0.06 = 1.12
-      const board = service.missionBoard();
-      const category = board[0].template.category;
+  describe('department integer additive gold multiplier', () => {
+    it('should apply dept mult when department level > 1', () => {
+      // getDeptMult(3) = 2 → mult = 1 + 2 = 3
+      // Create a controlled mission (no special op) at known category
+      const mission = {
+        id: 'test-task', template: { name: 'Test', description: '', category: 'schemes' as TaskCategory, tier: 'petty' as const },
+        status: 'queued' as const, tier: 'petty' as const, goldReward: 2, clicksRequired: 10, clicksRemaining: 10,
+        assignedMinionId: null, queuedAt: Date.now(), isSpecialOp: false, assignedQueue: null,
+      };
       const data = makeSaveData({
         departments: {
-          schemes: { category: 'schemes', xp: 0, level: category === 'schemes' ? 3 : 1 },
-          heists: { category: 'heists', xp: 0, level: category === 'heists' ? 3 : 1 },
-          research: { category: 'research', xp: 0, level: category === 'research' ? 3 : 1 },
-          mayhem: { category: 'mayhem', xp: 0, level: category === 'mayhem' ? 3 : 1 },
+          schemes: { category: 'schemes', level: 3, workerSlots: 1, hasManager: false },
+          heists: { category: 'heists', level: 1, workerSlots: 0, hasManager: false },
+          research: { category: 'research', level: 1, workerSlots: 0, hasManager: false },
+          mayhem: { category: 'mayhem', level: 1, workerSlots: 0, hasManager: false },
         },
-        missionBoard: board,
+        missionBoard: [mission],
       });
       service.loadSnapshot(data);
 
-      const mission = service.missionBoard().find(m => m.goldReward > 0)!;
-      service.acceptMission(mission.id);
-      const task = service.activeMissions().find(t => t.id === mission.id)!;
-      const baseReward = task.goldReward;
+      service.acceptMission('test-task');
+      completeTaskByClicking(service, 'test-task');
 
-      completeTaskByClicking(service, task.id);
-
-      // With dept level 3: gold = round(baseReward * 1.12)
-      const expected = Math.round(baseReward * 1.12);
-      expect(service.gold()).toBe(expected);
+      // Base 2 × mult 3 (1 + deptMult(3)=2) = 6
+      expect(service.gold()).toBe(6);
     });
 
-    it('should award exact base reward at dept level 1', () => {
-      // All departments at level 1 → getDeptLocalMult(1) = 1.0
-      const mission = service.missionBoard().find(m => m.goldReward > 0)!;
-      service.acceptMission(mission.id);
-      const task = service.activeMissions().find(t => t.id === mission.id)!;
-      const baseReward = task.goldReward;
+    it('should award exact base reward at dept level 1 (mult = 1)', () => {
+      // All departments at level 1 → getDeptMult(1) = 0, mult = 1
+      const mission = {
+        id: 'test-task', template: { name: 'Test', description: '', category: 'schemes' as TaskCategory, tier: 'petty' as const },
+        status: 'queued' as const, tier: 'petty' as const, goldReward: 2, clicksRequired: 10, clicksRemaining: 10,
+        assignedMinionId: null, queuedAt: Date.now(), isSpecialOp: false, assignedQueue: null,
+      };
+      const data = makeSaveData({ missionBoard: [mission] });
+      service.loadSnapshot(data);
 
-      completeTaskByClicking(service, task.id);
-      expect(service.gold()).toBe(baseReward);
+      service.acceptMission('test-task');
+      completeTaskByClicking(service, 'test-task');
+
+      expect(service.gold()).toBe(2);
     });
   });
 
@@ -842,18 +671,17 @@ describe('GameStateService', () => {
   describe('unlockedDepartmentList ordering', () => {
     it('should maintain canonical category order', () => {
       service.addGold(100_000);
-      // Unlock mayhem first, then schemes
-      const m1 = makeMinion({ assignedDepartment: 'mayhem', specialty: 'mayhem' });
-      service.hireChosenMinion(m1);
-      service.addGold(100_000);
-      const m2 = makeMinion({ assignedDepartment: 'schemes', specialty: 'schemes' });
-      service.hireChosenMinion(m2);
+      // Unlock mayhem first, then heists via vouchers (schemes always unlocked)
+      service.purchaseVoucher('unlock-mayhem');
+      service.purchaseVoucher('unlock-heists');
 
       const list = service.unlockedDepartmentList();
-      // Should follow ALL_CATEGORIES order: schemes before mayhem
+      // Should follow ALL_CATEGORIES order: schemes before heists before mayhem
       const schemesIdx = list.indexOf('schemes');
+      const heistsIdx = list.indexOf('heists');
       const mayhemIdx = list.indexOf('mayhem');
-      expect(schemesIdx).toBeLessThan(mayhemIdx);
+      expect(schemesIdx).toBeLessThan(heistsIdx);
+      expect(heistsIdx).toBeLessThan(mayhemIdx);
     });
   });
 
@@ -899,6 +727,9 @@ describe('GameStateService', () => {
           isComplete: false,
           missedQuarters: 1,
           quarterResults: [],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -932,15 +763,14 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 1, passed: true, goldEarned: 200, target: 75, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-      // Passed quarter: pack reward shown first
-      expect(service.showPackReward()).toBe(true);
-      service.pickFromPack([]);
-      service.continueAfterPack();
-      // Then shop opens
+      // Shop opens after quarter advance
       expect(service.showShop()).toBe(true);
       service.continueAfterShop();
 
@@ -966,6 +796,9 @@ describe('GameStateService', () => {
           isComplete: false,
           missedQuarters: 0,
           quarterResults: [],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -992,6 +825,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1014,14 +850,14 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 2,
           quarterResults: [{ year: 1, quarter: 4, passed: true, goldEarned: 500, target: 0, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-      // Q4 pass: pack reward shown first
-      expect(service.showPackReward()).toBe(true);
-      service.pickFromPack([]);
-      service.continueAfterPack();
+      // Shop opens after quarter advance
       expect(service.showShop()).toBe(true);
       service.continueAfterShop();
 
@@ -1052,6 +888,9 @@ describe('GameStateService', () => {
           isComplete: false,
           missedQuarters: 0,
           quarterResults: [],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1091,19 +930,9 @@ describe('GameStateService', () => {
       expect(queued[0].type).toBe('TaskQueued');
     });
 
-    it('should emit TaskQueued when routing a mission to player queue', () => {
-      const mission = service.missionBoard()[0];
-      service.routeMission(mission.id, 'player');
-      const queued = emitted.filter(e => e.type === 'TaskQueued');
-      expect(queued.length).toBe(1);
-      if (queued[0].type === 'TaskQueued') {
-        expect(queued[0].department).toBe('player');
-      }
-    });
-
     it('should emit MinionHired when hiring a minion', () => {
       service.addGold(500);
-      service.hireMinion();
+      shopHire();
       const hired = emitted.filter(e => e.type === 'MinionHired');
       expect(hired.length).toBe(1);
       if (hired[0].type === 'MinionHired') {
@@ -1111,25 +940,46 @@ describe('GameStateService', () => {
       }
     });
 
+    it('should emit MinionAssigned when assigning a minion to a department', () => {
+      service.addGold(500);
+      shopHire();
+      const minion = service.minions()[0];
+      emitted = [];
+      service.assignMinionToDepartment(minion.id, 'schemes', 'worker');
+      const assigned = emitted.filter(e => e.type === 'MinionAssigned');
+      expect(assigned.length).toBe(1);
+      if (assigned[0].type === 'MinionAssigned') {
+        expect(assigned[0].minionId).toBe(minion.id);
+        expect(assigned[0].department).toBe('schemes');
+      }
+    });
+
     it('should emit MinionReassigned when reassigning a minion', () => {
       service.addGold(500);
-      service.hireMinion();
+      shopHire();
       const minion = service.minions()[0];
-      const newDept = minion.assignedDepartment === 'schemes' ? 'heists' : 'schemes';
-      service.reassignMinion(minion.id, newDept);
+      // Assign to schemes first (starts unassigned)
+      service.assignMinionToDepartment(minion.id, 'schemes', 'worker');
+      // Give heists a worker slot so reassignment works
+      service['_departments'].update(d => ({ ...d, heists: { ...d.heists, workerSlots: 1 } }));
+      emitted = [];
+      service.reassignMinion(minion.id, 'heists');
       const reassigned = emitted.filter(e => e.type === 'MinionReassigned');
       expect(reassigned.length).toBe(1);
       if (reassigned[0].type === 'MinionReassigned') {
         expect(reassigned[0].minionId).toBe(minion.id);
-        expect(reassigned[0].toDepartment).toBe(newDept);
+        expect(reassigned[0].toDepartment).toBe('heists');
       }
     });
 
     it('should emit TaskAssigned when auto-assigning a minion to a task', () => {
       service.addGold(500);
-      service.hireMinion();
+      shopHire();
       const minion = service.minions()[0];
-      const dept = minion.assignedDepartment;
+      const dept: TaskCategory = 'schemes';
+
+      // Assign minion to department (starts unassigned)
+      service.assignMinionToDepartment(minion.id, dept, 'worker');
 
       // Route a mission to the minion's department
       const mission = service.missionBoard().find(m => m.template.category === dept)
@@ -1145,25 +995,6 @@ describe('GameStateService', () => {
       }
     });
 
-    it('should emit LevelUp for villain when completedCount crosses level threshold', () => {
-      // level = min(20, floor(sqrt(c/5)) + 1)
-      // Level 1: c < 5 → c in [0, 4]
-      // Level 2: sqrt(c/5) >= 1 → c >= 5
-      // Start at completedCount = 4 (still level 1), complete a task to cross to 5+
-      const board = service.missionBoard().slice();
-      service.loadSnapshot(makeSaveData({ completedCount: 4, missionBoard: board }));
-      emitted = [];
-
-      const mission = service.missionBoard()[0];
-      service.acceptMission(mission.id);
-      completeTaskByClicking(service, mission.id);
-
-      const levelUps = emitted.filter(e => e.type === 'LevelUp' && e.target === 'villain');
-      expect(levelUps.length).toBe(1);
-      if (levelUps[0].type === 'LevelUp') {
-        expect(levelUps[0].newLevel).toBe(2);
-      }
-    });
   });
 
   // ─── Phase B: Year-End Boss Reviews ──────────
@@ -1186,6 +1017,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1207,6 +1041,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 2,
           quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1227,6 +1064,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1247,6 +1087,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1265,6 +1108,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 1,
           quarterResults: [{ year: 1, quarter: 4, passed: true, goldEarned: 500, target: 200, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1273,10 +1119,7 @@ describe('GameStateService', () => {
       expect(service.currentReviewer()).toBeNull();
       expect(service.activeModifiers()).toEqual([]);
       expect(service.isRunOver()).toBe(false);
-      // Pack reward first, then shop opens before Y+1 Q1
-      expect(service.showPackReward()).toBe(true);
-      service.pickFromPack([]);
-      service.continueAfterPack();
+      // Shop opens before Y+1 Q1
       expect(service.showShop()).toBe(true);
       service.continueAfterShop();
       expect(service.quarterProgress().year).toBe(2);
@@ -1293,6 +1136,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 2,
           quarterResults: [{ year: 1, quarter: 4, passed: false, goldEarned: 10, target: 200, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1318,6 +1164,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 2,
           quarterResults: [{ year: 1, quarter: 4, passed: false, goldEarned: 10, target: 200, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1341,6 +1190,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1360,6 +1212,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 2,
           quarterResults: [{ year: 1, quarter: 4, passed: false, goldEarned: 10, target: 200, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1376,7 +1231,9 @@ describe('GameStateService', () => {
 
   describe('modifier effects', () => {
     function enterReview(missedQuarters = 0): void {
+      const board = service.missionBoard().slice();
       const data = makeSaveData({
+        missionBoard: board,
         quarterProgress: {
           year: 1,
           quarter: 3,
@@ -1385,6 +1242,9 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters,
           quarterResults: [{ year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 1200, tasksCompleted: 60 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1398,39 +1258,36 @@ describe('GameStateService', () => {
 
       service.addGold(10_000);
       const minionsBefore = service.minions().length;
-      service.hireMinion();
+      shopHire();
       expect(service.minions().length).toBe(minionsBefore);
     });
 
-    it('should block hireChosenMinion when hiringDisabled is active', () => {
+    it('should block hireMinion when hiringDisabled is active', () => {
       enterReview();
       (service as any)._hiringDisabled.set(true);
 
       service.addGold(10_000);
-      const candidates = service.generateHiringCandidates();
-      service.hireChosenMinion(candidates[0]);
+      shopHire();
       expect(service.minions().length).toBe(0);
     });
 
-    it('should block board refresh when boardFrozen is active', () => {
+    it('should expose backlogFrozen constraint signal', () => {
       enterReview();
-      (service as any)._boardFrozen.set(true);
-
-      // Clear the board manually
-      const snapshot = service.getSnapshot();
-      snapshot.missionBoard = [];
-      service.loadSnapshot(snapshot);
-      (service as any)._boardFrozen.set(true);
-
-      service.refreshBoard();
-      expect(service.missionBoard().length).toBe(0); // Board stays empty
+      (service as any)._backlogFrozen.set(true);
+      expect(service.backlogFrozen()).toBe(true);
     });
 
-    it('should limit board capacity to 2 when boardLimited is active', () => {
+    it('should limit backlog capacity to 1 when backlogFrozen is active', () => {
       enterReview();
-      (service as any)._boardLimited.set(true);
+      (service as any)._backlogFrozen.set(true);
+      expect(service.backlogCapacity()).toBe(1);
+    });
 
-      expect(service.boardCapacity()).toBe(2);
+    it('should limit backlog capacity to 2 when backlogLimited is active', () => {
+      enterReview();
+      (service as any)._backlogLimited.set(true);
+
+      expect(service.backlogCapacity()).toBe(2);
     });
 
     it('should apply gold drain per task', () => {
@@ -1445,23 +1302,30 @@ describe('GameStateService', () => {
       expect(service.gold()).toBe(Math.max(0, reward - 5));
     });
 
-    it('should apply gold reward multiplier', () => {
-      (service as any)._goldRewardMultiplier.set(0.7);
+    it('should apply boss mult penalty (gold-reduced-30 = -1 mult)', () => {
+      // Create a controlled task with no special op
+      const mission = {
+        id: 'test-mod', template: { name: 'Test', description: '', category: 'schemes' as TaskCategory, tier: 'petty' as const },
+        status: 'queued' as const, tier: 'petty' as const, goldReward: 2, clicksRequired: 10, clicksRemaining: 10,
+        assignedMinionId: null, queuedAt: Date.now(), isSpecialOp: false, assignedQueue: null,
+      };
+      const data = makeSaveData({ missionBoard: [mission] });
+      service.loadSnapshot(data);
 
-      const mission = service.missionBoard()[0];
-      const reward = mission.goldReward;
-      service.acceptMission(mission.id);
-      completeTaskByClicking(service, mission.id);
+      // Simulate gold-reduced-30 modifier: -1 mult → mult = max(1, 1 + 0 - 1) = max(1, 0) = 1
+      // With dept level 1 and no other bonuses, mult would be 1 - 1 = 0, clamped to 1
+      (service as any)._activeModifiers.set([{ id: 'gold-reduced-30', name: 'Budget Cuts', description: '', category: 'operational' }]);
 
-      expect(service.gold()).toBe(Math.round(reward * 0.7));
+      service.acceptMission('test-mod');
+      completeTaskByClicking(service, 'test-mod');
+
+      // mult clamped to 1, so gold = 2 × 1 = 2
+      expect(service.gold()).toBe(2);
     });
 
     it('should block routing to locked category', () => {
       service.addGold(10_000);
-      // Unlock schemes
-      const m = makeMinion({ assignedDepartment: 'schemes', specialty: 'schemes' });
-      service.hireChosenMinion(m);
-
+      // Schemes is always unlocked, just set the locked category constraint
       (service as any)._lockedCategory.set('schemes');
 
       const mission = service.missionBoard()[0];
@@ -1495,7 +1359,7 @@ describe('GameStateService', () => {
       enterReview();
       // Set up some constraints
       (service as any)._hiringDisabled.set(true);
-      (service as any)._boardFrozen.set(true);
+      (service as any)._backlogFrozen.set(true);
 
       // Simulate Q4 completion and pass
       const data = makeSaveData({
@@ -1507,13 +1371,16 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 4, passed: true, goldEarned: 500, target: 200, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
       // Constraints should be reverted immediately, even before shop closes
       expect(service.hiringDisabled()).toBe(false);
-      expect(service.boardFrozen()).toBe(false);
+      expect(service.backlogFrozen()).toBe(false);
       expect(service.lockedCategory()).toBeNull();
     });
   });
@@ -1524,9 +1391,7 @@ describe('GameStateService', () => {
       expect(v['iron-fingers']).toBe(0);
       expect(v['board-expansion']).toBe(0);
       expect(v['operations-desk']).toBe(0);
-      expect(v['rapid-intel']).toBe(0);
       expect(v['hire-discount']).toBe(0);
-      expect(v['dept-funding']).toBe(0);
     });
 
     it('should have base click power of 1 with no vouchers', () => {
@@ -1587,16 +1452,16 @@ describe('GameStateService', () => {
         expect(service.clickPower()).toBe(13); // 1 + 12
       });
 
-      it('board-expansion should increase board capacity', () => {
-        const baseCap = service.boardCapacity();
+      it('board-expansion should increase backlog capacity', () => {
+        const baseCap = service.backlogCapacity();
         service.purchaseVoucher('board-expansion');
-        expect(service.boardCapacity()).toBe(baseCap + 3);
+        expect(service.backlogCapacity()).toBe(baseCap + 3);
       });
 
-      it('operations-desk should increase active slots', () => {
-        const baseSlots = service.activeSlots();
+      it('operations-desk should increase dept queue capacity', () => {
+        const baseCap = service.deptQueueCapacity().schemes;
         service.purchaseVoucher('operations-desk');
-        expect(service.activeSlots()).toBe(baseSlots + 2);
+        expect(service.deptQueueCapacity().schemes).toBe(baseCap + 2);
       });
 
       it('hire-discount should reduce next minion cost', () => {
@@ -1607,11 +1472,12 @@ describe('GameStateService', () => {
         expect(discountedCost).toBe(Math.floor(75 * (1 - 0.20)));
       });
 
-      it('rapid-intel should reduce board refresh interval', () => {
-        const baseInterval = service.getEffectiveBoardRefreshInterval();
-        service.purchaseVoucher('rapid-intel');
-        const newInterval = service.getEffectiveBoardRefreshInterval();
-        expect(newInterval).toBeLessThan(baseInterval);
+      it('dismissal-expert should be purchasable', () => {
+        const snap1 = service.getSnapshot();
+        expect(snap1.ownedVouchers?.['dismissal-expert'] ?? 0).toBe(0);
+        service.purchaseVoucher('dismissal-expert');
+        const snap2 = service.getSnapshot();
+        expect(snap2.ownedVouchers?.['dismissal-expert']).toBe(1);
       });
     });
 
@@ -1628,11 +1494,11 @@ describe('GameStateService', () => {
 
       it('should restore voucher levels from snapshot', () => {
         const data = makeSaveData({
-          ownedVouchers: { 'iron-fingers': 2, 'dept-funding': 1 },
+          ownedVouchers: { 'iron-fingers': 2, 'hire-discount': 1 } as any,
         });
         service.loadSnapshot(data);
         expect(service.ownedVouchers()['iron-fingers']).toBe(2);
-        expect(service.ownedVouchers()['dept-funding']).toBe(1);
+        expect(service.ownedVouchers()['hire-discount']).toBe(1);
         expect(service.ownedVouchers()['board-expansion']).toBe(0);
       });
 
@@ -1668,14 +1534,16 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-      // Passed quarter: pack reward first, then shop
-      expect(service.showPackReward()).toBe(true);
-      expect(service.showShop()).toBe(false);
-      // Quarter should NOT have advanced yet
+      // Passed quarter: shop opens
+      expect(service.showShop()).toBe(true);
+      // Quarter should NOT have advanced yet (shop must be dismissed first)
       expect(service.quarterProgress().quarter).toBe(1);
       expect(service.quarterProgress().isComplete).toBe(true);
     });
@@ -1690,14 +1558,14 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-      // Passed quarter: go through pack reward first
-      expect(service.showPackReward()).toBe(true);
-      service.pickFromPack([]);
-      service.continueAfterPack();
+      // Shop opens directly (no pack reward)
       expect(service.showShop()).toBe(true);
 
       service.continueAfterShop();
@@ -1720,6 +1588,9 @@ describe('GameStateService', () => {
             { year: 1, quarter: 2, passed: true, goldEarned: 400, target: 300, tasksCompleted: 40 },
             { year: 1, quarter: 3, passed: true, goldEarned: 1000, target: 900, tasksCompleted: 60 },
           ],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
@@ -1741,14 +1612,14 @@ describe('GameStateService', () => {
           isComplete: true,
           missedQuarters: 0,
           quarterResults: [{ year: 1, quarter: 4, passed: true, goldEarned: 500, target: 200, tasksCompleted: 30 }],
+          dismissalsRemaining: 5,
+          researchCompleted: 0,
+          activeBreakthroughs: 0,
         },
       });
       service.loadSnapshot(data);
       service.advanceQuarter();
-      // Pack reward first
-      expect(service.showPackReward()).toBe(true);
-      service.pickFromPack([]);
-      service.continueAfterPack();
+      // Shop opens directly
       expect(service.showShop()).toBe(true);
 
       service.continueAfterShop();
@@ -1766,6 +1637,85 @@ describe('GameStateService', () => {
       service.resetGame();
       expect(service.ownedVouchers()['iron-fingers']).toBe(0);
       expect(service.showShop()).toBe(false);
+    });
+  });
+
+  describe('combo state', () => {
+    it('should start with empty combo state', () => {
+      const combo = service.comboState();
+      expect(combo.deptFocus.dept).toBeNull();
+      expect(combo.deptFocus.count).toBe(0);
+      expect(combo.tierLadder.lastTier).toBeNull();
+      expect(combo.tierLadder.step).toBe(0);
+    });
+
+    it('should persist combo state through snapshot round-trip', () => {
+      // Set a non-default combo state via loadSnapshot
+      const snapshot = service.getSnapshot();
+      snapshot.comboState = {
+        deptFocus: { dept: 'heists', count: 3 },
+        tierLadder: { lastTier: 'sinister', step: 2 },
+      };
+      service.loadSnapshot(snapshot);
+
+      const combo = service.comboState();
+      expect(combo.deptFocus.dept).toBe('heists');
+      expect(combo.deptFocus.count).toBe(3);
+      expect(combo.tierLadder.lastTier).toBe('sinister');
+      expect(combo.tierLadder.step).toBe(2);
+
+      // Round-trip
+      const snapshot2 = service.getSnapshot();
+      expect(snapshot2.comboState).toEqual(combo);
+    });
+
+    it('should reset combo state on initializeGame', () => {
+      // Load non-default state
+      const snapshot = service.getSnapshot();
+      snapshot.comboState = {
+        deptFocus: { dept: 'heists', count: 3 },
+        tierLadder: { lastTier: 'sinister', step: 2 },
+      };
+      service.loadSnapshot(snapshot);
+
+      service.initializeGame();
+      const combo = service.comboState();
+      expect(combo.deptFocus.dept).toBeNull();
+      expect(combo.deptFocus.count).toBe(0);
+    });
+
+    it('should apply comboMult to operation gold when set', () => {
+      // Create an operation with comboMult and verify gold is boosted
+      // Direct test: create a task with comboMult in a dept queue and click-complete it
+      const opTask = {
+        id: 'combo-test-op',
+        template: { name: 'Heist Op', description: '', category: 'heists' as TaskCategory, tier: 'petty' as const },
+        status: 'queued' as const,
+        tier: 'petty' as const,
+        goldReward: 2,  // base gold
+        clicksRequired: 1,
+        clicksRemaining: 1,
+        assignedMinionId: null,
+        queuedAt: Date.now(),
+        assignedQueue: 'heists' as TaskCategory,
+        isOperation: true,
+        comboMult: 3,  // +3 to mult
+      };
+
+      // Load the task into heists queue
+      const snapshot = service.getSnapshot();
+      snapshot.departmentQueues = {
+        ...snapshot.departmentQueues,
+        heists: [opTask],
+      };
+      service.loadSnapshot(snapshot);
+
+      const goldBefore = service.gold();
+      service.clickTask('combo-test-op');
+
+      // Gold earned should be: 2 × (1 + deptMult(L1=0) + comboMult(3)) = 2 × 4 = 8
+      const goldEarned = service.gold() - goldBefore;
+      expect(goldEarned).toBe(8);
     });
   });
 
