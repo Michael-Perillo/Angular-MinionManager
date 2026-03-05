@@ -42,14 +42,15 @@ import { QuarterResult } from '../../../core/models/quarter.model';
           </div>
         </div>
 
-        <!-- New Run button -->
+        <!-- View Summary button -->
         <button
           (click)="newRun.emit()"
+          data-testid="view-summary"
           class="w-full py-3 px-4 rounded-lg text-sm font-bold uppercase tracking-wider
                  bg-accent/20 text-accent border border-accent/30
                  hover:bg-accent/30 active:scale-95
                  transition-all cursor-pointer min-h-[48px]">
-          New Run
+          View Summary
         </button>
       </div>
     </div>

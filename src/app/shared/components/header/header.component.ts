@@ -73,6 +73,14 @@ import { ModifierBadgeComponent } from '../modifier-badge/modifier-badge.compone
           }
         </div>
       }
+
+      <!-- Pause button -->
+      <button (click)="pause.emit()"
+              data-testid="header-pause"
+              aria-label="Pause"
+              class="text-lg cursor-pointer hover:scale-110 transition-transform min-h-[44px] px-1 shrink-0">
+        ⏸️
+      </button>
     </header>
   `,
   styles: `
@@ -102,7 +110,7 @@ export class HeaderComponent {
   lastSaved = input<number>(0);
   activeModifiers = input<Modifier[]>([]);
 
-  reset = output<void>();
+  pause = output<void>();
 
   showSaveIndicator = computed(() => {
     const saved = this.lastSaved();

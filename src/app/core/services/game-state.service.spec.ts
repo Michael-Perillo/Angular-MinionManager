@@ -1285,6 +1285,8 @@ describe('GameStateService', () => {
 
     it('should limit backlog capacity to 2 when backlogLimited is active', () => {
       enterReview();
+      // Ensure frozen is off so limited can take effect (random reviewer may set frozen)
+      (service as any)._backlogFrozen.set(false);
       (service as any)._backlogLimited.set(true);
 
       expect(service.backlogCapacity()).toBe(2);

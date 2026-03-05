@@ -41,4 +41,8 @@ export class HeaderPage {
   get completed(): Promise<number> {
     return this.getStat('Completed');
   }
+
+  async clickPause(): Promise<void> {
+    await this.page.locator('[data-testid="header-pause"]').click();
+  }
 }

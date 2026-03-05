@@ -1,7 +1,7 @@
 import { Page } from '@playwright/test';
 
 /** Must match SAVE_VERSION in src/app/core/models/save-data.model.ts */
-const SAVE_VERSION = 20;
+const SAVE_VERSION = 21;
 
 export interface NavigationPage {
   resetGame(): Promise<void>;
@@ -49,6 +49,9 @@ function baseSaveData(): Record<string, unknown> {
       research: ['petty'],
       mayhem: ['petty'],
     },
+    completedTaskTemplates: [],
+    encounteredReviewers: [],
+    encounteredModifiers: [],
   };
 }
 
@@ -61,6 +64,9 @@ export class DesktopNavigation implements NavigationPage {
     await this.page.goto('/');
     await this.page.evaluate(() => localStorage.clear());
     await this.page.reload();
+    // Main menu appears — click New Run to start fresh game
+    await this.page.locator('[data-testid="menu-new-run"]').waitFor({ state: 'visible', timeout: 15_000 });
+    await this.page.locator('[data-testid="menu-new-run"]').click();
     await this.page.locator('app-header').waitFor({ state: 'visible', timeout: 15_000 });
   }
 
@@ -73,6 +79,9 @@ export class DesktopNavigation implements NavigationPage {
       localStorage.setItem('minion-manager-save', data);
     }, json);
     await this.page.goto('/');
+    // Main menu appears with Continue button — click it
+    await this.page.locator('[data-testid="menu-continue"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await this.page.locator('[data-testid="menu-continue"]').click();
     await this.page.locator('app-header').waitFor({ state: 'visible', timeout: 10_000 });
   }
 
@@ -113,15 +122,22 @@ export class MobileNavigation implements NavigationPage {
     await this.page.goto('/');
     await this.page.evaluate(() => localStorage.clear());
     await this.page.reload();
+    // Main menu appears — click New Run to start fresh game
+    await this.page.locator('[data-testid="menu-new-run"]').waitFor({ state: 'visible', timeout: 15_000 });
+    await this.page.locator('[data-testid="menu-new-run"]').click();
     await this.page.locator('app-header').waitFor({ state: 'visible', timeout: 15_000 });
   }
 
   async seedState(overrides: Record<string, unknown>): Promise<void> {
     const save = { ...baseSaveData(), ...overrides, version: SAVE_VERSION, savedAt: Date.now() };
-    await this.page.evaluate((data) => {
-      localStorage.setItem('minion-manager-save', JSON.stringify(data));
-    }, save);
-    await this.page.reload();
+    const json = JSON.stringify(save);
+    await this.page.addInitScript((data) => {
+      localStorage.setItem('minion-manager-save', data);
+    }, json);
+    await this.page.goto('/');
+    // Main menu appears with Continue button — click it
+    await this.page.locator('[data-testid="menu-continue"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await this.page.locator('[data-testid="menu-continue"]').click();
     await this.page.locator('app-header').waitFor({ state: 'visible', timeout: 10_000 });
   }
 

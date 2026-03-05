@@ -396,6 +396,13 @@ export class SaveService {
       // v19 → v20: Per-department queue limits (behavioral, no structural changes)
       data.version = 20;
     }
+    if (data.version < 21) {
+      // v20 → v21: Per-run tracking for compendium (default empty arrays)
+      data.completedTaskTemplates = data.completedTaskTemplates ?? [];
+      data.encounteredReviewers = data.encounteredReviewers ?? [];
+      data.encounteredModifiers = data.encounteredModifiers ?? [];
+      data.version = 21;
+    }
     return data;
   }
 }

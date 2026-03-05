@@ -252,7 +252,7 @@ test.describe('Year-End Boss Review', () => {
     const runOver = page.locator('app-run-over');
     await runOver.waitFor({ state: 'visible', timeout: 5_000 });
     await expect(runOver.getByText('Performance Review Failed')).toBeVisible();
-    await expect(runOver.getByRole('button', { name: 'New Run' })).toBeVisible();
+    await expect(runOver.getByRole('button', { name: 'View Summary' })).toBeVisible();
   });
 });
 
@@ -340,5 +340,133 @@ test.describe('Voucher Shop', () => {
     await expect(shop).not.toBeVisible();
     const reviewerIntro = page.locator('app-reviewer-intro');
     await reviewerIntro.waitFor({ state: 'visible', timeout: 3_000 });
+  });
+});
+
+// ─── Main Menu & Meta-Progression ──────────
+
+test.describe('Main Menu & Meta-Progression', () => {
+  test('Fresh boot shows main menu without Continue button', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    const menu = page.locator('[data-testid="main-menu"]');
+    await menu.waitFor({ state: 'visible', timeout: 10_000 });
+    await expect(menu.locator('[data-testid="menu-new-run"]')).toBeVisible();
+    await expect(menu.locator('[data-testid="menu-continue"]')).not.toBeVisible();
+  });
+
+  test('Continue button visible when save exists', async ({ page }) => {
+    // Seed a save first
+    await page.goto('/');
+    await page.evaluate(() => {
+      const save = {
+        version: 21, savedAt: Date.now(), gold: 100, completedCount: 5,
+        totalGoldEarned: 100, minions: [], departments: {
+          schemes: { category: 'schemes', level: 1, workerSlots: 1, hasManager: false },
+          heists: { category: 'heists', level: 1, workerSlots: 0, hasManager: false },
+          research: { category: 'research', level: 1, workerSlots: 0, hasManager: false },
+          mayhem: { category: 'mayhem', level: 1, workerSlots: 0, hasManager: false },
+        },
+        activeMissions: [], missionBoard: [], usedNameIndices: [],
+        departmentQueues: { schemes: [], heists: [], research: [], mayhem: [] },
+        ownedVouchers: {}, hireOptions: ['penny-pincher'], schemeDeck: [],
+        deptTierUnlocks: { schemes: ['petty'], heists: ['petty'], research: ['petty'], mayhem: ['petty'] },
+        completedTaskTemplates: [], encounteredReviewers: [], encounteredModifiers: [],
+      };
+      localStorage.setItem('minion-manager-save', JSON.stringify(save));
+    });
+    await page.reload();
+
+    const menu = page.locator('[data-testid="main-menu"]');
+    await menu.waitFor({ state: 'visible', timeout: 10_000 });
+    await expect(menu.locator('[data-testid="menu-continue"]')).toBeVisible();
+  });
+
+  test('New Run starts fresh gameplay', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    await page.locator('[data-testid="menu-new-run"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('[data-testid="menu-new-run"]').click();
+
+    // Game should be running — header visible
+    await page.locator('app-header').waitFor({ state: 'visible', timeout: 10_000 });
+    // Menu should be gone
+    await expect(page.locator('[data-testid="main-menu"]')).not.toBeVisible();
+  });
+
+  test('Options opens and allows Reset All', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    const menu = page.locator('[data-testid="main-menu"]');
+    await menu.waitFor({ state: 'visible', timeout: 10_000 });
+
+    // Open Options
+    await page.locator('[data-testid="menu-options"]').click();
+    await page.locator('[data-testid="options-menu"]').waitFor({ state: 'visible', timeout: 3_000 });
+
+    // Reset All — first click shows confirmation
+    await page.locator('[data-testid="options-reset-all"]').click();
+    await page.locator('[data-testid="options-reset-confirm"]').waitFor({ state: 'visible', timeout: 2_000 });
+    await page.locator('[data-testid="options-reset-confirm"]').click();
+
+    // Reset closes options and returns to main menu
+    await expect(menu).toBeVisible({ timeout: 3_000 });
+  });
+});
+
+// ─── Pause Menu ──────────
+
+test.describe('Pause Menu', () => {
+  test('Pause menu opens and resumes', async ({ page, nav, header }) => {
+    // Start a new game
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await page.locator('[data-testid="menu-new-run"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('[data-testid="menu-new-run"]').click();
+    await page.locator('app-header').waitFor({ state: 'visible', timeout: 10_000 });
+
+    // Click pause
+    await header.clickPause();
+
+    // Pause menu should be visible
+    const pauseMenu = page.locator('[data-testid="pause-menu"]');
+    await pauseMenu.waitFor({ state: 'visible', timeout: 3_000 });
+    await expect(page.locator('[data-testid="pause-resume"]')).toBeVisible();
+
+    // Click resume
+    await page.locator('[data-testid="pause-resume"]').click();
+
+    // Pause menu should be gone
+    await expect(pauseMenu).not.toBeVisible({ timeout: 3_000 });
+  });
+
+  test('Pause menu abandon returns to main menu', async ({ page, nav, header }) => {
+    // Start a new game
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await page.locator('[data-testid="menu-new-run"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('[data-testid="menu-new-run"]').click();
+    await page.locator('app-header').waitFor({ state: 'visible', timeout: 10_000 });
+
+    // Click pause
+    await header.clickPause();
+    await page.locator('[data-testid="pause-menu"]').waitFor({ state: 'visible', timeout: 3_000 });
+
+    // Click abandon → confirm
+    await page.locator('[data-testid="pause-abandon"]').click();
+    await page.locator('[data-testid="pause-abandon-confirm"]').waitFor({ state: 'visible', timeout: 2_000 });
+    await page.locator('[data-testid="pause-abandon-confirm"]').click();
+
+    // Should return to main menu
+    const menu = page.locator('[data-testid="main-menu"]');
+    await menu.waitFor({ state: 'visible', timeout: 5_000 });
   });
 });
