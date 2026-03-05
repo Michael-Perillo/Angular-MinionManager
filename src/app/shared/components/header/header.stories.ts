@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/angular';
-import { expect, within } from 'storybook/test';
+import { expect, fn, userEvent, within } from 'storybook/test';
 import { HeaderComponent } from './header.component';
 import { createInitialProgress, QuarterProgress } from '../../../core/models/quarter.model';
 
@@ -7,6 +7,9 @@ const meta: Meta<HeaderComponent> = {
   title: 'Minion Manager/Organisms/Header',
   component: HeaderComponent,
   tags: ['autodocs'],
+  args: {
+    pause: fn(),
+  },
 };
 
 export default meta;
@@ -49,7 +52,7 @@ export const EarlyGame: Story = {
     goldTarget: 75,
     dismissalsRemaining: 5,
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
 
     // Verify key stat values render
@@ -57,6 +60,11 @@ export const EarlyGame: Story = {
     expect(canvas.getByText(/Evil Empire/)).toBeTruthy();
     // Verify quarter indicator renders
     expect(canvas.getByText(/Y1Q1/)).toBeTruthy();
+    // Verify pause button renders and fires output
+    const pauseBtn = canvas.getByTestId('header-pause');
+    expect(pauseBtn).toBeTruthy();
+    await userEvent.click(pauseBtn);
+    expect(args.pause).toHaveBeenCalled();
   },
 };
 

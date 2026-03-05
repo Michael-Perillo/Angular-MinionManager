@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed, viewChild, HostListener, ElementRef, effect } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed, viewChild, HostListener, ElementRef, effect, output } from '@angular/core';
 import { GameStateService } from '../../core/services/game-state.service';
 import { GameTimerService } from '../../core/services/game-timer.service';
 import { SaveService } from '../../core/services/save.service';
@@ -7,6 +7,7 @@ import { QueueTarget, TaskCategory } from '../../core/models/task.model';
 import { Minion, MinionRole, MinionArchetype, MINION_ARCHETYPES, getMinionDisplay } from '../../core/models/minion.model';
 import { VoucherId } from '../../core/models/voucher.model';
 import { getBreakthroughThreshold } from '../../core/models/department.model';
+import { RunSummary, DiscoveredItems, buildRunSummary } from '../../core/models/meta.model';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { MissionBoardComponent } from '../../shared/components/mission-board/mission-board.component';
 import { KanbanBoardComponent } from '../../shared/components/kanban-board/kanban-board.component';
@@ -18,6 +19,8 @@ import { DepartmentColumnComponent } from '../../shared/components/department-co
 import { QuarterReviewComponent } from '../../shared/components/quarter-review/quarter-review.component';
 import { ReviewerIntroComponent } from '../../shared/components/reviewer-intro/reviewer-intro.component';
 import { RunOverComponent } from '../../shared/components/run-over/run-over.component';
+import { PauseMenuComponent } from '../../shared/components/pause-menu/pause-menu.component';
+import { MetaService } from '../../core/services/meta.service';
 
 @Component({
   selector: 'app-game-container',
@@ -34,6 +37,7 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
     ReviewerIntroComponent,
     RunOverComponent,
     ShopComponent,
+    PauseMenuComponent,
   ],
   template: `
     <div class="h-screen flex flex-col overflow-hidden">
@@ -49,7 +53,7 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
         [dismissalsRemaining]="gameState.dismissalsRemaining()"
         [lastSaved]="gameState.lastSaved()"
         [activeModifiers]="gameState.activeModifiers()"
-        (reset)="onReset()" />
+        (pause)="onPause()" />
 
       <!-- Desktop layout (>= 768px) -->
       @if (!isMobile()) {
@@ -246,14 +250,6 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
                   <span class="text-sm font-semibold text-text-primary">Departments</span>
                   <span class="ml-auto text-text-muted">→</span>
                 </button>
-                <button
-                  (click)="onReset()"
-                  class="w-full flex items-center gap-3 p-4 rounded-lg bg-bg-card border border-border
-                         hover:border-red-500/30 transition-all cursor-pointer min-h-[48px]">
-                  <span class="text-xl">🔄</span>
-                  <span class="text-sm font-semibold text-text-muted">Reset Game</span>
-                  <span class="ml-auto text-text-muted">→</span>
-                </button>
               </div>
 
               <!-- Expanded section -->
@@ -317,7 +313,7 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
           [quarterResults]="gameState.quarterProgress().quarterResults"
           [totalGold]="gameState.totalGoldEarned()"
           [totalTasks]="gameState.completedCount()"
-          (newRun)="onNewRun()" />
+          (newRun)="onRunOver()" />
       }
 
       <!-- Reviewer Intro Modal (shown at Q4 start) -->
@@ -327,6 +323,15 @@ import { RunOverComponent } from '../../shared/components/run-over/run-over.comp
           [modifiers]="gameState.activeModifiers()"
           [goldTarget]="gameState.reviewGoldTarget()"
           (beginReview)="onBeginReview()" />
+      }
+
+      <!-- Pause Menu -->
+      @if (isPaused()) {
+        <app-pause-menu
+          [soundEnabled]="meta.soundEnabled()"
+          (resume)="onResume()"
+          (toggleSound)="onToggleSound()"
+          (abandonRun)="onAbandonFromPause()" />
       }
 
       <!-- Notifications -->
@@ -346,9 +351,14 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   private readonly gameTimer = inject(GameTimerService);
   private readonly saveService = inject(SaveService);
   private readonly devConsole = inject(DevConsoleService);
+  readonly meta = inject(MetaService);
+
+  runEnded = output<{ summary: RunSummary; discovered: DiscoveredItems }>();
+  abandonRun = output<void>();
 
   readonly deptSwipeContainer = viewChild<ElementRef>('deptSwipeContainer');
 
+  readonly isPaused = signal(false);
   readonly isMobile = signal(false);
   readonly mobileTab = signal<MobileTab>('missions');
   readonly mobileDeptTab = signal<TaskCategory>('schemes');
@@ -394,6 +404,38 @@ export class GameContainerComponent implements OnInit, OnDestroy {
   @HostListener('window:resize')
   onResize(): void {
     this.isMobile.set(window.innerWidth < 768);
+  }
+
+  @HostListener('window:keydown.escape')
+  onEscape(): void {
+    if (this.latestQuarterResult() || this.gameState.showShop() ||
+        this.gameState.showReviewerIntro() || this.gameState.isRunOver()) return;
+    if (this.isPaused()) {
+      this.onResume();
+    } else {
+      this.onPause();
+    }
+  }
+
+  onPause(): void {
+    this.gameTimer.stop();
+    this.gameTimer.saveNow();
+    this.isPaused.set(true);
+  }
+
+  onResume(): void {
+    this.isPaused.set(false);
+    this.gameTimer.restartTimers();
+  }
+
+  onToggleSound(): void {
+    this.meta.toggleSound();
+  }
+
+  onAbandonFromPause(): void {
+    this.isPaused.set(false);
+    this.gameTimer.stop();
+    this.abandonRun.emit();
   }
 
   ngOnInit(): void {
@@ -512,15 +554,24 @@ export class GameContainerComponent implements OnInit, OnDestroy {
     this.gameTimer.restartTimers();
   }
 
-  onNewRun(): void {
-    this.gameState.startNewRun();
-    this.saveService.clearSave();
-    this.gameTimer.restartTimers();
-  }
+  onRunOver(): void {
+    // Build run summary and collect discoveries
+    const qp = this.gameState.quarterProgress();
+    const summary = buildRunSummary(
+      qp.quarterResults,
+      this.gameState.totalGoldEarned(),
+      this.gameState.completedCount(),
+    );
 
-  onReset(): void {
-    this.gameState.resetGame();
-    this.saveService.clearSave();
+    const discovered: DiscoveredItems = {
+      archetypes: [...new Set(this.gameState.minions().map(m => m.archetypeId))],
+      tasks: this.gameState.completedTaskTemplates(),
+      reviewers: this.gameState.encounteredReviewers(),
+      modifiers: this.gameState.encounteredModifiers(),
+    };
+
+    this.gameTimer.stop();
+    this.runEnded.emit({ summary, discovered });
   }
 
   onMobileTabChange(tab: MobileTab): void {

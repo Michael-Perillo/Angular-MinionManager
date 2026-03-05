@@ -3,6 +3,7 @@ import { Injectable, inject, isDevMode } from '@angular/core';
 import { GameStateService } from './game-state.service';
 import { GameTimerService } from './game-timer.service';
 import { SaveService } from './save.service';
+import { MetaService } from './meta.service';
 import { SaveData, SAVE_VERSION } from '../models/save-data.model';
 import { TaskCategory } from '../models/task.model';
 import {
@@ -11,6 +12,7 @@ import {
 import { createInitialProgress, QuarterProgress } from '../models/quarter.model';
 import { selectReviewer, getReviewModifiers } from '../models/reviewer.model';
 import { VoucherId, ALL_VOUCHER_IDS, createEmptyVoucherLevels } from '../models/voucher.model';
+import { buildRunSummary, DiscoveredItems } from '../models/meta.model';
 
 const ALL_CATEGORIES: TaskCategory[] = ['schemes', 'heists', 'research', 'mayhem'];
 
@@ -19,6 +21,7 @@ export class DevConsoleService {
   private readonly gameState = inject(GameStateService);
   private readonly gameTimer = inject(GameTimerService);
   private readonly saveService = inject(SaveService);
+  private readonly meta = inject(MetaService);
 
   install(): void {
     if (!isDevMode()) return;
@@ -130,6 +133,35 @@ export class DevConsoleService {
         console.log(`Set minion ${minionId} to archetype ${archetypeId}`);
       },
 
+      // ─── Meta-progression ────────────────────
+      seedCompendium() {
+        const discovered: DiscoveredItems = {
+          archetypes: ALL_ARCHETYPE_IDS.slice(0, 8),
+          tasks: [
+            'Forge Hall Passes', 'Rig the Lottery', 'Spread Rumors', 'Steal Lunch Money',
+            'Blackmail the Mayor', 'Infiltrate the Council', 'Frame a Rival',
+            'Pilfer the Tip Jar', 'Snatch a Purse', 'Rob a Lemonade Stand',
+            'Museum Night Raid', 'Jewel Store Heist',
+            'Explode a Mailbox', 'Graffiti Spree',
+            'Lab Rat Experiment', 'Reverse-Engineer Gadget',
+          ],
+          reviewers: ['thornton', 'grimes', 'hale'],
+          modifiers: ['no-hiring', 'board-frozen', 'sinister-only', 'gold-drain', 'gold-halved'],
+        };
+        const summary = buildRunSummary(
+          [
+            { year: 1, quarter: 1, passed: true, goldEarned: 100, target: 75, tasksCompleted: 30 },
+            { year: 1, quarter: 2, passed: true, goldEarned: 500, target: 300, tasksCompleted: 40 },
+            { year: 1, quarter: 3, passed: true, goldEarned: 1500, target: 900, tasksCompleted: 60 },
+            { year: 1, quarter: 4, passed: false, goldEarned: 100, target: 200, tasksCompleted: 20 },
+          ],
+          2200, 150,
+        );
+        self.meta.recordRun(summary, discovered);
+        console.log('📚 Compendium seeded with sample discoveries (8 archetypes, 16 tasks, 3 reviewers, 5 modifiers)');
+        console.log(`🏴 Infamy: ${self.meta.totalInfamy()}`);
+      },
+
       // ─── Inspection ─────────────────────────
       state() {
         const gs = self.gameState;
@@ -182,6 +214,9 @@ MANIPULATION:
   dev.allVouchers(level?)       Set all vouchers to level (default max=3)
   dev.listArchetypes()          List all minion archetypes
   dev.setArchetype(mid, aid)    Set a minion's archetype
+
+META-PROGRESSION:
+  dev.seedCompendium()          Seed compendium with sample discoveries + infamy
 
 INSPECTION:
   dev.state()                   Log current game state summary

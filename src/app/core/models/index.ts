@@ -6,3 +6,4 @@ export * from './department.model';
 export * from './save-data.model';
 export * from './quarter.model';
 export * from './voucher.model';
+export * from './meta.model';

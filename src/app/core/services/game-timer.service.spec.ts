@@ -46,23 +46,33 @@ describe('GameTimerService', () => {
   });
 
   describe('auto-save', () => {
-    it('should save every 30s', fakeAsync(() => {
+    it('should save every 10s', fakeAsync(() => {
       spyOn(saveService, 'save');
       spyOn(gameState, 'markSaved');
       timerService.start();
 
-      tick(29_000);
+      tick(9_000);
       expect(saveService.save).not.toHaveBeenCalled();
 
       tick(1000);
       expect(saveService.save).toHaveBeenCalledTimes(1);
       expect(gameState.markSaved).toHaveBeenCalledTimes(1);
 
-      tick(30_000);
+      tick(10_000);
       expect(saveService.save).toHaveBeenCalledTimes(2);
 
       timerService.stop();
     }));
+
+    it('saveNow() should save immediately', () => {
+      spyOn(saveService, 'save');
+      spyOn(gameState, 'markSaved');
+
+      timerService.saveNow();
+
+      expect(saveService.save).toHaveBeenCalledTimes(1);
+      expect(gameState.markSaved).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('special op expiry', () => {

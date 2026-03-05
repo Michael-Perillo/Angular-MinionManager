@@ -5,7 +5,7 @@ import { QuarterProgress } from './quarter.model';
 import { Reviewer, Modifier } from './reviewer.model';
 
 /** Single source of truth for the save format version. Bump this when changing SaveData. */
-export const SAVE_VERSION = 20;
+export const SAVE_VERSION = 21;
 
 export interface SaveData {
   version: number;
@@ -35,4 +35,8 @@ export interface SaveData {
   hireOptions?: string[];
   /** v18+: Combo state (dept focus + tier ladder) */
   comboState?: ComboState;
+  /** v21+: Per-run tracking for compendium */
+  completedTaskTemplates?: string[];
+  encounteredReviewers?: string[];
+  encounteredModifiers?: string[];
 }

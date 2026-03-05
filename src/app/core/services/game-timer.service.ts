@@ -147,7 +147,12 @@ export class GameTimerService implements OnDestroy {
     this.autoSaveInterval = setInterval(() => {
       this.saveService.save();
       this.gameState.markSaved();
-    }, 30_000);
+    }, 10_000);
+  }
+
+  saveNow(): void {
+    this.saveService.save();
+    this.gameState.markSaved();
   }
 
   private stopAutoSave(): void {

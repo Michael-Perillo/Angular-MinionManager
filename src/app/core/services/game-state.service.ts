@@ -103,6 +103,14 @@ export class GameStateService {
   private readonly _comboState = signal<ComboState>(createDefaultComboState());
   readonly comboState = this._comboState.asReadonly();
 
+  // ─── Per-run tracking for compendium ──────
+  private readonly _completedTaskTemplates = signal<string[]>([]);
+  private readonly _encounteredReviewers = signal<string[]>([]);
+  private readonly _encounteredModifiers = signal<string[]>([]);
+  readonly completedTaskTemplates = this._completedTaskTemplates.asReadonly();
+  readonly encounteredReviewers = this._encounteredReviewers.asReadonly();
+  readonly encounteredModifiers = this._encounteredModifiers.asReadonly();
+
   // ─── Public read-only signals ──────────────
   readonly gold = this._gold.asReadonly();
   readonly minions = this._minions.asReadonly();
@@ -363,6 +371,9 @@ export class GameStateService {
     this._lastMayhemCompletionTime.set(0);
     this._hireOptions.set(rollHireOptions(3));
     this._comboState.set(createDefaultComboState());
+    this._completedTaskTemplates.set([]);
+    this._encounteredReviewers.set([]);
+    this._encounteredModifiers.set([]);
     this.usedNameIndices.clear();
 
     // Draw initial hand of scheme cards
@@ -398,6 +409,9 @@ export class GameStateService {
       schemeDeck: this._schemeDeck(),
       hireOptions: this._hireOptions(),
       comboState: this._comboState(),
+      completedTaskTemplates: this._completedTaskTemplates(),
+      encounteredReviewers: this._encounteredReviewers(),
+      encounteredModifiers: this._encounteredModifiers(),
     };
   }
 
@@ -510,6 +524,11 @@ export class GameStateService {
 
     // Load combo state (v18+)
     this._comboState.set(data.comboState ?? createDefaultComboState());
+
+    // Load per-run tracking (v21+)
+    this._completedTaskTemplates.set(data.completedTaskTemplates ?? []);
+    this._encounteredReviewers.set(data.encounteredReviewers ?? []);
+    this._encounteredModifiers.set(data.encounteredModifiers ?? []);
 
     this.usedNameIndices = new Set(data.usedNameIndices);
   }
@@ -1161,6 +1180,11 @@ export class GameStateService {
     this._totalGoldEarned.update(g => g + finalAmount);
     this._completedCount.update(c => c + 1);
 
+    // Track completed task template for compendium
+    if (!this._completedTaskTemplates().includes(taskName)) {
+      this._completedTaskTemplates.update(t => [...t, taskName]);
+    }
+
     const multLabel = mult > 1 ? ` (${baseGold}g ×${mult})` : '';
     this.addNotification(`+${finalAmount}g${multLabel} from "${taskName}"`, 'gold');
 
@@ -1766,6 +1790,16 @@ export class GameStateService {
     this._activeModifiers.set(modifiers);
     this._showReviewerIntro.set(true);
     this.applyModifiers(modifiers);
+
+    // Track reviewer and modifiers for compendium
+    if (!this._encounteredReviewers().includes(reviewer.id)) {
+      this._encounteredReviewers.update(r => [...r, reviewer.id]);
+    }
+    for (const mod of modifiers) {
+      if (!this._encounteredModifiers().includes(mod.id)) {
+        this._encounteredModifiers.update(m => [...m, mod.id]);
+      }
+    }
 
     this.events.emit({
       type: 'ReviewStarted',
